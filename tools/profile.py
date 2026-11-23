@@ -101,7 +101,13 @@ _LANGUAGE_NAMES = {
     "ukrainian": "uk",
 }
 
-WRITABLE = _SCALAR_FIELDS | _CONTACT_FIELDS | _LOCATION_FIELDS | _LANGUAGE_FIELDS | {"other"}
+# Passions (ranking_values_plan_2026-11-23 § 4.8, B15–B17): what the user lives for, as a list of
+# {what, source: stated|inferred, since, basis, goals}. A STATED passion lifts the social and
+# psychological costs of a task that serves it by one grade (tools/ranking.py); an inferred one
+# never lifts — it is only a reason to ask. Tied to goals and mission (Mike, 2026-11-23): a passion
+# named in the user's own mission or goal counts as their word — code checks the words are there.
+_PASSIONS = "passions"
+WRITABLE = _SCALAR_FIELDS | _CONTACT_FIELDS | _LOCATION_FIELDS | _LANGUAGE_FIELDS | {"other", _PASSIONS}
 
 # Code -> display name, for the one consumer that has to show a language to a model rather
 # than key off it (`load_profile()` in core/orchestrator.py). Built by inverting the map above
@@ -214,7 +220,108 @@ def _save(data: dict) -> Path:
     return path
 
 
-def write_profile(field: str, value: str, confirm_token: str = "") -> str | dict:
+_PASSION_STOP = frozenset({"the", "and", "with", "for", "from", "into", "their", "they", "them",
+                           "more", "most", "time", "some", "about", "being", "doing", "make"})
+
+
+def _words(text: str) -> list[str]:
+    import re as _re
+    return [w for w in _re.findall(r"[a-z']{4,}", str(text or "").lower()) if w not in _PASSION_STOP]
+
+
+def _named_in(what: str, text: str) -> bool:
+    """Whether a text names the passion: EVERY word of it appears there, by a shared stem of 5
+    letters ("gardening" in "grow vegetables in the garden") — one shared word is not enough
+    ("chess with the children" is not named by "raise the children well"; Fable #6)."""
+    have = _words(text)
+    want = _words(what)
+
+    def stem(a: str, b: str) -> bool:      # the first 5 letters, or all of a 4-letter word
+        n = min(5, len(a), len(b))
+        return a[:n] == b[:n]
+    return bool(want) and all(any(stem(w, h) for h in have) for w in want)
+
+
+def _passion_basis(what: str, source: str, basis: str) -> tuple[str, list[str], str]:
+    """(source as it may be stored, linked goal ids, a note) — a STATED passion must stand on the
+    user's own word: said in this turn ("chat"), or written in their mission or a goal. Anything
+    that cannot show it is kept as inferred, and the note says so."""
+    goals: list[str] = []
+    b = str(basis or "chat").strip()
+    if b.lower() == "mission":
+        try:
+            text = (persona_config_dir() / "mission.md").read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        if source == "stated" and not _named_in(what, text):
+            return "inferred", goals, " (kept as inferred: the mission does not name it)"
+        return source, goals, ""
+    if b.lower() != "chat":
+        try:
+            from tools.obligations import _goal_index
+            g = _goal_index().get(b)
+        except Exception:  # noqa: BLE001
+            g = None
+        if g is None:
+            return "inferred" if source == "stated" else source, goals, \
+                f" (no goal {b!r} on file — kept as inferred)" if source == "stated" else ""
+        text = f"{g.get('title') or ''} {g.get('shareable_what') or ''}"
+        # The tie is the goal's own words, whatever the source (Fable #6: re-recording a stated
+        # passion against any goal id must not tie it to that goal's tasks).
+        if not _named_in(what, text):
+            return ("inferred" if source == "stated" else source), goals, \
+                f" (not tied: goal {b} does not name it" + \
+                (", kept as inferred)" if source == "stated" else ")")
+        return source, [b], ""
+    if source == "stated":
+        try:
+            from tools.turn_context import current as _turn
+            turn = _turn()
+        except Exception:  # noqa: BLE001
+            turn = None
+        # Fail-closed (Fable #6): the user's word needs a user turn, so no turn bound — a
+        # worker, a scheduled run — is no word of theirs.
+        if turn is None or not turn.get("user_turn"):
+            return "inferred", goals, " (kept as inferred: nothing from the user this turn)"
+    return source, goals, ""
+
+
+def _write_passion(data: dict, text: str, source: str, basis: str) -> str:
+    from datetime import date as _date
+    src = str(source or "inferred").strip().lower()
+    if src not in ("stated", "inferred"):
+        return "Error: `source` for a passion is stated or inferred."
+    src, goals, note = _passion_basis(text, src, basis)
+    rows = [r for r in (data.get(_PASSIONS) or []) if isinstance(r, dict) and r.get("what")]
+    key = text.strip().lower()
+    row = next((r for r in rows if str(r["what"]).strip().lower() == key), None)
+    if row is None:
+        row = {"what": text.strip()[:60], "source": src, "since": _date.today().isoformat(),
+               "basis": str(basis or "chat").strip()[:40]}
+        rows.append(row)
+    elif src == "stated" and row.get("source") != "stated":
+        # An inference never replaces the user's own word; their word upgrades an inference.
+        row.update(source="stated", basis=str(basis or "chat").strip()[:40])
+    elif src == "inferred" and goals and row.get("source") == "stated":
+        goals = []          # an inference never ties a stated passion to a new goal
+    if goals:
+        row["goals"] = sorted(set(row.get("goals") or []) | set(goals))
+    data[_PASSIONS] = rows
+    _save(data)
+    return f"Profile updated: passion '{row['what']}' ({row['source']}){note}"
+
+
+def stated_passions() -> list[dict]:
+    """The passions the user stated — the only ones that lift a grade (§ 4.8)."""
+    try:
+        rows = _load().get(_PASSIONS) or []
+    except Exception:  # noqa: BLE001
+        return []
+    return [r for r in rows if isinstance(r, dict) and r.get("source") == "stated" and r.get("what")]
+
+
+def write_profile(field: str, value: str, confirm_token: str = "", source: str = "",
+                  basis: str = "") -> str | dict:
     """
     Record one stable biographical fact about the user.
 
@@ -263,6 +370,9 @@ def write_profile(field: str, value: str, confirm_token: str = "") -> str | dict
             )
 
     data = _load()
+
+    if key == _PASSIONS:
+        return _write_passion(data, text, source, basis)
 
     # Contact fields (email, phone, address) are the highest-consequence entries in this
     # store — a wrong one misdirects real communication, and they're exactly what voice
@@ -352,6 +462,9 @@ def read_profile(field: str = "") -> str:
         elif k == "other" and isinstance(v, list):
             for i, item in enumerate(v, 1):
                 flat[f"other_{i}"] = str(item)
+        elif k == _PASSIONS and isinstance(v, list):
+            flat[k] = ", ".join(f"{r.get('what')} ({r.get('source')})" for r in v
+                                if isinstance(r, dict) and r.get("what"))
         elif k == "ambient":
             continue
         elif v not in (None, "", [], {}):
@@ -390,7 +503,9 @@ WRITE_PROFILE_SCHEMA = {
         "you respond in. They do not have to match. "
         "This tool is for facts about the user themselves — a note that someone else's contact "
         "record was corrected (e.g. 'Contact name updated from Ada to Ida') is refused; that "
-        "correction belongs in write_contact instead."
+        "correction belongs in write_contact instead. "
+        "'passions' records one thing the user lives for (a hobby, a craft, a cause) per call, "
+        "with `source` and `basis`; it is added to the list."
     ),
     "input_schema": {
         "type": "object",
@@ -406,6 +521,21 @@ WRITE_PROFILE_SCHEMA = {
                     "The value to store, exactly as the user gave it. For 'other', "
                     "a single short sentence stating one stable fact; it is appended "
                     "to the existing list rather than replacing it."
+                ),
+            },
+            "source": {
+                "type": "string", "enum": ["stated", "inferred"],
+                "description": (
+                    "passions only: stated — the user said they love it, or it is in their "
+                    "mission or a goal (name which in `basis`); inferred — your reading, which "
+                    "is only a reason to ask them. Default inferred."
+                ),
+            },
+            "basis": {
+                "type": "string",
+                "description": (
+                    "passions only: where it comes from — \"chat\" (their words this turn), "
+                    "\"mission\", or the id of the goal that names it."
                 ),
             },
             "confirm_token": {

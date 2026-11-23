@@ -272,6 +272,13 @@ def load_profile(persona: str | None = None) -> str:
         if item:
             lines.append(str(item))
 
+    # Passions (ranking § 4.8): stated ones as facts; an inferred one only as a reason to ask.
+    pas = [p for p in (profile.get("passions") or []) if isinstance(p, dict) and p.get("what")]
+    if pas:
+        lines.append("Passions: " + ", ".join(
+            str(p["what"]) if p.get("source") == "stated"
+            else f"{p['what']} (inferred — ask before treating it as one)" for p in pas))
+
     if not lines:
         return manifest
 
@@ -1507,6 +1514,11 @@ def register_tools() -> tuple[list[dict], dict]:
         PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
     )
     from tools.day_plan import request_replan, REQUEST_REPLAN_SCHEMA, answer_event, ANSWER_EVENT_SCHEMA
+    # Ranking Part B phase 2 (ranking_values_plan § 10 R5): the user's answer to a protected-time
+    # question. Granted to the synthesizer in both routing files.
+    from tools.day_plan import answer_ask, ANSWER_ASK_SCHEMA
+    # Ranking Part B phase 2 (§ 10 R7): one public fact before asking, through the code guard.
+    from tools.lookup_guard import lookup_public_fact, LOOKUP_PUBLIC_FACT_SCHEMA
     # The whole day on request (archive/plans/synth_now_next_plan_2026-10-30.md § 3.3).
     from tools.day_plan import read_day_plan, READ_DAY_PLAN_SCHEMA
     # The project planner (goal–task network plan § 10 R8): plan_project only queues; read_plan is
@@ -1578,6 +1590,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
         SET_DAY_SHAPE_SCHEMA, REQUEST_REPLAN_SCHEMA, ANSWER_EVENT_SCHEMA, READ_DAY_PLAN_SCHEMA,
+        ANSWER_ASK_SCHEMA, LOOKUP_PUBLIC_FACT_SCHEMA,
         PLAN_PROJECT_SCHEMA, READ_PLAN_SCHEMA,
         PAUSE_INTERVIEW_SCHEMA, FINISH_INTERVIEW_SCHEMA,
         PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
@@ -1682,6 +1695,8 @@ def register_tools() -> tuple[list[dict], dict]:
         "finish_interview": finish_interview,
         "request_replan": request_replan,
         "answer_event": answer_event,
+        "answer_ask": answer_ask,
+        "lookup_public_fact": lookup_public_fact,
         "read_day_plan": read_day_plan,
         "plan_project": plan_project,
         "read_plan": read_plan,

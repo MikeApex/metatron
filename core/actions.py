@@ -75,6 +75,9 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     "open_task", "update_task",
     # The day planner (2026-10-24): the user's stated day shape, and a request to rework today.
     "set_day_shape", "request_replan", "answer_event",
+    # Ranking Part B phase 2 (2026-11-23): the user's yes/no/another day to a protected-time
+    # question — it lets a task into their time, or defers it.
+    "answer_ask",
     # Routine pause (2026-10-26): what runs in the user's check-ins changes until resumed.
     "pause_routine", "resume_routine",
     # The in-app interview (2026-10-27): pausing or finishing it changes where her next
@@ -155,6 +158,9 @@ READ_TOOLS: frozenset[str] = frozenset({
     "get_regional_transit_info", "find_places",
     "list_schedules", "list_tasks",
     "fetch_url", "read_email",
+    # lookup_public_fact (2026-11-23, ranking Part B phase 2) asks the Research Agent one public
+    # fact through the code guard; it changes nothing but its own daily count.
+    "lookup_public_fact",
     # fetch_rendered is fetch_url with a headless browser for JS-heavy pages — it reads
     # the outside world and changes nothing. Added 2026-08-18 alongside the two above.
     "fetch_rendered",

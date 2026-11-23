@@ -6,6 +6,15 @@ regret of delay, side by side (archive/plans/ranking_values_plan_2026-11-23.md �
     .venv/bin/python scripts/ranking_report.py --compare --persona mike
     .venv/bin/python scripts/ranking_report.py --compare --persona mike --day 2026-11-25
     .venv/bin/python scripts/ranking_report.py --compare --persona mike --live
+    .venv/bin/python scripts/ranking_report.py --protected --persona mike [--day …]
+    .venv/bin/python scripts/ranking_report.py --behind --persona mike [--day …]
+
+Phase 2 (plan § 11b): `--protected` lists each task placed in protected time that day and what
+`protected_v2` would have done — asked (its cost of delay beat the intrusion cost) or kept it out —
+with the window's class, k and both costs; once the flag acts, the questions actually put and
+their decisions. `--behind` prints what `behind_v2` read at the first build after waking: behind
+or not and why, the quick wins and the hard task it would have led with, and the raises it would
+have made beside Part A's slipped-task asks. Both read `trace` in ranking_state.json (14 days).
 
 By default it reads the first build of the day at or after waking, which every day plan build
 keeps (data/personas/{p}/day_plan/ranking_state.json, 14 days). `--live` computes both orders now,
@@ -95,21 +104,77 @@ def compare(persona: str, day: date | None = None, live: bool = False) -> str:
         return "\n".join(out)
 
 
+def trace(persona: str, day: date | None, what: str) -> str:
+    """Phase 2's kept shadow for one day: `protected` or `behind`, as text."""
+    import tools.obligations as O
+    from tools import ranking as RK
+    with persona_scope(persona):
+        day = day or O._today()
+        tr = ((RK.load_state(persona).get("trace") or {}).get(day.isoformat())) or {}
+        titles = {t["id"]: str(t.get("what") or "?") for t in (O._norm(x) for x in O._load(persona))}
+
+        def title(tid) -> str:
+            return titles.get(str(tid or "").split("@")[0], str(tid))[:44]
+
+        out = [f"Ranking phase 2 — {what} — {persona}, {day.isoformat()}", ""]
+        if what == "protected":
+            rows = list((tr.get("protected") or {}).values())
+            out.append("SHADOW — placed in protected time by today's rule; protected_v2 would have:")
+            for r in rows:
+                w = r.get("windows") or [{}]
+                out.append(f"  {title(r.get('task_id')):<46} {str(w[0].get('class')):<9} "
+                           f"k {_num(w[0].get('k'), '{:.2f}')}  intrusion {_num(r.get('cost'))}  "
+                           f"delay {_num(r.get('cod'))}  → {r.get('would')}"
+                           + (f" (suggest {r['recommend']})" if r.get("recommend") else ""))
+            if not rows:
+                out.append("  (nothing took protected time)")
+            acted = list((tr.get("intrusions") or {}).values())
+            if acted:
+                out += ["", "ACTING — questions and decisions:"]
+                for x in acted:
+                    out.append(f"  {title(x.get('task_id')):<46} {str(x.get('class')):<9} "
+                               f"intrusion {_num(x.get('cost'))}  delay {_num(x.get('cod'))}  "
+                               f"→ {x.get('decision')}")
+        else:
+            b = tr.get("behind")
+            if not b:
+                return "\n".join(out + ["  (no behind reading kept for this day)"])
+            out.append(f"behind: {'YES — ' + b.get('why', '') if b.get('behind') else 'no'} "
+                       f"(overdue {b.get('overdue')}, top task skipped {b.get('top_skipped')})")
+            if b.get("behind"):
+                out.append(f"hard task: {title(b.get('hard')) if b.get('hard') else '—'}")
+                out.append("quick wins first: " + (", ".join(title(t) for t in b.get("quick_wins") or [])
+                                                   or "none fit")
+                           + (" (the first is a step of the hard task)" if b.get("first_step") else ""))
+            out.append("would raise: " + (", ".join(title(t) for t in b.get("raises") or []) or "nothing"))
+            out.append("to the weekly list: " + (", ".join(title(t) for t in b.get("weekly") or []) or "nothing"))
+            out.append("Part A asks instead: " + (", ".join(title(t) for t in b.get("part_a_slips") or [])
+                                                  or "nothing"))
+        return "\n".join(out)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--compare", action="store_true", help="print both top tens side by side")
+    ap.add_argument("--protected", action="store_true", help="phase 2: protected time, shadow")
+    ap.add_argument("--behind", action="store_true", help="phase 2: behind and raises, shadow")
     ap.add_argument("--persona", required=True)
     ap.add_argument("--day", help="YYYY-MM-DD (default: today)")
     ap.add_argument("--live", action="store_true", help="compute now instead of the kept build")
     a = ap.parse_args()
-    if not a.compare:
-        ap.error("only --compare exists in phase 1")
+    if not (a.compare or a.protected or a.behind):
+        ap.error("one of --compare, --protected, --behind")
     from core import consent
     with persona_scope(a.persona):
         if not consent.is_granted("base_configuration", a.persona):
             print(f"{a.persona}: excluded — no base_configuration consent on file. Nothing read.")
             return 1
-    print(compare(a.persona, date.fromisoformat(a.day) if a.day else None, live=a.live))
+    day = date.fromisoformat(a.day) if a.day else None
+    if a.compare:
+        print(compare(a.persona, day, live=a.live))
+    for what in ("protected", "behind"):
+        if getattr(a, what):
+            print(trace(a.persona, day, what))
     return 0
 
 

@@ -58,16 +58,25 @@ _DEFAULTS: dict = {
                          {"under_minutes": 240, "buffer": 0.35},
                          {"under_minutes": None, "buffer": 0.65}],
                "fallback": 0.40, "aversive": 1.0,
-               "learn": {"enabled": False, "sigma": 0.5, "tau": 0.25, "keep": 50}},
+               "learn": {"enabled": True, "sigma": 0.5, "tau": 0.25, "keep": 50}},
     "free_minutes_per_day": 120,
     "climb_max_days": 14,
     "attention_block": {"between": 5, "focus": 15, "batch_max_minutes": 15},
     "advance_floor": 10,
+    "undated_step_factor": 0.5,
     "medication_lift": 90,
     "score_scale": 1.0,
     "reshuffle_delta": 15,
     "implied_promise_days": {"quick": 3, "effortful": 7, "quick_max_minutes": 15},
     "cadence_defaults": {"intimate": 7, "close_friend": 30, "wider": 120, "network": 365},
+    # Phase 2.
+    "protected": {"bases": {"family": 30, "rest": 18, "own": 18, "exercise": 12},
+                  "default_base": 18, "exponent": 1.5, "half_life_days": 3.5, "keep_days": 21},
+    "behind": {"overdue_min": 3, "top_skipped_min": 2, "skip_window": 3, "quick_wins_max": 2,
+               "quick_wins_minutes": 20, "first_step_minutes": 10},
+    "raise": {"skipped_days": 2, "max_without_news": 2, "prompts_per_day": 3},
+    "enjoyed_gap_minutes": 15,
+    "lookups": {"enabled": False, "per_day": 5, "refuse_figures": True},
 }
 
 GRADES = ("minor", "major", "severe")
@@ -173,7 +182,41 @@ def inherit(t: dict, by_id: dict[str, dict]) -> dict:
     if not end or not has_record(end):
         return t
     return {**t, "costs": end.get("costs") or {}, "bears": end.get("bears") or "self",
-            "shape": "step", "costs_source": "inherited"}
+            "shape": "step", "costs_source": "inherited",
+            **({"passion": end["passion"]} if end.get("passion") else {})}
+
+
+# --- passions (§ 4.8, B15–B17; § 6 test 11) ------------------------------------------------------
+
+_LIFTED = ("psychological", "social")
+
+
+def passion_served(t: dict, passions: list[dict] | None) -> str | None:
+    """The STATED passion a task serves, or None: the one its cost record names (`passion`), or
+    one tied to the goal it serves (Mike, 2026-11-23: passions tie into goals and mission). An
+    inferred passion is never in `passions` — it never lifts (B16)."""
+    if not passions:
+        return None
+    named = str(t.get("passion") or "").strip().lower()
+    gids = {str(t.get("goal_id") or ""), str(t.get("part_of") or "")} - {""}
+    for p in passions:
+        what = str(p.get("what") or "").strip()
+        if named and what.lower() == named:
+            return what
+        if gids & set(p.get("goals") or []):
+            return what
+    return None
+
+
+def lift(costs: dict) -> dict:
+    """One grade up for the psychological and social costs a task already has (§ 4.2: "raises
+    the grade … by one step"); severe stays severe, and no cost is added that was not there."""
+    out = dict(costs or {})
+    for dim in _LIFTED:
+        g = out.get(dim)
+        if g in GRADES:
+            out[dim] = GRADES[min(len(GRADES) - 1, GRADES.index(g) + 1)]
+    return out
 
 
 def floor_grade(costs: dict) -> str | None:
@@ -268,7 +311,7 @@ def shrink_weight(n: int, c: dict) -> float:
 def person_bias(observations: list[float], c: dict) -> float:
     """The user's own log bias against the tier defaults, pooled across task classes and shrunk
     toward zero (no bias) by how much evidence there is. Each observation is
-    log(actual ÷ predicted) − log(1 + the tier's buffer)."""
+    log(actual whole days ÷ whole days the tier allots) — `observe`."""
     obs = [float(x) for x in observations or [] if isinstance(x, (int, float))]
     if not obs:
         return 0.0
@@ -300,19 +343,26 @@ def needed_days(t: dict, c: dict, bias: float = 0.0) -> tuple[float, float]:
 # --- the cost of delay (§ 4.3 as amended by R4 and § 11) -------------------------------------
 
 def assess(t: dict, v: dict, today: date, c: dict, bias: float = 0.0,
-           now: datetime | None = None, on_list: bool = False) -> dict:
+           now: datetime | None = None, on_list: bool = False,
+           passions: list[dict] | None = None) -> dict:
     """Everything the rank reads, kept apart so the shadow can say which term moved a task (R4):
     {G, bearer, shape, factor, cod, slack, needed, buffer, S, due, must, recorded}.
-    `on_list` — the task is on today's list (Part A's `_on_todays_list`), a must by R3 (a)."""
+    `on_list` — the task is on today's list (Part A's `_on_todays_list`), a must by R3 (a).
+    `passions` — the user's STATED passions: one the task serves lifts its psychological and
+    social costs a grade (§ 4.8). Importance only — whether it is vital stays the record's (R1)."""
     O = _O()
     rec = record_of(t, c, now)
-    G = importance(rec["costs"], c)
+    # The user's own grading already weighs what they love (Fable #12): a stated record is
+    # never lifted; an inferred or inherited one is.
+    served = passion_served(t, passions) if (rec["recorded"]
+                                             and t.get("costs_source") != "stated") else None
+    G = importance(lift(rec["costs"]) if served else rec["costs"], c)
     bearer = float((c.get("bearer_weight") or {}).get(rec["bears"], 1.0))
     sh = c.get("shapes") or {}
     kind = t.get("kind") or "deadline"
     out = {"G": G, "bearer": bearer, "shape": rec["shape"], "factor": 0.0, "slack": None,
            "needed": None, "buffer": None, "S": None, "due": None, "must": bool(on_list),
-           "recorded": rec["recorded"]}
+           "recorded": rec["recorded"], **({"passion": served} if served else {})}
     if kind == "interval":
         due = O._interval_due(t, today)
         out["due"] = due.isoformat()
@@ -429,27 +479,50 @@ def bias_of(st: dict, c: dict) -> float:
     return person_bias((st.get("buffer") or {}).get("obs") or [], c)
 
 
-def observe(st: dict, tasks: list[dict], today: date, c: dict, assessed: dict[str, dict]) -> bool:
-    """Feed the buffer learner (§ 11 row 5). A deadline that needs a day or more is tracked from
-    the day it first must start; when it closes done, log(actual days ÷ predicted days) less the
-    tier's own log(1 + buffer) is one observation. Short tasks never qualify — their length in
-    days is noise — so for most users the tier defaults govern for a long while. Returns whether
-    anything changed."""
+def allotted_days(raw: float, tier: float) -> int:
+    """The whole days the tier allots a task of `raw` days: max(1, ⌈raw × (1 + tier)⌉)."""
+    return max(1, math.ceil(round(float(raw) * (1.0 + float(tier)), 6)))
+
+
+def observe(st: dict, tasks: list[dict], today: date, c: dict, assessed: dict[str, dict],
+            placed: set[str] | None = None, live: bool = False) -> bool:
+    """Feed the buffer learner (§ 11 row 5), with the observation phase 2 designed (plan § 11b).
+
+    Phase 1's measure — calendar days from the day a task first must start, against fractional
+    predicted days — failed twice over (Fable diff review #7): in shadow the user is never SHOWN
+    that start, so every long task trained "starts late"; and whole days against fractions read
+    +0.2–0.4 even for a task done on its date. Now:
+      - learning only when `live` — `ranking_v2` on, so the start is one the user was shown;
+      - tracked from the day the task was PLACED in a live plan ON its computed must-start day
+        (−1 < slack ≤ 0) and only if it existed before that day — the day the user was told it
+        had to start. A task placed later than that (opened late, due today, already past its
+        start on flip day) would read "finishes early" whatever the user did (Fable diff review
+        #7), so it is never tracked;
+      - one observation on closing done: log(actual whole days ÷ whole days allotted), allotted =
+        max(1, ⌈raw × (1 + tier)⌉). Done on its last allotted day reads 0, exactly.
+    Short tasks never qualify (raw < one day) — their length in days is noise — so for most users
+    the tier defaults govern for a long while. Returns whether anything changed."""
     O = _O()
-    if not (((c.get("buffer") or {}).get("learn") or {}).get("enabled")):
+    if not live or not (((c.get("buffer") or {}).get("learn") or {}).get("enabled")):
         return False
+    placed = placed or set()
     buf = st.setdefault("buffer", {})
     track = buf.setdefault("tracking", {})
     obs = buf.setdefault("obs", [])
     by_id = {t["id"]: t for t in tasks}
     changed = False
     free = max(1.0, float(c.get("free_minutes_per_day", 120)))
-    for tid, a in assessed.items():
-        t = by_id.get(tid)
-        if not t or tid in track or not a.get("must") or a.get("slack") is None:
+    for tid in sorted(placed):
+        t, a = by_id.get(tid), assessed.get(tid) or {}
+        if not t or tid in track or t.get("kind") != "deadline" or not a.get("must"):
             continue
         raw = _minutes(t) / free
-        if raw < 1.0 or (a.get("due") and O._d(a["due"]) and O._d(a["due"]) < today):
+        due = O._d(a.get("due")) if a.get("due") else None
+        if raw < 1.0 or due is None or due < today:
+            continue
+        slack = a.get("slack")
+        opened = O._d(str(t.get("created_at") or "")[:10])
+        if slack is None or not (-1.0 < float(slack) <= 0.0) or opened is None or opened >= today:
             continue
         track[tid] = {"since": today.isoformat(), "raw": round(raw, 3),
                       "tier": tier_buffer(t.get("minutes"), c)}
@@ -464,9 +537,9 @@ def observe(st: dict, tasks: list[dict], today: date, c: dict, assessed: dict[st
             continue
         closed = O._stamp_day(t.get("closed_at")) or today
         since = O._d(e.get("since")) or today
-        actual = (closed - since).days + 1
+        actual = max(1, (closed - since).days + 1)
         try:
-            obs.append(round(math.log(actual / float(e["raw"])) - math.log(1 + float(e["tier"])), 4))
+            obs.append(round(math.log(actual / allotted_days(e["raw"], e["tier"])), 4))
         except (ValueError, ZeroDivisionError, KeyError, TypeError):
             continue
     keep = int(((c.get("buffer") or {}).get("learn") or {}).get("keep", 50))
@@ -481,6 +554,290 @@ def keep_shadow(st: dict, day: date, shadow: dict) -> None:
     days.setdefault(day.isoformat(), shadow)
     cut = (day - timedelta(days=_SHADOW_DAYS)).isoformat()
     st["shadow"] = {k: v for k, v in days.items() if k > cut}
+
+
+def keep_trace(st: dict, day: date, key: str, value, first: bool = False) -> None:
+    """Phase 2's shadow, per day, kept 14 days beside phase 1's (what the `protected_v2` and
+    `behind_v2` walkthroughs read): `first` keeps the day's first value; otherwise entries merge
+    by key — a would-be ask seen at 07:00 and again at 15:00 is one entry, its latest reading."""
+    days = st.setdefault("trace", {})
+    today = days.setdefault(day.isoformat(), {})
+    if first:
+        today.setdefault(key, value)
+    elif isinstance(value, dict):
+        today.setdefault(key, {}).update(value)
+    else:
+        today[key] = value
+    cut = (day - timedelta(days=_SHADOW_DAYS)).isoformat()
+    st["trace"] = {k: v for k, v in days.items() if k > cut}
+
+
+# --- protected time (§ 4.5 as amended by R6; § 11 rows 10–11) ---------------------------------
+
+def window_class(b: dict) -> str | None:
+    """The class an intrusion is priced by: a protected window's first activity (R6); time held
+    for an unanswered family event, and a duty that is family time (childcare), are family."""
+    kind = b.get("kind")
+    if kind == "hold" or (kind == "duty" and b.get("activities")):
+        return "family"
+    if kind == "protected":
+        acts = b.get("activities") or []
+        return str(acts[0]) if acts else None
+    return None
+
+
+def intrusion_base(cls: str | None, c: dict) -> float:
+    p = c.get("protected") or {}
+    return float((p.get("bases") or {}).get(cls or "", p.get("default_base", 18)))
+
+
+def intrusion_k(st: dict, cls: str | None, now: datetime, c: dict,
+                skip: tuple[str, str] | None = None) -> float:
+    """k for the next intrusion into `cls`: 1 + the recent intrusions into it, each fading on the
+    half-life (§ 11 row 11). `skip` — (task id, day) — leaves out the one being decided, so a
+    rebuild does not count a task against its own place."""
+    p = c.get("protected") or {}
+    half = max(0.1, float(p.get("half_life_days", 3.5)))
+    k = 1.0
+    for e in st.get("intrusions") or []:
+        if not isinstance(e, dict) or e.get("class") != cls:
+            continue
+        if skip and (e.get("task_id"), e.get("day")) == skip:
+            continue
+        try:
+            at = datetime.fromisoformat(str(e["at"]))
+        except (KeyError, ValueError):
+            continue
+        age = max(0.0, (now - at).total_seconds() / 86400.0)
+        k += 0.5 ** (age / half)
+    return k
+
+
+def intrusion_cost(cls: str | None, st: dict, now: datetime, c: dict,
+                   skip: tuple[str, str] | None = None) -> tuple[float, float]:
+    """(I, k): the k-th intrusion into `cls` costs base × k^exponent (§ 11 row 11)."""
+    k = intrusion_k(st, cls, now, c, skip)
+    exp = float((c.get("protected") or {}).get("exponent", 1.5))
+    return round(intrusion_base(cls, c) * k ** exp, 3), round(k, 3)
+
+
+def note_intrusion(st: dict, cls: str | None, task_id: str, window: str, day: date,
+                   now: datetime, c: dict) -> bool:
+    """Record that a task took protected time (once per task a day, however often the day is
+    rebuilt); forget what is past `keep_days`. Returns whether anything was added."""
+    keep = int((c.get("protected") or {}).get("keep_days", 21))
+    cut = (now - timedelta(days=keep)).isoformat(timespec="seconds")
+    rows = [e for e in st.get("intrusions") or [] if isinstance(e, dict)
+            and str(e.get("at") or "") > cut]
+    st["intrusions"] = rows
+    if any((e.get("task_id"), e.get("day")) == (task_id, day.isoformat()) for e in rows):
+        return False
+    rows.append({"class": cls, "task_id": task_id, "window": window, "day": day.isoformat(),
+                 "at": now.isoformat(timespec="seconds")})
+    return True
+
+
+def ask_id(task_id: str, window: str, day: date) -> str:
+    """A protected-time question's id: short, stable for the task, window and day, no words."""
+    import hashlib
+    return "in-" + hashlib.sha256(f"{task_id}|{window}|{day.isoformat()}".encode()).hexdigest()[:8]
+
+
+def intrusion_advice(a: dict, today: date) -> tuple[str, str | None]:
+    """The recommendation an intrusion question carries (B12): yes when no later day keeps the
+    task on time — due today or before, or no slack left — else another day, the latest that
+    still does."""
+    due = _O()._d(a.get("due")) if a.get("due") else None
+    slack = a.get("slack")
+    if due is None or due <= today or slack is None or float(slack) < 1.0:
+        return "yes", None
+    later = min(due, today + timedelta(days=int(math.floor(float(slack)))))
+    return "other_time", later.isoformat()
+
+
+# --- behind, and raising what slips (§ 4.10; § 11 rows 12–13) ----------------------------------
+
+def note_top(st: dict, day: date, task_id: str | None) -> None:
+    """The day's top-ranked must, as the first build at or after waking saw it — what "the top
+    task skipped on 2 of the last 3 days" reads. Kept 14 days."""
+    if not task_id:
+        return
+    tops = st.setdefault("top", {})
+    tops.setdefault(day.isoformat(), task_id)
+    cut = (day - timedelta(days=_SHADOW_DAYS)).isoformat()
+    st["top"] = {k: v for k, v in tops.items() if k > cut}
+
+
+def _skipped_on(t: dict | None, day: date) -> bool:
+    """A day's top task was skipped that day unless it was closed done by the end of it. A task
+    since deleted, dismissed or moot on or before the day was not skipped — it left."""
+    if t is None:
+        return False
+    O = _O()
+    closed = O._stamp_day(t.get("closed_at"))
+    if t.get("status") == "done":
+        return closed is None or closed > day
+    if t.get("status") in O._TERMINAL:
+        return bool(closed and closed > day)
+    return True
+
+
+def behind_state(tasks: list[dict], today: date, st: dict, c: dict) -> dict:
+    """{behind, overdue, top_skipped, why} (§ 11 row 12): behind when ≥ `overdue_min` items are
+    overdue, or the day's top-ranked task was skipped on ≥ `top_skipped_min` of the last
+    `skip_window` days."""
+    O = _O()
+    b = c.get("behind") or {}
+    by_id = {t["id"]: t for t in tasks}
+    overdue = sorted(t["id"] for t in tasks if t.get("status") == "open"
+                     and O._view(t, today).get("state") == "overdue")
+    tops = st.get("top") or {}
+    skipped = []
+    for n in range(1, int(b.get("skip_window", 3)) + 1):
+        d = today - timedelta(days=n)
+        tid = tops.get(d.isoformat())
+        if tid and _skipped_on(by_id.get(tid), d):
+            skipped.append(d.isoformat())
+    over = len(overdue) >= int(b.get("overdue_min", 3))
+    top = len(skipped) >= int(b.get("top_skipped_min", 2))
+    why = ([f"{len(overdue)} overdue"] if over else []) + \
+        ([f"top task skipped {len(skipped)} of the last {b.get('skip_window', 3)} days"] if top else [])
+    return {"behind": over or top, "overdue": len(overdue), "overdue_ids": overdue,
+            "top_skipped": len(skipped), "why": "; ".join(why)}
+
+
+def quick_wins(selected: list[dict], hard: dict | None, c: dict, steps: list[dict]) -> list[dict]:
+    """While behind, what the day leads with (§ 11 row 12): at most `quick_wins_max`, at most
+    `quick_wins_minutes` in all — the first, where one exists, a step of the hard task no longer
+    than `first_step_minutes` (`steps`: candidates whose `part_of` is the hard task), then the
+    smallest of what selection already chose. The hard task itself is never a quick win."""
+    b = c.get("behind") or {}
+    cap_n, cap_m = int(b.get("quick_wins_max", 2)), int(b.get("quick_wins_minutes", 20))
+    first_max = int(b.get("first_step_minutes", 10))
+    hard_ref = (hard or {}).get("ref")
+    out: list[dict] = []
+    total = 0
+    first = min((s for s in steps if int(s.get("minutes") or 30) <= first_max
+                 and s.get("ref") != hard_ref), key=lambda s: int(s.get("minutes") or 30),
+                default=None)
+    if first is not None:
+        out.append(first)
+        total += int(first.get("minutes") or 30)
+    for x in sorted(selected, key=lambda s: int(s.get("minutes") or 30)):
+        if len(out) >= cap_n:
+            break
+        m = int(x.get("minutes") or 30)
+        if x.get("ref") in (hard_ref, *(o.get("ref") for o in out)) or total + m > cap_m:
+            continue
+        out.append(x)
+        total += m
+    return out
+
+
+_NEWS_FIELDS = ("what", "due", "minutes", "costs", "bears", "shape", "real_due", "stakes",
+                "priority", "note", "eligible_from", "after", "before")
+
+
+def news_digest(t: dict) -> str:
+    """What counts as new information about a task (§ 11 row 13): anything the user or an agent
+    changed about what it is, when, how long or what it costs. Code's own bookkeeping is not."""
+    import hashlib
+    import json
+    return hashlib.sha256(json.dumps({k: t.get(k) for k in _NEWS_FIELDS}, sort_keys=True,
+                                     default=str).encode()).hexdigest()[:12]
+
+
+def raise_candidates(tasks: list[dict], slips: dict, negative: dict[str, str | None], today: date,
+                     st: dict, c: dict, behind: bool) -> tuple[list[tuple[str, str]], list[str]]:
+    """([(task id, why)], [task ids to the weekly list]) — what to raise today (§ 11 row 13).
+
+    Raised when a placed task has been skipped `skipped_days` days, or its slack has gone below 0
+    (`negative`: {task id: worst grade}). While behind, only slack < 0 on a severe grade (§ 4.10:
+    "no new raises except …"). At most once a day; at most `max_without_news` times without new
+    information — after that the item waits for the weekly conversation (phase 3), and is not
+    raised again until something about it changes."""
+    r = c.get("raise") or {}
+    need = int(r.get("skipped_days", 2))
+    cap = int(r.get("max_without_news", 2))
+    raises = st.get("raises") or {}
+    weekly = st.get("weekly") or {}
+    by_id = {t["id"]: t for t in tasks}
+    out: list[tuple[str, str]] = []
+    to_weekly: list[str] = []
+    ids = sorted(set(slips) | set(negative),
+                 key=lambda i: (i not in negative, -int((slips.get(i) or {}).get("days") or 0)))
+    for tid in ids:
+        t = by_id.get(tid)
+        if not t or t.get("status") != "open":
+            continue
+        days = int((slips.get(tid) or {}).get("days") or 0)
+        late = tid in negative
+        if not (days >= need or late):
+            continue
+        if behind and not (late and negative.get(tid) == "severe"):
+            continue
+        rec = raises.get(tid) or {}
+        fresh = rec.get("news") != news_digest(t)
+        n = 0 if fresh else int(rec.get("n") or 0)
+        if tid in weekly and not fresh:
+            continue
+        if rec.get("last") == today.isoformat():
+            continue
+        if n >= cap:
+            to_weekly.append(tid)
+            continue
+        out.append((tid, "its slack has run out" if late else f"skipped {days} days"))
+    return out, to_weekly
+
+
+def note_raised(st: dict, tasks: list[dict], tids: list[str], today: date) -> None:
+    """A raise the reply actually said (`day_plan.note_said`): counted against its task, with the
+    task's information as it was — new information later starts the count again."""
+    by_id = {t["id"]: t for t in tasks}
+    raises = st.setdefault("raises", {})
+    for tid in tids:
+        t = by_id.get(tid)
+        if not t:
+            continue
+        rec = raises.get(tid) or {}
+        news = news_digest(t)
+        n = int(rec.get("n") or 0) if rec.get("news") == news else 0
+        if rec.get("last") == today.isoformat():
+            continue
+        raises[tid] = {"n": n + 1, "last": today.isoformat(), "news": news}
+    st["raises"] = {k: v for k, v in raises.items()
+                    if by_id.get(k) and by_id[k].get("status") == "open"}
+
+
+def to_weekly(st: dict, tids: list[str], today: date, why: str = "raised twice, no news") -> None:
+    wk = st.setdefault("weekly", {})
+    for tid in tids:
+        wk.setdefault(tid, {"since": today.isoformat(), "why": why})
+
+
+# --- the prompt cap (§ 11 row 13: at most 3 a day the system starts from these paths) -----------
+
+def prompt_room(st: dict, day: date, c: dict) -> tuple[set[str], int]:
+    """(ids already admitted today, how many more may be)."""
+    cap = int((c.get("raise") or {}).get("prompts_per_day", 3))
+    have = set((st.get("prompts") or {}).get(day.isoformat()) or [])
+    return have, max(0, cap - len(have))
+
+
+def admit_prompts(st: dict, day: date, ids: list[str], c: dict) -> list[str]:
+    """Admit what fits under today's cap, in order; returns what was admitted (already-admitted
+    ids always are). Kept for today only."""
+    have, room = prompt_room(st, day, c)
+    out = []
+    for i in ids:
+        if i in have:
+            out.append(i)
+        elif room > 0:
+            have.add(i)
+            out.append(i)
+            room -= 1
+    st["prompts"] = {day.isoformat(): sorted(have)}
+    return out
 
 
 # --- the people offer (§ 4.6, B9) --------------------------------------------------------------

@@ -663,6 +663,8 @@ def _entry(t: dict, v: dict, today: date, shape: dict, goals: dict, score: int,
         # own block, and `copies` is how many are still unrecorded (review S-2).
         "multi": t.get("kind") == "habit" and (t.get("every") or "day") == "day" and target > 1,
         "goal": {k: g.get(k) for k in ("title", "shareable_what") if g.get(k)},
+        # Something the user enjoys (ranking § 4.9): placed after effort under ranking_v2.
+        "enjoyed": bool(t.get("enjoyed")),
         "score": score,
         "digest": _digest(t.get("status"), v.get("state"), v.get("text"), t.get("due"),
                           t.get("minutes"), t.get("priority"), t.get("stakes"),
@@ -673,6 +675,32 @@ def _entry(t: dict, v: dict, today: date, shape: dict, goals: dict, score: int,
 # --- ranking Part B: the regret of delay (ranking_values_plan_2026-11-23 §§ 10–11) -------------
 
 _V2_SKIP = ("blocked", "dormant", "moot", "waiting", "waiting_due")
+_LIVE_GOAL = ("active", "not_started", "at_risk")
+
+
+def _undated_steps(tasks: list[dict], goals: dict, today: date) -> set[str]:
+    """The CURRENT undated step of each active goal (plan § 11a, owed 2): an open one-off with no
+    date, linked to a goal that is still live (by `goal_id`, or as a step `part_of` it) — the
+    earliest opened per goal, so a goal offers one next thing, not its whole list. Phase 1 never
+    offered these (Fable diff review #9: with no date there was nothing to climb toward)."""
+    O = _O()
+    first: dict[str, tuple[str, str]] = {}
+    for t in tasks:
+        if t.get("status") != "open" or t.get("kind", "deadline") != "deadline" or t.get("prep_for"):
+            continue
+        if str(t.get("due") or "").strip() or t.get("real_due"):
+            continue
+        gid = str(t.get("goal_id") or "") or (str(t.get("part_of") or "")
+                                              if str(t.get("part_of") or "") in goals else "")
+        g = goals.get(gid)
+        if not g or str(g.get("status") or "active") not in _LIVE_GOAL:
+            continue
+        if O._view(t, today).get("state") in _V2_SKIP:
+            continue
+        key = str(t.get("created_at") or "")
+        if gid not in first or key < first[gid][0]:
+            first[gid] = (key, t["id"])
+    return {tid for _, tid in first.values()}
 
 
 def _candidates_v2(today: date, persona: str | None, record: dict | None = None) -> list[dict]:
@@ -704,6 +732,13 @@ def _candidates_v2(today: date, persona: str | None, record: dict | None = None)
     floor = float(c.get("advance_floor", 10))
     tasks = [O._norm(raw) for raw in O._load(persona)]
     by_id = {t["id"]: t for t in tasks}
+    current_steps = _undated_steps(tasks, goals, today)
+    try:
+        from tools.profile import stated_passions
+        passions = stated_passions()
+    except Exception:  # noqa: BLE001 — no profile: nothing lifts
+        passions = []
+    step_factor = float(c.get("undated_step_factor", 0.5))
     out = []
     for t in tasks:
         if t.get("status") != "open" or t.get("kind") == "waiting":
@@ -713,12 +748,17 @@ def _candidates_v2(today: date, persona: str | None, record: dict | None = None)
         if state in _V2_SKIP:
             continue
         on_list = bool(v.get("actionable") and O._on_todays_list(t, v))
-        a = RK.assess(RK.inherit(t, by_id), v, today, c, bias, on_list=on_list)
+        a = RK.assess(RK.inherit(t, by_id), v, today, c, bias, on_list=on_list, passions=passions)
+        if not a["must"] and a.get("due") is None and t["id"] in current_steps:
+            # The current undated step of an active goal (plan § 11a, owed 2): no date to climb
+            # toward, so a fixed share of its weight — advance work, under the same floor.
+            a = {**a, "factor": step_factor, "undated_step": True,
+                 "cod": round(a["G"] * a["bearer"] * step_factor, 3)}
         if record is not None:
             record[t["id"]] = a
         advance = False
         if not a["must"]:
-            if t.get("kind") != "deadline" or a.get("due") is None:
+            if t.get("kind") != "deadline" or (a.get("due") is None and not a.get("undated_step")):
                 continue
             if not (state == "in_window" or a["cod"] >= floor):
                 continue
@@ -739,19 +779,26 @@ def _candidates_v2(today: date, persona: str | None, record: dict | None = None)
     return RK.order(out)
 
 
-def _hard_first(cands: list[dict], placed: list[dict], unplaced: list[dict], args: tuple
-                ) -> tuple[list[dict], list[dict]]:
-    """Sequence (B7, § 10 R2 — hard-first only in phase 1): selection decided WHAT fits; among
-    what fits, the harder thing goes first — heavy concentration, then the longer task. Filled
-    again in that order; kept only if it places at least as much and leaves no further essential
-    unplaced (a reordering may fragment the day — then selection's own placement stands)."""
+def _hard_first(cands: list[dict], placed: list[dict], unplaced: list[dict], args: tuple,
+                lead: list[str] | None = None, guard: dict | None = None,
+                quick: list[str] | None = None) -> tuple[list[dict], list[dict]]:
+    """Sequence (B7, § 10 R2): selection decided WHAT fits; among what fits, the harder thing goes
+    first — heavy concentration, then the longer task. Filled again in that order; kept only if
+    it places exactly what selection placed (a reordering may fragment the day — then
+    selection's own placement stands). `lead` (phase 2, behind): refs that go before everything
+    — the quick wins, then the hard task (§ 11 row 12)."""
     fit = {b.get("ref") for b in placed if b["kind"] == "task"}
+    lead = [r for r in (lead or []) if r in fit]
     # The musts keep their place ahead of advance work (Fable diff review #5): hardness orders
     # within a tier, never across one.
     first = sorted((c for c in cands if c["ref"] in fit),
-                   key=lambda c: (bool(c.get("advance")), not c.get("heavy"), -int(c["minutes"])))
+                   key=lambda c: (c["ref"] not in lead,
+                                  lead.index(c["ref"]) if c["ref"] in lead else 0,
+                                  bool(c.get("advance")), not c.get("heavy"), -int(c["minutes"])))
     rest = [c for c in cands if c["ref"] not in fit]
-    p2, u2 = _fill(first + rest, *args)
+    quick_refs = set(quick or [])
+    first = [{**c, "_lead": True} if c["ref"] in quick_refs else c for c in first]
+    p2, u2 = _fill(first + rest, *args, guard=guard)
 
     def refs(p):
         return sorted(b.get("ref") for b in p if b["kind"] == "task")
@@ -795,16 +842,259 @@ def _shadow(today: date, persona: str, v1: list[dict], prev: dict | None) -> dic
     }
 
 
-def _keep_shadow(persona: str, plan: dict, shadow: dict) -> None:
-    """Store what the shadow learned: the buffer learner's observations, and the first build of
-    the day at or after waking (what the three-morning comparison reads). Best effort."""
+# --- ranking Part B, phase 2: protected time and "behind" (plan §§ 4.5, 4.10; § 11 rows 10–13) --
+# Each acts only with ranking_v2 also on — it reads v2's cost of delay and order — and is
+# otherwise SHADOW: `_phase2_trace` writes what it would have done, and nothing a user sees moves.
+
+def _protected_acting() -> bool:
+    return _flag("protected_v2") and _flag("ranking_v2")
+
+
+def _behind_acting() -> bool:
+    return _flag("behind_v2") and _flag("ranking_v2")
+
+
+def _answers_today(st: dict, day: date) -> tuple[dict[str, set], set[str]]:
+    """({task id: windows the user said yes to}, {task ids the user kept out}) for `day`."""
+    approved: dict[str, set] = {}
+    declined: set[str] = set()
+    for a in (st.get("asks") or {}).values():
+        if not isinstance(a, dict) or a.get("day") != day.isoformat() or not a.get("task_id"):
+            continue
+        if a.get("answer") == "yes":
+            approved.setdefault(a["task_id"], set()).update(a.get("windows") or [a.get("window")])
+        else:
+            declined.add(a["task_id"])
+    return approved, declined
+
+
+def _guard_for(persona: str, day: date, now: datetime) -> dict:
+    from tools import ranking as RK
+    try:
+        st = RK.load_state(persona)
+    except Exception:  # noqa: BLE001 — no state yet: no past intrusions, no answers
+        st = {}
+    approved, declined = _answers_today(st, day)
+    return {"st": st, "c": RK.cfg(persona), "now": now, "approved": approved,
+            "declined": declined}
+
+
+def _ask_digest(persona: str | None, day: date) -> str:
+    """Today's answers to protected-time questions — an answer rebuilds the plan (a repair)."""
+    from tools import ranking as RK
+    try:
+        asks = RK.load_state(persona).get("asks") or {}
+    except Exception:  # noqa: BLE001
+        asks = {}
+    return _digest(sorted((k, v.get("answer"), v.get("when")) for k, v in asks.items()
+                          if isinstance(v, dict) and v.get("day") == day.isoformat()))
+
+
+def _late_map(cands: list[dict], assessed: dict[str, dict] | None = None) -> dict[str, str | None]:
+    """{task id: its worst grade} for each task out of slack — that cannot be done by its date
+    even starting now. Phase 1's slack counts the days left AFTER today, so every task due today
+    reads below 0 by its own need; "below 0" for a raise (§ 11 row 13) is therefore slack + 1 < 0
+    — today's time included, it still does not fit (plan § 11b)."""
+    from tools import ranking as RK
+    O = _O()
+    out: dict[str, str | None] = {}
+    if assessed is None:
+        assessed = {c["task_id"]: c["v2"] for c in cands if c.get("v2")}
+    tasks = {t["id"]: O._norm(t) for t in O._load()} if assessed else {}
+    for tid, a in assessed.items():
+        if a.get("slack") is None or float(a["slack"]) + 1.0 >= 0 or tid not in tasks:
+            continue
+        out[tid] = RK.floor_grade(RK.record_of(tasks[tid], RK.cfg())["costs"])
+    return out
+
+
+def _behind_lead(cands: list[dict], placed: list[dict], persona: str, day: date,
+                 order: list[str] | None = None) -> dict:
+    """Whether the user is behind and, if so, what the day leads with (§ 11 row 12): the quick
+    wins among what selection chose, then the hard task — the top-ranked must. `order` (shadow):
+    task ids in v2's order, when the candidates are Part A's."""
+    from tools import ranking as RK
+    O = _O()
+    c = RK.cfg(persona)
+    try:
+        st = RK.load_state(persona)
+    except Exception:  # noqa: BLE001
+        st = {}
+    tasks = [O._norm(t) for t in O._load(persona)]
+    b = RK.behind_state(tasks, day, st, c)
+    out = {**b, "hard": None, "quick_wins": [], "lead": []}
+    if not b["behind"]:
+        return out
+    fit = {x.get("ref") for x in placed if x["kind"] == "task"}
+    sel = [x for x in cands if x["ref"] in fit]
+    # A quick win is a one-off the user would count as done (Fable #4): never a dose or a habit,
+    # never advance work.
+    wins = [x for x in sel if x.get("kind") == "deadline" and not x.get("advance")]
+    if order is not None:
+        rank = {tid: i for i, tid in enumerate(order)}
+        sel.sort(key=lambda x: rank.get(x["task_id"], len(rank)))
+        musts = [x for x in sel if x["task_id"] in rank]
+    else:
+        musts = [x for x in sel if not x.get("advance")]
+    hard = musts[0] if musts else None
+    by_id = {t["id"]: t for t in tasks}
+    steps = [x for x in cands if hard and x["task_id"] != hard["task_id"]
+             and str((by_id.get(x["task_id"]) or {}).get("part_of") or "") == hard["task_id"]]
+    qw = RK.quick_wins(wins, hard, c, [x for x in steps if x.get("kind") == "deadline"])
+    out.update(hard=hard["task_id"] if hard else None,
+               quick_wins=[x["task_id"] for x in qw],
+               first_step=bool(qw and qw[0] in steps),
+               quick_refs=[x["ref"] for x in qw],
+               lead=[x["ref"] for x in qw] + ([hard["ref"]] if hard else []))
+    return out
+
+
+def _phase2_trace(plan: dict, persona: str, cands: list[dict], assessed: dict[str, dict],
+                  v2_order: list[str]) -> None:
+    """Shadow for whichever of `protected_v2` / `behind_v2` is not acting (R2): what it would have
+    done, written to the plan — `shadow_protected`, `shadow_behind` — and kept by `_keep_ranking`.
+    Code only; never changes a placement. Ids and numbers, no task words."""
+    from tools import ranking as RK
+    day = date.fromisoformat(plan["day"])
+    now = _dt(plan.get("built_at")) or _now()
+    if not _protected_acting():
+        try:
+            st = RK.load_state(persona)
+        except Exception:  # noqa: BLE001
+            st = {}
+        c = RK.cfg(persona)
+        prot = {b["id"]: b for b in plan.get("blocks") or [] if _is_protected(b)}
+        rows = []
+        for b in plan.get("blocks") or []:
+            if b["kind"] != "task" or not b.get("displaced_protected") or b.get("history"):
+                continue
+            s, e = _dt(b["start"]), _dt(b["end"])
+            wins = [w for w in prot.values() if _dt(w["start"]) < e and s < _dt(w["end"])]
+            if not wins:
+                continue
+            a = assessed.get(b.get("task_id")) or {}
+            total, parts = 0.0, []
+            for w in wins:
+                cls = RK.window_class(w)
+                cost, k = RK.intrusion_cost(cls, st, now, c, (b.get("task_id"), day.isoformat()))
+                total += cost
+                parts.append({"window": w["id"], "class": cls, "k": k, "cost": cost})
+            cod = float(a.get("cod") or 0.0)
+            would = "ask" if (a.get("must") and cod > total) else "keep_out"
+            rows.append({"task_id": b.get("task_id"), "at": b["start"], "windows": parts,
+                         "cost": round(total, 1), "cod": round(cod, 1),
+                         "must": bool(a.get("must")), "would": would,
+                         **({"recommend": RK.intrusion_advice(a, day)[0]} if would == "ask" else {})})
+        plan["shadow_protected"] = rows
+    if not _behind_acting():
+        b = _behind_lead(cands, plan.get("blocks") or [], persona, day, order=v2_order)
+        late = _late_map(cands, assessed)
+        try:
+            st = RK.load_state(persona)
+        except Exception:  # noqa: BLE001
+            st = {}
+        slips = (_load_state(persona).get("slips") or {})
+        O = _O()
+        tasks = [O._norm(t) for t in O._load(persona)]
+        raises, weekly = RK.raise_candidates(tasks, slips, late, day, st, RK.cfg(persona),
+                                             b["behind"])
+        plan["shadow_behind"] = {k: v for k, v in b.items()
+                                 if k not in ("lead", "overdue_ids", "quick_refs")} | {
+            "raises": [tid for tid, _ in raises], "weekly": weekly,
+            "part_a_slips": [tid for tid, _ in _slip_asks(_load_state(persona), day)]}
+
+
+def _top_for_behind(order: list[str], persona: str) -> str | None:
+    """The day's top task as "behind" reads it (§ 11 row 12): the first must that is a one-off
+    doable within a day. A habit or a dose stays open after it is done, and a multi-day task is
+    open while it is worked on — either would read "skipped" every day (Fable #2)."""
+    from tools import ranking as RK
+    O = _O()
+    free = float(RK.cfg(persona).get("free_minutes_per_day", 120))
+    by_id = {t["id"]: O._norm(t) for t in O._load(persona)}
+    for tid in order:
+        t = by_id.get(tid)
+        if t and t.get("kind") == "deadline" and RK._minutes(t) <= free:
+            return tid
+    return None
+
+
+def _ask_nudges(plan: dict, intrusions: list[dict], now: datetime, persona: str,
+                day: date) -> list[dict]:
+    """A protected-time question reaches the user as other asks do — a wake, not only a line
+    waiting for them to speak (R5; Fable #3): a nudge an hour before the window, or now if that
+    has passed. Only while today's prompt cap has room for it (§ 11 row 13)."""
+    from tools import ranking as RK
+    try:
+        st = RK.load_state(persona)
+    except Exception:  # noqa: BLE001
+        st = {}
+    have, room = RK.prompt_room(st, day, RK.cfg(persona))
+    answered = set(st.get("asks") or {})
+    out = []
+    for x in intrusions:
+        if x.get("decision") != "ask" or x["id"] in answered:
+            continue
+        if x["id"] not in have:
+            if room <= 0:
+                continue
+            room -= 1
+        at = max(_round_up(now), (_dt(x["at"]) or now) - timedelta(hours=1))
+        out.append({"id": f"nudge:ask:{x['id']}", "kind": "nudge", "at": _iso(at),
+                    "ref": x["ref"], "title": x["title"],
+                    "why": f"it can only fit in {x['window_title']} today — ask whether it may "
+                           f"go there (answer_ask `{x['id']}`)"})
+    return out
+
+
+def _keep_ranking(persona: str, plan: dict, assessed: dict[str, dict], top: str | None) -> None:
+    """Part B's per-build state, in one write (inside the plan lock): a task placed in protected
+    time is an intrusion (whichever rule placed it — Part A's displacements are real ones too, so
+    k is honest the day the flag flips); the day's top must; the buffer learner, live only under
+    ranking_v2; phase 2's shadow kept per day. Best effort."""
     from tools import ranking as RK
     try:
         O = _O()
         day = date.fromisoformat(plan["day"])
+        now = _dt(plan.get("built_at")) or _now()
         st = RK.load_state(persona)
-        RK.observe(st, [O._norm(t) for t in O._load(persona)], day, RK.cfg(persona),
-                   shadow.get("_assessed") or {})
+        c = RK.cfg(persona)
+        prot = [b for b in plan.get("blocks") or [] if _is_protected(b)]
+        placed = set()
+        for b in plan.get("blocks") or []:
+            if b["kind"] != "task" or b.get("history"):
+                continue
+            placed.add(b.get("task_id"))
+            if not b.get("displaced_protected"):
+                continue
+            s, e = _dt(b["start"]), _dt(b["end"])
+            w = next((w for w in prot if _dt(w["start"]) < e and s < _dt(w["end"])), None)
+            if w is not None:
+                RK.note_intrusion(st, RK.window_class(w), b["task_id"], w["id"], day, now, c)
+        wake = str((plan.get("window") or {}).get("wake") or "")
+        if str(plan.get("built_at") or "") >= wake:
+            RK.note_top(st, day, top)
+        RK.observe(st, [O._norm(t) for t in O._load(persona)], day, c, assessed,
+                   placed={x for x in placed if x}, live=_flag("ranking_v2"))
+        if plan.get("shadow_protected"):
+            RK.keep_trace(st, day, "protected", {r["task_id"]: r for r in plan["shadow_protected"]})
+        if plan.get("shadow_behind") is not None:
+            RK.keep_trace(st, day, "behind", plan["shadow_behind"], first=True)
+        if plan.get("intrusions"):
+            RK.keep_trace(st, day, "intrusions", {x["id"]: x for x in plan["intrusions"]})
+        RK.save_state(st, persona)
+    except Exception as exc:  # noqa: BLE001 — the ranking state never breaks a plan
+        logger.warning(f"[day_plan] ranking state not kept: {exc}")
+
+
+def _keep_shadow(persona: str, plan: dict, shadow: dict) -> None:
+    """Store the first build of the day at or after waking (what the three-morning comparison
+    reads). The buffer learner moved to `_keep_ranking` in phase 2: it learns only live. Best
+    effort."""
+    from tools import ranking as RK
+    try:
+        day = date.fromisoformat(plan["day"])
+        st = RK.load_state(persona)
         wake = str((plan.get("window") or {}).get("wake") or "")
         if str(plan.get("built_at") or "") >= wake:
             RK.keep_shadow(st, day, {"built_at": plan.get("built_at"),
@@ -1191,6 +1481,11 @@ def _skeleton(day: date, shape: dict, events: list[dict], persona: str | None,
 
 # --- the fill (plan § 5.4, § 18) -------------------------------------------------------------
 
+def _effortful(c: dict) -> bool:
+    """What an enjoyed item may follow (§ 4.9): heavy concentration, or exercise."""
+    return bool(c.get("heavy")) or c.get("activity") == "exercise"
+
+
 def _may_protect(c: dict) -> bool:
     """The life-quality rule: a missable item never takes the user's protected time; an essential
     one may, when nothing else fits — and the block says so."""
@@ -1198,18 +1493,22 @@ def _may_protect(c: dict) -> bool:
 
 
 def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: datetime,
-          bed_dt: datetime, extra_windows: list[dict] | None, keep: list[dict], day: date
-          ) -> tuple[list[dict], list[dict]]:
+          bed_dt: datetime, extra_windows: list[dict] | None, keep: list[dict], day: date,
+          guard: dict | None = None) -> tuple[list[dict], list[dict]]:
     """Each task into its kind of time (plan § 18.3): a protected region admits only what its
     filter matches; a strong window is the only place its activity goes; a preferred one is tried
-    first; time belonging to another activity, or under a partly-attended event, is used last."""
+    first; time belonging to another activity, or under a partly-attended event, is used last.
+
+    `guard` (ranking Part B phase 2, `protected_v2` acting): protected time is entered only by a
+    must whose cost of delay exceeds the intrusion cost, and only once the user has said yes —
+    otherwise the task stays out and the question rides on its `unplaced` entry (`_intrude`)."""
     from tools.day_shape import admits, anchor
     grid = _Grid(plan_start, bed_dt)
     for b in blocks:
         if _is_hard(b) and _dt(b["end"]) > plan_start:
             grid.mark(_dt(b["start"]), _dt(b["end"]), grid.busy)
     regions = [(grid.mask([(_dt(b["start"]), _dt(b["end"]))]), b.get("activities") or [],
-                b.get("allows")) for b in blocks if _is_protected(b)]
+                b.get("allows"), b) for b in blocks if _is_protected(b)]
     any_region = [any(r[0][k] for r in regions) for k in range(grid.n)]
     wind = grid.mask(_windows_of(blocks, "wind_down"))
     partial = grid.mask([(_dt(b["start"]), _dt(b["end"])) for b in blocks
@@ -1245,7 +1544,7 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
         key = (c["activity"], json.dumps(attrs, sort_keys=True))
         if key not in profiles:
             rej = [False] * grid.n
-            for mask, acts, allows in regions:
+            for mask, acts, allows, _b in regions:
                 if c["activity"] in acts or admits(allows, attrs):
                     continue
                 for k in range(grid.n):
@@ -1271,8 +1570,32 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
     placed: list[dict] = []
     unplaced: list[dict] = []
     counts: dict[str, int] = {}
+    # Ranking Part B placement details, under `ranking_v2` only (off: Part A exactly).
+    v2 = _flag("ranking_v2")
+    focus = union([w["mask"] for w in wins if "focus" in (w.get("activities") or [])]) if v2 else None
+    focus_min, enjoyed_gap = 15, 15
+    if v2:
+        from tools import ranking as _RK
+        _rc = _RK.cfg()
+        focus_min = int((_rc.get("attention_block") or {}).get("focus", 15))
+        enjoyed_gap = int(_rc.get("enjoyed_gap_minutes", 15))
+        # An enjoyed item waits for the effortful one after it in the order, so it can follow it.
+        order = list(cands)
+        # Only what is not a must (Fable #9): a must keeps its place in the order, and still tries
+        # the slot after an effortful task already placed.
+        for x in [x for x in cands if x.get("enjoyed") and not x.get("after") and not x.get("before")
+                  and not (x.get("v2") or {}).get("must")]:
+            i = order.index(x)
+            j = next((k for k in range(i + 1, len(order)) if _effortful(order[k])), None)
+            if j is not None:
+                order.pop(i)
+                order.insert(j, x)
+        cands = order
+    focus_slots = max(1, -(-focus_min // _SLOT))
+    effort_ends: list[int] = []
 
-    def put(c: dict, i: int, n: int, displaced: bool, copy: int) -> None:
+    def put(c: dict, i: int, n: int, displaced: bool, copy: int,
+            intr: dict | None = None) -> None:
         s = grid.at(i)
         e = s + timedelta(minutes=c["minutes"])
         grid.mark(s, e, grid.busy)
@@ -1297,6 +1620,17 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
         else:
             for g in range(j, min(grid.n, j + trans)):
                 grid.task_gap[g] = True
+        attention = None
+        if v2 and c["activity"] != "focus" and focus is not None and any(focus[k] for k in range(i, j)):
+            # Breaking into a focus block costs a focus-sized attention block (B7, § 11 row 6,
+            # owed from phase 1, § 11a deviation 7): the refocus time after it is kept free of
+            # other tasks, up to `attention_block.focus` minutes from the task's start.
+            attention = focus_min
+            for g in range(j, min(grid.n, i + focus_slots)):
+                if not grid.busy[g]:
+                    grid.task_gap[g] = True
+        if v2 and _effortful(c):
+            effort_ends.append(j)
         cond = next((w["condition"] for w in profile(c)["conds"] if w["s"] < e and s < w["e"]), None)
         placed.append({"id": f"task:{c['ref']}@{s:%H%M}", "kind": "task", "ref": c["ref"],
                        "task_id": c["task_id"], "title": c["what"], "start": _iso(s),
@@ -1308,6 +1642,10 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
                        # Ranking v2's advance work (§ 10 R3 b): a suggestion, never a must.
                        **({"advance": True} if c.get("advance") else {}),
                        **({"condition": cond} if cond else {}),
+                       **({"attention_minutes": attention} if attention else {}),
+                       **({"paired": True} if c.get("_paired") else {}),
+                       **({"intrusion": {k: intr[k] for k in ("id", "window", "class")}}
+                          if intr else {}),
                        **({"displaced_protected": True} if displaced else {})})
         counts[c["ref"]] = counts.get(c["ref"], 0) + 1
 
@@ -1350,10 +1688,70 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
         if strong is not None and not kb.get("displaced_protected") and \
                 not all(strong[k] for k in range(i, min(grid.n, i + max(1, -(-c["minutes"] // _SLOT))))):
             continue
+        if guard is not None and kb.get("displaced_protected") and not kb.get("intrusion"):
+            continue        # placed by Part A's rule (flip day): decided again, with a question
         if counts.get(c["ref"], 0) < c["copies"] and free_run(i, n, c, kb.get("displaced_protected", False), None, None):
             put(c, i, n, bool(kb.get("displaced_protected")), counts.get(c["ref"], 0))
             placed_starts.setdefault(c["ref"], []).append(s)
 
+    def intrude(c: dict, n: int, min_i: int) -> tuple[int | None, dict | None]:
+        """Protected time under `protected_v2` (§ 4.5, R5, R6; § 11 rows 10–11). Only a must may
+        enter — never advance work — and only where its cost of delay exceeds the intrusion cost
+        of every window the slot takes. The cheapest such slot is chosen; one the user already
+        said yes to comes first. Without a yes it stays out and the question is returned:
+        `decision` ask, kept_out (the cost says no — nothing to ask), declined (answered no
+        today), granted (placed)."""
+        from tools import ranking as RK
+        a = c.get("v2") or {}
+        if not a.get("must") or c.get("advance"):
+            return None, None
+        attrs = c.get("attrs") or {"device": c["device"],
+                                   "concentration": "heavy" if c["heavy"] else "light"}
+        approved = (guard.get("approved") or {}).get(c["task_id"]) or set()
+        skip = (c["task_id"], day.isoformat())
+        priced: dict[str, tuple] = {}
+        best = None
+        for i in range(min_i, grid.n):
+            if not free_run(i, n, c, True, None, None):
+                continue
+            hit = sorted({b["id"]: b for mask, acts, allows, b in regions
+                          if any(mask[k] for k in range(i, i + n))
+                          and not (c["activity"] in acts or admits(allows, attrs))}.items())
+            if not hit:
+                continue
+            total = 0.0
+            for wid, b in hit:
+                if wid not in priced:
+                    cls = RK.window_class(b)
+                    cost, k = RK.intrusion_cost(cls, guard["st"], guard["now"], guard["c"], skip)
+                    priced[wid] = (cls, cost, k, b)
+                total += priced[wid][1]
+            ids = [w for w, _ in hit]
+            rank = (not set(ids) <= approved, total)
+            if best is None or rank < best[0]:
+                best = (rank, i, ids, total)
+        if best is None:
+            return None, None
+        (unapproved, total), i, ids, _t = best
+        cls, _c, k, b0 = priced[ids[0]]
+        cod = float(a.get("cod") or 0.0)
+        rec, when = RK.intrusion_advice(a, day)
+        # The id covers every window the slot takes (Fable #10): a yes to family time alone
+        # must not hide a new question about family time AND rest.
+        entry = {"id": RK.ask_id(c["task_id"], "+".join(ids), day), "task_id": c["task_id"],
+                 "ref": c["ref"], "title": c["what"], "window": ids[0], "windows": ids,
+                 "class": cls, "window_title": b0.get("title") or cls, "at": _iso(grid.at(i)),
+                 "cod": round(cod, 1), "cost": round(total, 1), "k": k, "recommend": rec,
+                 **({"when": when} if when else {})}
+        if not unapproved:
+            return i, {**entry, "decision": "granted"}
+        if cod <= total:
+            return None, {**entry, "decision": "kept_out"}
+        if c["task_id"] in (guard.get("declined") or set()):
+            return None, {**entry, "decision": "declined"}
+        return None, {**entry, "decision": "ask"}
+
+    gap_slots = max(1, -(-int(enjoyed_gap) // _SLOT))
     for c in cands:
         n = max(1, -(-c["minutes"] // _SLOT))
         prof = profile(c)
@@ -1367,23 +1765,47 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
             tiers = list(prof["tiers"])
             if prof["strong"] is not None and c["essential"]:
                 tiers.append((None, None))      # outside its strong window, before protected time
+            if c.get("_lead"):
+                # Behind (§ 11 row 12): a quick win leads the day — the earliest free time, its
+                # own preferred window notwithstanding; only an only-here window still binds.
+                tiers = [(prof["strong"], None)] + tiers
             spot = None
-            for need, avoid in tiers:
+            if v2 and c.get("enjoyed") and not c.get("after") and not c.get("before"):
+                # Something the user enjoys, soon after something effortful (§ 4.9, § 11 row 14):
+                # tried first within `enjoyed_gap_minutes` of an effortful task's end. Nothing
+                # says why — it is simply where it goes (research § 5: works unframed).
+                for end in effort_ends:
+                    spot = next((i for i in range(max(min_i, end), min(grid.n, end + gap_slots + 1))
+                                 if free_run(i, n, c, False, prof["strong"], None)), None)
+                    if spot is not None:
+                        c = {**c, "_paired": True}
+                        break
+            for need, avoid in ([] if spot is not None else tiers):
                 spot = next((i for i in range(min_i, grid.n)
                              if free_run(i, n, c, False, need, avoid)), None)
                 if spot is not None:
                     break
-            displaced = False
-            if spot is None and _may_protect(c):
+            displaced, intr = False, None
+            if spot is None and guard is not None:
+                spot, intr = intrude(c, n, min_i)
+                displaced = spot is not None
+            elif spot is None and _may_protect(c):
                 spot = next((i for i in range(min_i, grid.n)
                              if free_run(i, n, c, True, None, None)), None)
                 displaced = spot is not None and any(prof["rej"][k] for k in range(spot, spot + n))
             if spot is None:
-                unplaced.append({"ref": c["ref"], "title": c["what"],
-                                 "reason": "no room" if grid.n else "outside waking hours",
-                                 "essential": c["essential"], "vital": c["vital"]})
+                u = {"ref": c["ref"], "title": c["what"],
+                     "reason": "no room" if grid.n else "outside waking hours",
+                     "essential": c["essential"], "vital": c["vital"]}
+                if intr:
+                    u["intrusion"] = intr
+                    u["reason"] = {"ask": f"only {intr['window_title']} is left — waiting on the "
+                                          f"user's answer",
+                                   "declined": f"the user kept {intr['window_title']} today",
+                                   }.get(intr["decision"], f"kept out of {intr['window_title']}")
+                unplaced.append(u)
                 break
-            put(c, spot, n, displaced, copy)
+            put(c, spot, n, displaced, copy, intr)
             placed_starts.setdefault(c["ref"], []).append(grid.at(spot))
     return placed, unplaced
 
@@ -1620,6 +2042,8 @@ def _classify(prev: dict | None, day: date, now: datetime, cands: list[dict], ev
         mode, reasons = "repair", reasons + ["day shape changed"]
     if (prev.get("digests") or {}).get("answers") != _digest(_event_answers()):
         mode, reasons = "repair", reasons + ["an event was answered"]
+    if _protected_acting() and (prev.get("digests") or {}).get("asks") != _ask_digest(None, day):
+        mode, reasons = "repair", reasons + ["a question about protected time was answered"]
     if (prev.get("digests") or {}).get("zone") != zone:
         mode, reasons = "repair", reasons + ["place changed"]
     built = _dt(prev.get("built_at")) or now
@@ -1746,12 +2170,20 @@ def _build(day: date, persona: str, mode: str, reasons: list[str], prev: dict | 
             more = c["copies"]
         if more > 0:
             placeable.append({**c, "copies": more, "prior": [b["start"] for b in hist + prog]})
+    # Ranking Part B phase 2, acting only with ranking_v2 on (each is shadow otherwise — current()).
+    # Never on tomorrow's draft (Fable #10): nobody can answer a question about tomorrow yet.
+    guard = _guard_for(persona, day, now) if (_protected_acting() and not draft) else None
     placed, unplaced = _fill(placeable, skeleton + history + inprog, shape, plan_start, bed_dt,
-                             extra["windows"], keep, day)
+                             extra["windows"], keep, day, guard=guard)
+    behind = None
     if _flag("ranking_v2"):
+        if _behind_acting():
+            behind = _behind_lead(placeable, placed, persona, day)
         placed, unplaced = _hard_first(placeable, placed, unplaced,
                                        (skeleton + history + inprog, shape, plan_start, bed_dt,
-                                        extra["windows"], keep, day))
+                                        extra["windows"], keep, day),
+                                       lead=(behind or {}).get("lead"), guard=guard,
+                                       quick=(behind or {}).get("quick_refs"))
     # A kept slot never outranks what matters more (Mike, 2026-10-27: "important things happen
     # first and don't get bumped in favor of less important things"). Kept placements go in
     # before anything new, so a nice-to-have placed this morning could leave a task due today
@@ -1767,14 +2199,21 @@ def _build(day: date, persona: str, mode: str, reasons: list[str], prev: dict | 
                                                  or by_ref[kb["ref"]]["score"] >= floor))]
         if len(slim) < len(keep):
             placed2, unplaced2 = _fill(placeable, skeleton + history + inprog, shape, plan_start,
-                                       bed_dt, extra["windows"], slim, day)
+                                       bed_dt, extra["windows"], slim, day, guard=guard)
             if sum(1 for u in unplaced2 if u.get("essential")) < len(need):
                 placed, unplaced = placed2, unplaced2
+    # Protected-time questions (phase 2): every decision is kept for the trace; only an `ask` is
+    # put to the user — a must waiting on their answer is shown under Not placed even when it is
+    # not essential, since it needs a decision today.
+    intrusions = [u["intrusion"] for u in unplaced if u.get("intrusion")] + \
+        [b["intrusion"] | {"decision": "granted", "task_id": b["task_id"], "ref": b["ref"]}
+         for b in placed if b.get("intrusion")]
     # "Not placed" is for what needs a decision today (R2-9): an essential item that did not
     # fit. A non-essential leftover — a second stretching with no room — drops quietly; the log
     # and a model reshuffle still see it.
-    dropped = [u["ref"] for u in unplaced if not u.get("essential")]
-    unplaced = [u for u in unplaced if u.get("essential")]
+    asked = {u["ref"] for u in unplaced if (u.get("intrusion") or {}).get("decision") == "ask"}
+    dropped = [u["ref"] for u in unplaced if not u.get("essential") and u["ref"] not in asked]
+    unplaced = [u for u in unplaced if u.get("essential") or u["ref"] in asked]
     blocks = sorted(skeleton + history + inprog + placed, key=lambda b: (b["start"], b["kind"]))
     # A dose block's `copy` is its place in the day's order of that ref's blocks — the i-th
     # block is done once i+1 doses are recorded. Anything else is one task: copy 0.
@@ -1805,8 +2244,24 @@ def _build(day: date, persona: str, mode: str, reasons: list[str], prev: dict | 
         "digests": {"tasks": {c["ref"]: [c["digest"], c["score"]] for c in cands},
                     "events": _event_digests(events, day),
                     "shape": shape_digest_fn(persona), "zone": _zone_now(persona),
-                    "answers": _digest(answers)},
+                    "answers": _digest(answers),
+                    **({"asks": _ask_digest(persona, day)} if guard is not None else {})},
     }
+    if guard is not None:
+        plan["intrusion_asks"] = [x for x in intrusions if x.get("decision") == "ask"]
+        plan["intrusions"] = intrusions
+    if _flag("ranking_v2"):
+        # What phase 2's raise reads (§ 11 row 13): the musts whose slack has run out, by grade.
+        plan["late"] = _late_map(cands)
+    if behind is not None:
+        plan["behind"] = {k: v for k, v in behind.items() if k not in ("overdue_ids", "quick_refs")}
+        if behind.get("behind") and behind.get("hard"):
+            # Whether the day really leads with them — a model reshuffle's placements, or a kept
+            # slot, may not (Fable #4). Read by the walkthrough, never shown.
+            st_ = {b.get("task_id"): b["start"] for b in placed if b["kind"] == "task"}
+            hs = st_.get(behind["hard"])
+            plan["behind"]["led"] = bool(hs) and all(
+                st_.get(q, "9") < hs for q in behind.get("quick_wins") or [])
     for b in inprog:
         s0, e0 = _dt(b["start"]), _dt(b["end"])
         for x in skeleton:
@@ -1814,6 +2269,10 @@ def _build(day: date, persona: str, mode: str, reasons: list[str], prev: dict | 
                     and _dt(x["start"]) < e0 and s0 < _dt(x["end"]):
                 notes.append(f"{x['title']} now overlaps {b['title']}, already under way")
     plan["suggestions"] = _suggestions(blocks)
+    if guard is not None:
+        plan["suggestions"] = sorted(plan["suggestions"] + _ask_nudges(plan, intrusions, now,
+                                                                       persona, day),
+                                     key=lambda x: x["at"])
     # Location evidence answers a check only once its "Mark done?" card exists — the two ship
     # together or not at all (review V1-N2). A card is filed only off the reply path.
     answered = _location_evidence(plan, cands, persona, file=allow_lookup)
@@ -1923,12 +2382,26 @@ def current(persona: str | None = None, reason: str = "", for_reply: bool = Fals
         # Ranking Part B, phase 1 (shadow): with `ranking_v2` off, the v2 order is computed beside
         # Part A's and written to the plan's trace — never used to place anything.
         shadow = None
+        assessed: dict = {}
+        v2_order: list[str] = []
         if not _flag("ranking_v2"):
             try:
                 shadow = _shadow(day, persona, cands, prev)
                 plan["shadow_v2"] = {k: v for k, v in shadow.items() if k != "_assessed"}
+                assessed = shadow.get("_assessed") or {}
+                v2_order = [x["task_id"] for x in shadow.get("v2") or [] if x.get("tier") == "must"]
             except Exception as exc:  # noqa: BLE001 — the shadow never breaks a plan
                 logger.warning(f"[day_plan] ranking shadow failed: {exc}")
+        else:
+            assessed = {c["task_id"]: c["v2"] for c in cands if c.get("v2")}
+            v2_order = [c["task_id"] for c in cands if (c.get("v2") or {}).get("must")]
+        # Phase 2 (§ 11b): the protected-time and behind shadows, for whichever is not acting —
+        # off the reply path (Fable #1): the 5-minute tick's builds are enough for a trace.
+        if not for_reply:
+            try:
+                _phase2_trace(plan, persona, cands, assessed, v2_order)
+            except Exception as exc:  # noqa: BLE001 — the shadow never breaks a plan
+                logger.warning(f"[day_plan] phase 2 shadow failed: {exc}")
         wait = int(_limit("reply_lock_ms") or 200) if for_reply else None
         with _locked(persona, wait_ms=wait) as got:
             if not got:
@@ -1940,6 +2413,7 @@ def current(persona: str | None = None, reason: str = "", for_reply: bool = Fals
             _write_json(_plan_path(day, persona), plan)
             if shadow is not None:
                 _keep_shadow(persona, plan, shadow)
+            _keep_ranking(persona, plan, assessed, _top_for_behind(v2_order, persona))
             st = _load_state(persona)
             if mode == "reshuffle":
                 rs = st.setdefault("reshuffle", {})
@@ -2324,8 +2798,44 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
                         + (f" (later steps {later})" if later else ""))
         record["cascades"].append(c["id"])
     asks = redo + asks
+    # Phase 2 (ranking § 11 row 13): what the system starts from these paths — a protected-time
+    # question, a raise — is capped at `prompts_per_day`, shared. An item already admitted today
+    # shows again freely; a new one only while room is left (admitted on showing, after_render).
+    # Past the cap a question simply waits, and its window stays protected.
+    rst, room_ids, room = {}, set(), 0
+    if _protected_acting() or _behind_acting():
+        from tools import ranking as RK
+        try:
+            rst = RK.load_state()
+        except Exception:  # noqa: BLE001 — no persona bound: nothing admitted yet
+            rst = {}
+        room_ids, room = RK.prompt_room(rst, today, RK.cfg())
+    record.setdefault("prompts", [])
+
+    def admit(pid: str) -> bool:
+        nonlocal room
+        if pid in room_ids:
+            return True
+        if room <= 0:
+            return False
+        room -= 1
+        return True
+
+    if _protected_acting():
+        answered = set((rst.get("asks") or {}))
+        for x in plan.get("intrusion_asks") or []:
+            if x.get("id") in answered or not admit(x["id"]):
+                continue
+            record["prompts"].append(x["id"])
+            asks.append(_intrusion_line(x))
     if brief_or_close:
-        slips = _slip_asks(state, today)
+        if _behind_acting():
+            slips, weekly = _raises_v2(state, today, plan, rst)
+            slips = [(tid, text) for tid, text in slips if admit(f"raise:{tid}")]
+            record["prompts"] += [f"raise:{tid}" for tid, _ in slips]
+            record["weekly"] = weekly
+        else:
+            slips = _slip_asks(state, today)
         asks += [text for _, text in slips]
         record.setdefault("slips", [])
         record["slips"] += [tid for tid, _ in slips]
@@ -2337,8 +2847,16 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
         out.append("Protected — only what fits there (family time: light tasks with no screen): "
                    + ", ".join(own))
     if plan.get("unplaced"):
+        # A protected-time question past today's cap was not put: it is not "waiting" (Fable #3).
+        put = set(record.get("prompts") or [])
+
+        def reason(u: dict) -> str:
+            x = u.get("intrusion") or {}
+            if x.get("decision") == "ask" and x.get("id") not in put:
+                return f"kept out of {x.get('window_title') or 'protected time'} today"
+            return u["reason"]
         out.append("Not placed: " + "; ".join(
-            f"{u['title']} ({u['reason']})" for u in plan["unplaced"][:5]))
+            f"{u['title']} ({reason(u)})" for u in plan["unplaced"][:5]))
     if plan.get("notes"):
         # What the build could not resolve — no room for a meal, no starting point for travel,
         # a meeting moved onto something under way (Fable verify N2). Shown, never acted on.
@@ -2350,7 +2868,10 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
     soon = [({**x, "why": "planned in time the user gave up once already — no need to explain again"}
              if x.get("ref") in rider_refs and "own time" in str(x.get("why")) else x)
             for x in plan.get("suggestions") or []
-            if now - timedelta(minutes=5) <= _dt(x["at"]) <= now + timedelta(hours=3)]
+            if now - timedelta(minutes=5) <= _dt(x["at"]) <= now + timedelta(hours=3)
+            # A protected-time wake whose question did not make today's cap is not said.
+            and not (str(x.get("id") or "").startswith("nudge:ask:")
+                     and x["id"][len("nudge:ask:"):] not in set(record.get("prompts") or []))]
     if soon:
         out.append("Suggested (yours to decide): " + " · ".join(
             f"{_hm(x['at'])} {x['kind']} — {x['title']}: {x['why']}" for x in soon[:6]))
@@ -3472,6 +3993,48 @@ def _slip_asks(state: dict, today: date) -> list[tuple[str, str]]:
     return out
 
 
+def _intrusion_line(x: dict) -> str:
+    """A protected-time question (§ 4.5, B12, B29): the task, the time it would take, and a
+    recommendation — answered in chat with answer_ask. No numbers: the cost is code's."""
+    if x.get("recommend") == "other_time" and x.get("when"):
+        when = _O()._d(x["when"])
+        advice = f"suggest {when:%A} instead — it still keeps to its date" if when else \
+            "suggest another day"
+    else:
+        advice = "suggest yes — it cannot wait"
+    return (f"{x['title']} `{x['ref']}` — the only time left today is {x['window_title']} "
+            f"({_hm(x['at'])}); ask once whether it may go there: yes, no, or another day "
+            f"({advice}). Record the answer with answer_ask `{x['id']}`")
+
+
+def _raises_v2(state: dict, today: date, plan: dict, rst: dict) -> tuple[list[tuple[str, str]], list[str]]:
+    """Phase 2's raise (§ 11 row 13), replacing Part A's slipped-task asks under `behind_v2`:
+    raised once when a placed task is skipped twice or its slack runs out; at most twice without
+    new information, then to the weekly list (returned, written by after_render). Same caps and
+    stamping as Part A: brief and close only, at most `_SLIP_ASKS_MAX`, said-once by note_said."""
+    from tools import ranking as RK
+    O = _O()
+    tasks = [O._norm(t) for t in O._load()]
+    by_id = {t["id"]: t for t in tasks}
+    behind = bool((plan.get("behind") or {}).get("behind"))
+    cands, weekly = RK.raise_candidates(tasks, state.get("slips") or {}, plan.get("late") or {},
+                                        today, rst, RK.cfg(), behind)
+    asked = state.get("slip_asked") or {}
+    out = []
+    for tid, why in cands:
+        t = by_id[tid]
+        if asked.get(tid) == today.isoformat() or t.get("_blocked"):
+            continue
+        if any(h.get("event") in ("rescheduled", "deferred") and O._stamp_day(h.get("at")) == today
+               for h in t.get("history") or [] if isinstance(h, dict)):
+            continue                            # answered today with "a set time"
+        out.append((tid, f"{t['what']} `{tid}` — {why}: say so once, then ask — now, a set "
+                         f"time, or drop it (dismissed, their words)"))
+        if len(out) >= _SLIP_ASKS_MAX:
+            break
+    return out, weekly
+
+
 # --- review finding #5: a nudge due near a scheduled session is no longer dropped (R10) ---------
 # The recorded design (codebase_review_fixes_plan_2026-11-11.md, #5): the shield narrows to the
 # conversational jobs in `shield_jobs:`, and what it carried reaches that session as DUE NOW.
@@ -3538,14 +4101,20 @@ def after_render(persona: str, shown: dict) -> None:
     if shown.get("findings"):
         from tools.horizon import charge
         charge(shown["findings"], persona)
-    if shown.get("people"):
+    if shown.get("people") or shown.get("prompts") or shown.get("weekly"):
         # A keep-in-touch offer (ranking § 4.6) is offered once: spent on showing, like a finding.
+        # Phase 2's prompts are admitted under the day's cap on showing, and an item raised twice
+        # with no news moves to the weekly list (§ 11 row 13).
         from tools import ranking as RK
         with _locked(persona):
             rst = RK.load_state(persona)
             po = rst.setdefault("people_offered", {})
-            for cid in shown["people"]:
+            for cid in shown.get("people") or []:
                 po.setdefault(cid, _today().isoformat())
+            if shown.get("prompts"):
+                RK.admit_prompts(rst, _today(), list(dict.fromkeys(shown["prompts"])), RK.cfg(persona))
+            if shown.get("weekly"):
+                RK.to_weekly(rst, shown["weekly"], _today())
             RK.save_state(rst, persona)
     offered = {k: list(dict.fromkeys(shown.get(k) or [])) for k in ("slips", "riders", "cascades")}
     if not any(offered.values()):
@@ -3664,6 +4233,13 @@ def note_said(reply_text: str, persona: str | None = None) -> int:
         _write_json(_state_path(persona), st)
     if said["cascades"]:
         O.mark_cascade_raised(sorted(said["cascades"]), persona)
+    if said["slips"] and _behind_acting():
+        # A phase 2 raise counts against its task only once said (§ 11 row 13: twice, no news).
+        from tools import ranking as RK
+        with _locked(persona):
+            rst = RK.load_state(persona)
+            RK.note_raised(rst, list(tasks.values()), sorted(said["slips"]), now.date())
+            RK.save_state(rst, persona)
     return sum(len(v) for v in said.values())
 
 
@@ -4181,6 +4757,103 @@ ANSWER_EVENT_SCHEMA = {
             "evidence": {"type": "string", "description": "The user's words that say it."},
         },
         "required": ["event", "answer", "evidence"],
+    },
+}
+
+
+_ASK_ANSWERS = ("yes", "no", "other_time")
+_ASK_KEEP_DAYS = 14
+
+
+def answer_ask(ask_id: str, answer: str, when: str = "", evidence: str = "") -> str:
+    """The user's answer to a protected-time question (ranking § 10 R5; plan § 4.5, B12, B29):
+    yes — the task may take that time today; no — the time stays theirs today, and the task is
+    not asked about again today; other_time — the task comes back on `when` (a later day, no later
+    than its date: a defer, on their words). Answers come in chat only, on the user's own word;
+    a question never answered leaves the window protected. The plan follows by itself."""
+    if not _flag("build"):
+        return "the day plan is not running"
+    answer = str(answer or "").strip().lower()
+    if answer not in _ASK_ANSWERS:
+        return f"error: `answer` must be one of {', '.join(_ASK_ANSWERS)}. Nothing was written."
+    try:
+        from tools.turn_context import current as _turn
+        turn = _turn()
+    except Exception:  # noqa: BLE001
+        turn = None
+    if turn is not None and not turn.get("user_turn"):
+        return ("error: not recorded — protected time is given up only on the user's own word, "
+                "and this turn has nothing from them. Nothing was changed.")
+    evidence = str(evidence or "").strip()
+    if not evidence:
+        return "error: `evidence` is required — quote what the user said. Nothing was written."
+    persona = resolve_persona(None)
+    day = _today()
+    plan = _read_json(_plan_path(day, persona), None) or {}
+    aid = str(ask_id or "").strip().strip("`")
+    x = next((a for a in plan.get("intrusion_asks") or [] if a.get("id") == aid), None)
+    if x is None:
+        # The reply may have rendered a plan it could not write (the lock was busy): build and
+        # write it now, and look again (Fable #10).
+        plan = current(persona, reason="answer_ask") or {}
+        x = next((a for a in plan.get("intrusion_asks") or [] if a.get("id") == aid), None)
+    if x is None:
+        return (f"error: no open question {aid!r} today — use the id the plan shows in backticks. "
+                f"Nothing was written.")
+    when_iso = None
+    if answer == "other_time":
+        when_iso = _O()._d(str(when or "").strip())
+        if when_iso is None or when_iso <= day:
+            return ("error: `when` must be a later day (YYYY-MM-DD). For a later time today, the "
+                    "answer is no — the time stays theirs — and remind_later moves the task. "
+                    "Nothing was written.")
+        out = _O().update_task(x["task_id"], "defer", new_due=when_iso.isoformat(),
+                               evidence=evidence)
+        if str(out).startswith("error"):
+            return (f"error: not moved — {out[7:].strip()} A day past its date needs a reschedule "
+                    f"on the user's words first (update_task). Nothing else was written.")
+    from tools import ranking as RK
+    now = _now()
+    with _locked(persona):
+        st = RK.load_state(persona)
+        asks = st.setdefault("asks", {})
+        asks[aid] = {"task_id": x["task_id"], "window": x["window"],
+                     "windows": list(x.get("windows") or [x["window"]]), "day": day.isoformat(),
+                     "answer": answer, **({"when": when_iso.isoformat()} if when_iso else {}),
+                     "at": now.isoformat(timespec="seconds"), "evidence": evidence[:200]}
+        cut = (day - timedelta(days=_ASK_KEEP_DAYS)).isoformat()
+        st["asks"] = {k: v for k, v in asks.items()
+                      if isinstance(v, dict) and str(v.get("day") or "") > cut}
+        RK.save_state(st, persona)
+    _log("ask_answered", persona, answer=answer, cls=x.get("class"))
+    if answer == "yes":
+        return (f"recorded: {x['title']} may take {x['window_title']} today. The plan follows — "
+                f"say once that it eats into that time.")
+    if answer == "no":
+        return (f"recorded: {x['window_title']} stays theirs today; {x['title']} is not placed "
+                f"today and is not asked about again today.")
+    return f"recorded: {x['title']} comes back on {when_iso.isoformat()}."
+
+
+ANSWER_ASK_SCHEMA = {
+    "name": "answer_ask",
+    "description": (
+        "Record the user's answer to a question the plan put to them about their protected time "
+        "(family time, rest, exercise) — whether a task that cannot wait may take it today. yes: "
+        "it may; no: the time stays theirs today; other_time: it comes back on a later day "
+        "(`when`, no later than its date). Only on their own word — quote it as evidence. "
+        "`ask_id` is the id the plan shows in backticks. Unanswered, the time stays protected."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "ask_id": {"type": "string", "description": "The question's id from the plan."},
+            "answer": {"type": "string", "enum": list(_ASK_ANSWERS)},
+            "when": {"type": "string",
+                     "description": "other_time only: the day it comes back, YYYY-MM-DD."},
+            "evidence": {"type": "string", "description": "The user's words that say it."},
+        },
+        "required": ["ask_id", "answer", "evidence"],
     },
 }
 

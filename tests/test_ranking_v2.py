@@ -549,21 +549,48 @@ def _():
     assert RK.person_bias([], c) == 0.0 and _close(RK.buffer_for(60, c, 0.0), 0.35)
     assert RK.buffer_for(60, c, math.log(2)) > 1.0
     _fresh("learn")
-    assert RK.observe({}, [], TODAY, RK.cfg(), {"x": {"must": True, "slack": -1}}) is False  # off
-    RK._OVERRIDE = {"buffer": {"learn": {"enabled": True}}}
     c = RK.cfg()
-    t = _id(O.open_task("Write the funding report", kind="deadline", due=_d(2), minutes=240,
+    assert c["buffer"]["learn"]["enabled"] is True                 # on, and inert until the flip
+    _CLOCK["now"] = datetime.combine(TODAY - timedelta(days=2), time(9, 0))
+    t = _id(O.open_task("Write the funding report", kind="deadline", due=_d(3), minutes=240,
                         costs={"financial": "major"}, costs_source="stated"))
-    st: dict = {}
+    _CLOCK["now"] = datetime.combine(TODAY, time(9, 0))
     assessed = {t: _assess(_task(t))}
-    assert RK.observe(st, [_task(t)], TODAY, c, assessed) and t in st["buffer"]["tracking"]
+    assert assessed[t]["must"], assessed
+    # Owed 3 (§ 11b): never in shadow — the start was not one the user was shown …
+    st: dict = {}
+    assert RK.observe(st, [_task(t)], TODAY, c, assessed, placed={t}, live=False) is False
+    # … never for a task not placed in the plan …
+    assert RK.observe(st, [_task(t)], TODAY, c, assessed, placed=set(), live=True) is False
+    # … live and placed as a must: tracked from today, the day the user was told to start.
+    assert RK.observe(st, [_task(t)], TODAY, c, assessed, placed={t}, live=True)
+    assert st["buffer"]["tracking"][t]["since"] == TODAY.isoformat()
+    # 240 min over 120 free = 2 raw days; the long tier allots ⌈2 × 1.65⌉ = 4 whole days.
+    assert RK.allotted_days(2.0, 0.65) == 4
+    # Done on the last allotted day reads 0 — phase 1's measure read +0.19 here (log 4/2 − log 1.65).
     _CLOCK["now"] += timedelta(days=3)
     O.update_task(t, "done", evidence="sent it")
-    tasks = [O._norm(x) for x in O._load(None)]
-    RK.observe(st, tasks, TODAY + timedelta(days=3), c, {})
-    obs = st["buffer"]["obs"]
-    # actual 4 days (since + 3, inclusive) against 2 raw days, less log(1.65) for the long tier
-    assert len(obs) == 1 and _close(obs[0], math.log(4 / 2) - math.log(1.65), 0.001), obs
+    RK.observe(st, [O._norm(x) for x in O._load(None)], TODAY + timedelta(days=3), c, {},
+               live=True)
+    assert st["buffer"]["obs"] == [0.0], st["buffer"]
+    # Done two days late: log(6 / 4) — the user's own "starts late", learned.
+    st2: dict = {}
+    _fresh("learn2")
+    _CLOCK["now"] = datetime.combine(TODAY - timedelta(days=2), time(9, 0))
+    t2 = _id(O.open_task("Write the funding report", kind="deadline", due=_d(3), minutes=240,
+                         costs={"financial": "major"}, costs_source="stated"))
+    _CLOCK["now"] = datetime.combine(TODAY, time(9, 0))
+    # Fable #7: opened today (or due today) it is past its own start — never tracked.
+    t3 = _id(O.open_task("Draft the board pack", kind="deadline", due=_d(3), minutes=240,
+                         costs={"financial": "major"}, costs_source="stated"))
+    assert RK.observe({}, [_task(t3)], TODAY, c, {t3: _assess(_task(t3))}, placed={t3},
+                      live=True) is False
+    RK.observe(st2, [_task(t2)], TODAY, c, {t2: _assess(_task(t2))}, placed={t2}, live=True)
+    _CLOCK["now"] = datetime.combine(TODAY + timedelta(days=5), time(9, 0))
+    O.update_task(t2, "done", evidence="sent it")
+    RK.observe(st2, [O._norm(x) for x in O._load(None)], TODAY + timedelta(days=5), c, {},
+               live=True)
+    assert _close(st2["buffer"]["obs"][0], math.log(6 / 4), 0.001), st2["buffer"]
 
 
 # --- the shadow and the report ---------------------------------------------------------------------
@@ -742,6 +769,573 @@ def _():
     a = _assess(_task(t))
     assert not a["must"] and a["cod"] == 0, a
     assert t not in _refs(_v2())
+
+
+# --- PHASE 2 (plan §§ 4.5, 4.9, 4.10, 11 rows 10–14, 11a owed items, 11b) ----------------------------
+
+_EVENING = """\
+day: [{days: all, wake: "07:00", bed: "22:00"}]
+windows:
+  - {activity: family, days: all, from: "19:00", to: "21:00", strength: protected}
+"""
+_P2 = {"ranking_v2": True, "protected_v2": True}
+
+
+def _tax(what: str = "Pay the tax bill", due: int = 0, grade: str = "severe") -> str:
+    return _id(O.open_task(what, kind="deadline", due=_d(due), minutes=15, stakes="vital",
+                           activity="admin", costs={"financial": grade}, costs_source="stated"))
+
+
+@check("7 (as amended, § 11 rows 10–11): the k-th intrusion costs base × k^1.5, fading on a 3.5-day "
+       "half-life — a severe task due today (90) is asked about family time once (30) and a second "
+       "time the same week (≈ 85), kept out the third (≈ 156); each class has its own base")
+def _():
+    _fresh("intrusion_maths")
+    c = RK.cfg()
+    now = datetime.combine(TODAY, time(19, 0))
+    st: dict = {}
+    assert RK.intrusion_cost("family", st, now, c) == (30.0, 1.0)
+    assert RK.note_intrusion(st, "family", "t1", "protected:family:1900", TODAY, now, c)
+    assert not RK.note_intrusion(st, "family", "t1", "protected:family:1900", TODAY, now, c)  # once a day
+    second, k = RK.intrusion_cost("family", st, now, c)
+    assert k == 2.0 and _close(second, 30 * 2 ** 1.5, 0.01) and second < 90, second
+    RK.note_intrusion(st, "family", "t2", "protected:family:1900", TODAY, now, c)
+    third, _k = RK.intrusion_cost("family", st, now, c)
+    assert third > 90, third                                         # the third is kept out
+    # The decay: a week on, two intrusions have faded to a quarter each.
+    later, k = RK.intrusion_cost("family", st, now + timedelta(days=7), c)
+    assert _close(k, 1.5, 0.001) and _close(later, 30 * 1.5 ** 1.5, 0.01), (k, later)
+    # The task being decided is never counted against its own place.
+    assert RK.intrusion_k(st, "family", now, c, skip=("t2", TODAY.isoformat())) == 2.0
+    # Classes: rest and own time 18, exercise 12, anything else the placeholder 18; holds and a
+    # childcare duty are family.
+    assert RK.intrusion_cost("exercise", {}, now, c)[0] == 12.0
+    assert RK.intrusion_cost("own", {}, now, c)[0] == 18.0 == RK.intrusion_cost("social", {}, now, c)[0]
+    assert RK.window_class({"kind": "hold", "activities": ["family"]}) == "family"
+    assert RK.window_class({"kind": "duty", "activities": ["family"]}) == "family"
+    assert RK.window_class({"kind": "protected", "activities": ["exercise", "rest"]}) == "exercise"
+
+
+@check("7 live: a severe task due today with only family time left is ASKED, never placed silently; "
+       "the question carries a recommendation; answer_ask yes places it and the intrusion is counted; "
+       "the second such task the same week is asked again, the third is kept out")
+def _():
+    _fresh("intrusion_live", flags=_P2, shape=_EVENING)
+    _CLOCK["now"] = datetime.combine(TODAY, time(18, 55))
+    t = _tax()
+    plan = D.current(_PERSONA)
+    assert not [b for b in plan["blocks"] if b["kind"] == "task"], "placed silently"
+    asks = plan["intrusion_asks"]
+    assert len(asks) == 1 and asks[0]["task_id"] == t and asks[0]["recommend"] == "yes", asks
+    assert asks[0]["class"] == "family" and asks[0]["cost"] == 30.0 and asks[0]["cod"] == 90.0
+    assert any("waiting on the user" in u["reason"] for u in plan["unplaced"]), plan["unplaced"]
+    shown: dict = {}
+    block = D.render_block(plan, shown=shown)
+    assert f"answer_ask `{asks[0]['id']}`" in block and "suggest yes" in block, block
+    assert "90" not in block.split("Asks")[1].split("\n")[0], "a cost number reached the model"
+    assert shown["prompts"] == [asks[0]["id"]]
+    D.after_render(_PERSONA, shown)
+    assert asks[0]["id"] in RK.load_state(_PERSONA)["prompts"][TODAY.isoformat()]
+    # Refusals: no evidence, an unknown id, another time that is not a later day.
+    assert D.answer_ask(asks[0]["id"], "yes").startswith("error: `evidence`")
+    assert D.answer_ask("in-nope", "yes", evidence="ok").startswith("error: no open question")
+    assert D.answer_ask(asks[0]["id"], "other_time", when=TODAY.isoformat(),
+                        evidence="later").startswith("error: `when`")
+    out = D.answer_ask(asks[0]["id"], "yes", evidence="yes, do it after dinner")
+    assert out.startswith("recorded"), out
+    _CLOCK["now"] += timedelta(minutes=1)
+    plan = D.current(_PERSONA)
+    tb = [b for b in plan["blocks"] if b["kind"] == "task"]
+    assert len(tb) == 1 and tb[0]["displaced_protected"] and tb[0]["intrusion"]["class"] == "family", tb
+    assert not plan["intrusion_asks"]
+    st = RK.load_state(_PERSONA)
+    assert [e["task_id"] for e in st["intrusions"]] == [t], st.get("intrusions")
+    # The second severe task today: k = 2 → ≈ 84.9 < 90, asked again.
+    t2 = _tax("Pay the VAT bill")
+    _CLOCK["now"] += timedelta(minutes=1)
+    plan = D.current(_PERSONA)
+    a2 = [x for x in plan["intrusion_asks"] if x["task_id"] == t2]
+    assert a2 and _close(a2[0]["cost"], 84.85, 0.1), plan["intrusion_asks"]
+    D.answer_ask(a2[0]["id"], "yes", evidence="fine, that one too")
+    _CLOCK["now"] += timedelta(minutes=1)
+    plan = D.current(_PERSONA)
+    # The third: k = 3 → ≈ 155.9 > 90, kept out — and nothing to ask.
+    t3 = _tax("Pay the council tax")
+    _CLOCK["now"] += timedelta(minutes=1)
+    plan = D.current(_PERSONA)
+    assert not [x for x in plan["intrusion_asks"] if x["task_id"] == t3], plan["intrusion_asks"]
+    kept = [x for x in plan["intrusions"] if x["task_id"] == t3]
+    assert kept and kept[0]["decision"] == "kept_out", plan["intrusions"]
+    assert t3 not in {b.get("task_id") for b in plan["blocks"] if b["kind"] == "task"}
+
+
+@check("7: no — the time stays theirs and the task is not asked again today; another day defers it "
+       "to that day; a task due later is recommended for a later day; advance work never asks")
+def _():
+    _fresh("intrusion_no", flags=_P2, shape=_EVENING)
+    _CLOCK["now"] = datetime.combine(TODAY, time(18, 55))
+    t = _tax()
+    plan = D.current(_PERSONA)
+    aid = plan["intrusion_asks"][0]["id"]
+    assert D.answer_ask(aid, "no", evidence="no, that's family time").startswith("recorded")
+    _CLOCK["now"] += timedelta(minutes=1)
+    plan = D.current(_PERSONA)
+    assert not plan["intrusion_asks"] and t not in {b.get("task_id") for b in plan["blocks"]}
+    assert [x["decision"] for x in plan["intrusions"]] == ["declined"], plan["intrusions"]
+    # A must by slack, due in three days: the advice is a later day, no later than its date.
+    _fresh("intrusion_later", flags=_P2, shape=_EVENING)
+    _CLOCK["now"] = datetime.combine(TODAY, time(18, 55))
+    a = {"due": _d(3), "slack": 2.4, "must": True}
+    assert RK.intrusion_advice(a, TODAY) == ("other_time", _d(2))
+    assert RK.intrusion_advice({"due": _d(0), "slack": 0.0}, TODAY) == ("yes", None)
+    t = _tax()
+    plan = D.current(_PERSONA)
+    aid = plan["intrusion_asks"][0]["id"]
+    out = D.answer_ask(aid, "other_time", when=_d(1), evidence="tomorrow")
+    # Due today: defer refuses a day past its date — the answer says to reschedule first.
+    assert out.startswith("error: not moved"), out
+    # Advance work never enters protected time and never asks.
+    _fresh("intrusion_adv", flags=_P2, shape=_EVENING)
+    _CLOCK["now"] = datetime.combine(TODAY, time(18, 55))
+    adv = _tax("Draft the grant application", due=6)
+    plan = D.current(_PERSONA)
+    assert not plan.get("intrusion_asks") and adv not in {b.get("task_id") for b in plan["blocks"]}
+
+
+@check("7 shadow: with protected_v2 off, today's rule still places the essential task in family time, "
+       "and the trace says protected_v2 would have asked; the report prints it")
+def _():
+    _fresh("intrusion_shadow", flags={"ranking_v2": False}, shape=_EVENING)
+    _CLOCK["now"] = datetime.combine(TODAY, time(18, 55))
+    t = _tax()
+    plan = D.current(_PERSONA)
+    tb = [b for b in plan["blocks"] if b["kind"] == "task"]
+    assert tb and tb[0]["displaced_protected"], plan["blocks"]
+    assert "intrusion_asks" not in plan
+    rows = plan["shadow_protected"]
+    assert rows and rows[0]["task_id"] == t and rows[0]["would"] == "ask", rows
+    assert RK.load_state(_PERSONA)["trace"][TODAY.isoformat()]["protected"][t]["would"] == "ask"
+    # Part A's real displacement counts toward k, so the flip starts honest.
+    assert [e["task_id"] for e in RK.load_state(_PERSONA)["intrusions"]] == [t]
+    import scripts.ranking_report as RR
+    text = RR.trace(_PERSONA, TODAY, "protected")
+    assert "Pay the tax bill" in text and "→ ask" in text, text
+
+
+@check("cap (§ 11 row 13): at most 3 system-started prompts a day; one already admitted shows again "
+       "freely")
+def _():
+    _fresh("cap")
+    c = RK.cfg()
+    st: dict = {}
+    assert RK.admit_prompts(st, TODAY, ["a", "b"], c) == ["a", "b"]
+    assert RK.admit_prompts(st, TODAY, ["a", "c", "d"], c) == ["a", "c"]
+    assert RK.prompt_room(st, TODAY, c)[1] == 0
+    assert RK.admit_prompts(st, TODAY + timedelta(days=1), ["d"], c) == ["d"]   # a new day
+
+
+@check("6 (§ 11 row 12): behind = ≥ 3 overdue, or the top task skipped on 2 of the last 3 days")
+def _():
+    _fresh("behind_state")
+    c = RK.cfg()
+    for w in ("Return the passport form", "Renew the parking permit"):
+        _id(O.open_task(w, kind="deadline", due=_d(-2), stakes="vital", stakes_source="stated"))
+    tasks = [O._norm(t) for t in O._load(None)]
+    assert not RK.behind_state(tasks, TODAY, {}, c)["behind"]
+    top = _id(O.open_task("Write the grant bid", kind="deadline", due=_d(4), stakes="vital"))
+    tasks = [O._norm(t) for t in O._load(None)]
+    st = {"top": {_d(-1): top, _d(-3): top}}
+    b = RK.behind_state(tasks, TODAY, st, c)
+    assert b["behind"] and b["top_skipped"] == 2 and "skipped 2" in b["why"], b
+    _id(O.open_task("Pay the dentist invoice", kind="deadline", due=_d(-1), stakes="vital",
+                    stakes_source="stated"))
+    tasks = [O._norm(t) for t in O._load(None)]
+    b = RK.behind_state(tasks, TODAY, {}, c)
+    assert b["behind"] and b["overdue"] == 3 and "3 overdue" in b["why"], b
+    # A top task done on its day was not skipped.
+    O.update_task(top, "done", evidence="sent")
+    assert not RK._skipped_on(_task(top), TODAY)
+
+
+@check("6 live: while behind, the day leads with the quick wins — a ≤ 10-minute step of the hard task "
+       "first, ≤ 20 minutes in all — then the hard task; off, the shadow says so instead")
+def _():
+    for acting in (True, False):
+        flags = {"ranking_v2": True, "behind_v2": acting}
+        _fresh(f"behind_live_{acting}", flags=flags)
+        _CLOCK["now"] = datetime.combine(TODAY, time(9, 0))
+        for w in ("Return the library books", "Renew the parking permit", "Pay the dentist invoice"):
+            _id(O.open_task(w, kind="deadline", due=_d(-1), minutes=20, stakes="vital",
+                            costs={"financial": "major"}, costs_source="stated"))
+        hard = _id(O.open_task("Write the grant bid", kind="deadline", due=_d(0), minutes=120,
+                               stakes="vital", activity="focus", costs={"financial": "severe"},
+                               costs_source="stated"))
+        O.open_plan([{"key": "a", "what": "Open the grant form", "due": _d(0), "minutes": 10,
+                      "part_of": hard}], _PERSONA)
+        step = next(t["id"] for t in O._load(None) if t.get("part_of") == hard)
+        O.update_task(step, "set_costs", costs={"financial": "minor"}, costs_source="stated")
+        quick = _id(O.open_task("Reply to the plumber", kind="deadline", due=_d(0), minutes=5,
+                                stakes="missable", costs={"social": "minor"}, costs_source="stated"))
+        plan = D.current(_PERSONA)
+        starts = {b["task_id"]: b["start"] for b in plan["blocks"] if b["kind"] == "task"}
+        if acting:
+            b = plan["behind"]
+            assert b["behind"] and b["hard"] == hard and b["quick_wins"][0] == step, b
+            assert b["first_step"] and quick in b["quick_wins"], b
+            assert starts[step] < starts[hard] and starts[quick] < starts[hard], starts
+            assert "shadow_behind" not in plan
+        else:
+            sb = plan["shadow_behind"]
+            assert sb["behind"] and sb["hard"] == hard and sb["quick_wins"][0] == step, sb
+            assert "behind" not in plan
+            import scripts.ranking_report as RR
+            text = RR.trace(_PERSONA, TODAY, "behind")
+            assert "behind: YES" in text and "Open the grant form" in text, text
+
+
+@check("raise (§ 11 row 13): a task skipped twice is raised; said twice with no news it goes to the "
+       "weekly list and is not raised again; new information starts the count again; while behind "
+       "only a severe task out of slack is raised")
+def _():
+    _fresh("raises")
+    c = RK.cfg()
+    t = _id(O.open_task("Book the boiler service", kind="deadline", due=_d(5), stakes="vital",
+                        costs={"financial": "major"}, costs_source="stated"))
+    tasks = [O._norm(x) for x in O._load(None)]
+    one = {t: {"days": 1, "first": _d(-1)}}
+    two = {t: {"days": 2, "first": _d(-2)}}
+    assert RK.raise_candidates(tasks, one, {}, TODAY, {}, c, False) == ([], [])
+    out, wk = RK.raise_candidates(tasks, two, {}, TODAY, {}, c, False)
+    assert out == [(t, "skipped 2 days")] and wk == [], out
+    st: dict = {}
+    RK.note_raised(st, tasks, [t], TODAY - timedelta(days=2))
+    RK.note_raised(st, tasks, [t], TODAY - timedelta(days=1))
+    assert st["raises"][t]["n"] == 2
+    out, wk = RK.raise_candidates(tasks, two, {}, TODAY, st, c, False)
+    assert out == [] and wk == [t], (out, wk)
+    RK.to_weekly(st, wk, TODAY)
+    assert RK.raise_candidates(tasks, two, {}, TODAY, st, c, False) == ([], [])
+    O.update_task(t, "reschedule", new_due=_d(9), evidence="the engineer is busy until then")
+    tasks = [O._norm(x) for x in O._load(None)]
+    out, _w = RK.raise_candidates(tasks, two, {}, TODAY, st, c, False)
+    assert out == [(t, "skipped 2 days")], out                     # news: counting again
+    # Behind: the skipped one waits; a severe one out of slack is still raised.
+    sev = _id(O.open_task("File the tax return", kind="deadline", due=_d(1), minutes=600,
+                          stakes="vital", costs={"legal": "severe"}, costs_source="stated"))
+    tasks = [O._norm(x) for x in O._load(None)]
+    out, _w = RK.raise_candidates(tasks, two, {sev: "severe"}, TODAY, {}, c, True)
+    assert out == [(sev, "its slack has run out")], out
+    out, _w = RK.raise_candidates(tasks, two, {sev: "major"}, TODAY, {}, c, True)
+    assert out == [], out
+
+
+@check("raise live: under behind_v2 the brief raises a task skipped twice (not once, as Part A does), "
+       "admitted under the day's cap; a reply that says it counts it")
+def _():
+    _fresh("raise_live", flags={"ranking_v2": True, "behind_v2": True})
+    t = _id(O.open_task("Book the boiler service", kind="deadline", due=_d(0), stakes="vital",
+                        costs={"financial": "major"}, costs_source="stated"))
+    plan = D.current(_PERSONA)
+    with D._locked(_PERSONA):
+        st = D._load_state(_PERSONA)
+        st["slips"] = {t: {"first": _d(-1), "days": 1, "last": _d(-1)}}
+        D._write_json(D._state_path(_PERSONA), st)
+    shown: dict = {}
+    assert "skipped" not in D.render_block(plan, kind="morning_brief", shown=shown)
+    assert not shown.get("slips")
+    with D._locked(_PERSONA):
+        st = D._load_state(_PERSONA)
+        st["slips"][t] = {"first": _d(-2), "days": 2, "last": _d(-1)}
+        D._write_json(D._state_path(_PERSONA), st)
+    shown = {}
+    block = D.render_block(plan, kind="morning_brief", shown=shown)
+    assert "Book the boiler service" in block and "skipped 2 days" in block, block
+    assert f"raise:{t}" in shown["prompts"] and shown["slips"] == [t]
+    D.after_render(_PERSONA, shown)
+    D.note_said("The boiler service has slipped two days — book it now, or drop it?", _PERSONA)
+    assert RK.load_state(_PERSONA)["raises"][t]["n"] == 1
+
+
+@check("owed 1: a promise with no date shows its assumed date in the Tasks section and list_tasks — "
+       "under ranking_v2 only")
+def _():
+    _fresh("implied_show", flags={"ranking_v2": True})
+    t = _id(O.open_task("Send Mum the photos", kind="deadline", minutes=5,
+                        costs={"social": "major"}, bears="close", costs_source="stated"))
+    want = (TODAY + timedelta(days=3)).isoformat()
+    block = O.context_block()
+    assert "Promised with no date" in block and f"`{t}` Send Mum the photos — by {want}" in block, block
+    assert f"assumed by {want}" in O.list_tasks()
+    C._OVERRIDE["flags"]["ranking_v2"] = False
+    assert "Promised with no date" not in (O.context_block() or "")
+    assert "assumed by" not in O.list_tasks()
+
+
+@check("owed 2: the current undated step of an active goal is advance work — one per goal, under the "
+       "floor (a major step offered, a minor one not); a goal no longer live offers none")
+def _():
+    d = _fresh("undated_steps", flags={"ranking_v2": True})
+    (d / "config" / "goals.yaml").write_text(
+        "quarterly:\n  - {id: q1, title: Get fit, status: active}\n"
+        "  - {id: q2, title: Learn Spanish, status: active}\n"
+        "  - {id: q3, title: Old idea, status: dropped}\n")
+    O._GOAL_CACHE.update(key=None)
+    a = _id(O.open_task("Find a running club", kind="deadline", goal_id="q1",
+                        costs={"health": "major"}, costs_source="stated"))
+    _CLOCK["now"] += timedelta(minutes=1)
+    _id(O.open_task("Buy running shoes", kind="deadline", goal_id="q1",
+                    costs={"health": "major"}, costs_source="stated"))
+    _id(O.open_task("Pick a phrasebook", kind="deadline", goal_id="q2",
+                    costs={"psychological": "minor"}, costs_source="stated"))
+    _id(O.open_task("Sketch the old idea", kind="deadline", goal_id="q3",
+                    costs={"psychological": "major"}, costs_source="stated"))
+    v2 = _v2()
+    assert _refs(v2) == [a], [(c["what"], c["v2"]["cod"]) for c in v2]
+    e = v2[0]
+    assert e["advance"] and not e["essential"] and e["v2"]["undated_step"] and e["v2"]["cod"] == 15.0
+
+
+@check("owed 4: a non-focus task placed inside a focus window keeps a 15-minute attention block — "
+       "nothing else lands in its refocus time; off, Part A's 5-minute transition")
+def _():
+    shape = ('day: [{days: all, wake: "07:00", bed: "10:00"}]\nwindows:\n'
+             '  - {activity: focus, days: all, from: "07:00", to: "09:00", strength: preferred}\n'
+             'meals: []\n')
+    for on in (True, False):
+        _fresh(f"focus_pad_{on}", flags={"ranking_v2": on}, shape=shape)
+        for w in ("Pay the gas bill", "Pay the water bill"):
+            _id(O.open_task(w, kind="deadline", due=_d(0), minutes=5, stakes="vital",
+                            activity="admin", costs={"financial": "major"}, costs_source="stated"))
+        plan = D.current(_PERSONA)
+        tb = sorted((b for b in plan["blocks"] if b["kind"] == "task"), key=lambda b: b["start"])
+        gap = (D._dt(tb[1]["start"]) - D._dt(tb[0]["start"])).total_seconds() / 60
+        if on:
+            assert gap >= 15 and tb[0].get("attention_minutes") == 15, tb
+        else:
+            assert gap == 10 and "attention_minutes" not in tb[0], tb
+
+
+@check("rewards (§ 4.9, row 14): something the user enjoys goes within 15 minutes after an effortful "
+       "task; nothing says reward; off, nothing changes")
+def _():
+    for on in (True, False):
+        _fresh(f"enjoyed_{on}", flags={"ranking_v2": on})
+        _CLOCK["now"] = datetime.combine(TODAY, time(9, 0))
+        walk = _id(O.open_task("Walk round the park", kind="deadline", due=_d(0), minutes=20,
+                               stakes="missable", activity="rest", enjoyed=True,
+                               costs={"psychological": "minor"}, costs_source="stated"))
+        assert _task(walk).get("enjoyed") is True
+        rep = _id(O.open_task("Write the quarterly report", kind="deadline", due=_d(0), minutes=60,
+                              stakes="vital", activity="focus", costs={"financial": "major"},
+                              costs_source="stated"))
+        plan = D.current(_PERSONA)
+        b = {x["task_id"]: x for x in plan["blocks"] if x["kind"] == "task"}
+        gap = (D._dt(b[walk]["start"]) - D._dt(b[rep]["end"])).total_seconds() / 60
+        if on:
+            assert 0 <= gap <= 15 and b[walk].get("paired"), (gap, b)
+            assert "reward" not in D.render_full(plan).lower() + D.render_block(plan, shown={}).lower()
+        else:
+            assert "paired" not in b[walk]
+    # set_activity carries enjoyed alone, and false clears it.
+    out = O.update_task(walk, "set_activity", enjoyed=False)
+    assert not out.startswith("error") and "enjoyed" not in _task(walk), out
+
+
+@check("10 (R7): the lookup guard refuses only full personal identifiers — 'Grace School' passes with "
+       "a contact named Grace, 'Grace Hopper' (a contact's full name) is refused, as are an email, a "
+       "phone, an address, an account number and, by default, a money or health figure; dates and "
+       "organisations pass")
+def _():
+    import tools.lookup_guard as LG
+    d = _fresh("guard")
+    (d / "crm").mkdir(exist_ok=True)
+    (d / "crm" / "contacts.json").write_text(json.dumps([
+        {"id": "c1", "first_name": "Grace", "last_name": "Hopper", "name": "Grace Hopper"}]))
+    ok = ["When is the Grace School annual fund deadline?",
+          "How long does a UK passport renewal take in December?",
+          "Is the council's recycling centre open on 2026-12-26?",
+          "What time does Kew Gardens close in winter?"]
+    for q in ok:
+        assert LG.check(q) is None, (q, LG.check(q))
+    bad = {"Gift ideas for Grace Hopper's birthday": "full name",
+           "Is grace   hopper on the school board?": "full name",
+           "Who owns ann@example.com?": "email",
+           "Whose number is 07700 900123?": "phone",
+           "Parking near 14 Elm Grove Road": "address",
+           "Bus routes to SW1A 1AA": "address",
+           "Why was account 12345678 charged?": "account",
+           "Is £640 fair for brakes on a 2019 Golf?": "money",
+           "Is a resting heart rate of 52 bpm normal?": "health",
+           "Is 140/90 high blood pressure?": "health"}
+    for q, kind in bad.items():
+        why = LG.check(q)
+        assert why, q
+        if kind in ("full name", "money", "health", "email"):
+            assert kind in why, (q, why)
+    # Figures pass when the switch is off (Mike's call 2 — one line in ranking.yaml).
+    assert LG.check("Is £640 fair for brakes on a 2019 Golf?", refuse_figures=False) is None
+    assert LG.check("Gift ideas for Grace Hopper", refuse_figures=False)   # names never pass
+
+
+@check("10 live: lookup_public_fact asks the Research Agent only through the guard, under the daily "
+       "cap, and wraps what comes back as outside content; a refusal sends nothing and costs nothing")
+def _():
+    import core.orchestrator as ORC
+    import core.spend_guard as SG
+    import tools.lookup_guard as LG
+    _fresh("lookup")
+    sent: list = []
+    saved = (ORC.run_session, SG.check_before_session)
+    ORC.run_session = lambda agent, user_input="", **k: sent.append((agent, user_input)) or "About six weeks."
+    SG.check_before_session = lambda: None
+    try:
+        # Off at deploy (Fable #1): nothing is sent until Mike turns it on.
+        assert LG.lookup_public_fact("How long does a passport take?").startswith("not available")
+        assert not sent
+        RK._OVERRIDE = {"lookups": {"enabled": True}}
+        out = LG.lookup_public_fact("Is £640 fair for brakes on a 2019 Golf?")
+        assert out.startswith("refused") and "money" in out and not sent, out
+        out = LG.lookup_public_fact("How long does a UK passport renewal take?")
+        assert sent == [("research_agent", "How long does a UK passport renewal take?")], sent
+        assert "<untrusted_content" in out and "About six weeks." in out, out
+        for _i in range(4):
+            LG.lookup_public_fact("How long does a UK passport renewal take?")
+        assert len(sent) == 5
+        out = LG.lookup_public_fact("When does the school term start?")
+        assert out.startswith("refused") and "lookups are used" in out and len(sent) == 5, out
+        # A lookup that never ran gives its place back (Fable #11).
+        _fresh("lookup_fail")
+        RK._OVERRIDE = {"lookups": {"enabled": True}}
+        ORC.run_session = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down"))
+        assert LG.lookup_public_fact("How long does a passport take?").startswith("the lookup did not")
+        assert RK.load_state(_PERSONA)["lookups"]["n"] == 0
+    finally:
+        ORC.run_session, SG.check_before_session = saved
+
+
+@check("11 (§ 4.8): an inferred passion never lifts a grade; a stated one lifts psychological and "
+       "social by exactly one step — named on the record, or through the goal it is tied to; a "
+       "'stated' passion that the cited mission or goal does not name is kept inferred; the judge "
+       "sees stated passions only")
+def _():
+    import tools.profile as PR
+    d = _fresh("passions", flags={"ranking_v2": True})
+    PR.persona_config_dir = lambda persona=None, _d=d: _d / "config"
+    (d / "config" / "goals.yaml").write_text(
+        "quarterly:\n  - {id: q1, title: Grow our own vegetables in the garden, status: active}\n")
+    O._GOAL_CACHE.update(key=None)
+    (d / "config" / "mission.md").write_text("Make music most weeks; raise the children well.\n")
+    import tools.turn_context as TC
+    t = _id(O.open_task("Repot the tomato seedlings", kind="deadline", due=_d(0),
+                        costs={"psychological": "minor", "financial": "minor"},
+                        passion="gardening", costs_source="inferred"))
+    base = _assess(_task(t))["G"]
+    out = PR.write_profile("passions", "gardening", source="inferred")
+    assert "(inferred)" in out, out
+    v = [c for c in _v2() if c["task_id"] == t][0]["v2"]
+    assert v["G"] == base and "passion" not in v, v                  # inferred never lifts
+    out = PR.write_profile("passions", "gardening", source="stated", basis="chat")
+    assert "(inferred)" in out and "nothing from the user" in out, out   # no turn: fail-closed
+    with TC.turn_scope(True):
+        out = PR.write_profile("passions", "gardening", source="stated", basis="chat")
+    assert "(stated)" in out, out
+    v = [c for c in _v2() if c["task_id"] == t][0]["v2"]
+    lifted = RK.importance({"psychological": "major", "financial": "minor"}, RK.cfg())
+    assert v["passion"] == "gardening" and v["G"] == lifted, (v, lifted)   # one step, not two
+    assert RK.lift({"social": "severe", "financial": "minor"}) == {"social": "severe",
+                                                                   "financial": "minor"}
+    # Tied to a goal: a task on q1 is lifted with no `passion` on its record.
+    out = PR.write_profile("passions", "vegetable growing", source="stated", basis="q1")
+    assert "(stated)" in out and PR.stated_passions()[-1]["goals"] == ["q1"], out
+    g = _id(O.open_task("Order the seed potatoes", kind="deadline", due=_d(0), goal_id="q1",
+                        costs={"social": "minor"}, costs_source="inferred"))
+    assert [c for c in _v2() if c["task_id"] == g][0]["v2"].get("passion") == "vegetable growing"
+    # The mission names music, not chess: chess stays inferred.
+    assert "(stated)" in PR.write_profile("passions", "music", source="stated", basis="mission")
+    out = PR.write_profile("passions", "chess", source="stated", basis="mission")
+    assert "(inferred)" in out and "does not name" in out, out
+    # Fable #6: one shared word is not naming ("chess with the children" vs "raise the children");
+    # re-recording a stated passion against a goal that does not name it does not tie it.
+    assert "(inferred)" in PR.write_profile("passions", "chess with the children", source="stated",
+                                            basis="mission")
+    PR.write_profile("passions", "music", source="inferred", basis="q1")
+    assert not next(r for r in PR.stated_passions() if r["what"] == "music").get("goals")
+    # Fable #12: the user's own stated grade is never lifted.
+    u = _id(O.open_task("Tune the guitar", kind="deadline", due=_d(0), passion="music",
+                        costs={"psychological": "minor"}, costs_source="stated"))
+    assert "passion" not in [c for c in _v2() if c["task_id"] == u][0]["v2"]
+    # The judge: stated passions only, and it may name only one of them.
+    payload = TJ._payload([_task(t)], _PERSONA, {t: ("costs",)})
+    assert set(payload["passions"]) == {"gardening", "vegetable growing", "music"}, payload
+    assert "passion" in payload["rules"] and "do not raise it" in payload["rules"]["costs"]
+    assert TJ._known_passion("Gardening") == "gardening" and TJ._known_passion("chess") is None
+
+
+@check("review (phase 2) #2: a daily dose or a multi-day task is never the 'top task' that makes the "
+       "user behind; #3: a protected-time question wakes the user, and one past the cap is not "
+       "called 'waiting'; #10: tomorrow's draft asks nothing")
+def _():
+    _fresh("top_behind", flags={"ranking_v2": True})
+    dose = _id(O.open_task("Take the morning tablet", kind="habit", every="day", minutes=5,
+                           costs={"health": "severe"}, costs_source="stated"))
+    long = _id(O.open_task("Write the thesis chapter", kind="deadline", due=_d(1), minutes=600,
+                           stakes="vital", costs={"psychological": "major"}, costs_source="stated"))
+    bill = _id(O.open_task("Pay the phone bill", kind="deadline", due=_d(0), minutes=10,
+                           stakes="vital", costs={"financial": "minor"}, costs_source="stated"))
+    assert D._top_for_behind([dose, long, bill], _PERSONA) == bill
+    # #3
+    _fresh("ask_nudge", flags=_P2, shape=_EVENING)
+    _CLOCK["now"] = datetime.combine(TODAY, time(18, 55))
+    _tax()
+    plan = D.current(_PERSONA)
+    aid = plan["intrusion_asks"][0]["id"]
+    nud = [x for x in plan["suggestions"] if x["id"] == f"nudge:ask:{aid}"]
+    assert nud and nud[0]["kind"] == "nudge" and "answer_ask" in nud[0]["why"], plan["suggestions"]
+    with D._locked(_PERSONA):
+        st = RK.load_state(_PERSONA)
+        st["prompts"] = {TODAY.isoformat(): ["a", "b", "c"]}
+        RK.save_state(st, _PERSONA)
+    block = D.render_block(plan, shown={})
+    assert "answer_ask" not in block and "kept out of family time today" in block, block
+    # #10: the draft for tomorrow carries no question nobody can answer yet.
+    draft = D._build(TODAY + timedelta(days=1), _PERSONA, "reshuffle", [], None, _CLOCK["now"], [],
+                     D._candidates(TODAY + timedelta(days=1), _PERSONA), False, draft=True)
+    assert "intrusion_asks" not in draft
+
+
+@check("review (phase 2) #5/#8: the guard catches a full name with a middle name or initial, "
+       "surname first, a partner's name; fails closed when the contacts cannot be read; skips an "
+       "organisation; and lets ordinary public numbers through")
+def _():
+    import tools.lookup_guard as LG
+    d = _fresh("guard2")
+    (d / "crm").mkdir(exist_ok=True)
+    (d / "crm" / "contacts.json").write_text(json.dumps([
+        {"id": "c1", "first_name": "Grace", "last_name": "Hopper", "spouse_name": "Vincent Foster"},
+        {"id": "c2", "name": "Oak Tree Dental", "relationship_type": "business"}]))
+    for q in ("Is Grace M. Hopper on the board?", "Grace Brewster Hopper's office hours",
+              "Hopper, Grace — school governor?", "Where does Vincent Foster work?"):
+        assert LG.check(q) and "full name" in LG.check(q), q
+    for q in ("Is Oak Tree Dental open on Saturdays?", "When does the 2025-2026 school term start?",
+              "Is the tip open 0900-1700 on Sundays?", "Form 1040 2025 deadline",
+              "What is the 23 kg baggage allowance on easyJet?", "Is 100 ml the liquid limit?",
+              "How long to roast a 10 lb turkey?"):
+        assert LG.check(q) is None, (q, LG.check(q))
+    assert LG.check("Is 80 kg a healthy weight?") == "a health reading"
+    assert LG.check("Is a 200 mg dose of ibuprofen safe?") == "a health reading"
+    (d / "crm" / "contacts.json").write_text("{not json")
+    assert "could not be read" in LG.check("How long does a passport take?")
+
+
+@check("schemas (phase 2): answer_ask is classified as an action and registered; enjoyed is a plan "
+       "field; both phase 2 flags ship off")
+def _():
+    from core import actions
+    assert "answer_ask" in actions.ACTION_TOOLS
+    assert "enjoyed" in O._PLAN_FIELD_PROPS
+    raw = yaml.safe_load((ROOT / "config" / "modules" / "day_plan.yaml").read_text())
+    assert raw["flags"]["protected_v2"] is False and raw["flags"]["behind_v2"] is False
+    assert D.ANSWER_ASK_SCHEMA["input_schema"]["required"] == ["ask_id", "answer", "evidence"]
 
 
 if __name__ == "__main__":

@@ -647,3 +647,125 @@ judge**, not changed here.
 
 **Revert.** `ranking_v2` off restores Part A exactly; `cost_record` off stops recording and hides
 the fields. Part A's own revert (goal network plan § 16) is unchanged.
+
+## 11b. Phase 2 built (2026-11-23) — in shadow
+
+Built by Opus 5.5 from `archive/handoffs/2026-11-23-ranking-part-b-phase-2-build-prompt.md`; diff
+reviewed by Fable (the `fable` model the harness offers, 5.2 — the prompt named 5.1). Tests:
+`tests/test_ranking_v2.py` 45/45 (26 → 45), Part A's `tests/test_task_ranking.py` 21/21 with every
+new flag off; every ledger, planner, horizon, medication, profile and security suite unchanged
+(the two failures on clean HEAD remain: round-2 F8, `task_ledger_consult`'s 3 November date).
+QA sweep 12/12. **Not deployed.**
+
+**Mike's calls at the start (2026-11-23):** (1) the second family-time intrusion in a week is
+still asked — the ruled values stand (a severe task due today: 30, then ≈ 85, kept out at ≈ 156);
+(3) `protected_v2` and `behind_v2` act only with `ranking_v2` on; (4) a passion lifts through a
+`passion` field on the record, applied by code; (5) commit only this chat's hunks. (2) — refusing
+money and health figures in a lookup — was put to him in plain words and is built as one switch
+(`lookups.refuse_figures`, on), pending his answer. On item 6 he added: **"passion ID should be
+tied into goals/mission as well"** — built as below, put back to him to confirm.
+
+**Built.**
+1. **`protected_v2`** (§ 4.5, R5, R6, rows 10–11). `ranking.yaml` `protected`: bases family 30,
+   rest/own 18, exercise 12, any other protected activity 18 (placeholder); k-th intrusion
+   `base × k^1.5`, k = 1 + Σ 0.5^(age/3.5 days) over the class's recorded intrusions (kept 21
+   days, once per task a day). A window's class is its first activity; holds and childcare duties
+   are family. In `_fill` (`intrude`): only a must, never advance work; the cheapest slot by total
+   intrusion cost, a slot the user said yes to first; decisions **granted / kept_out / declined /
+   ask**; nothing enters unasked. The question carries a recommendation (yes when no later day
+   keeps it on time, else the latest day that does) and no numbers; it is a nudge an hour before
+   the window as well as an Ask (R5). **Shadow:** Part A's displacements are traced with what v2
+   would have done (`shadow_protected`, `trace.protected`) and are counted as real intrusions, so
+   k is honest on flip day.
+2. **`answer_ask(ask_id, answer, evidence, when?)`** — yes / no (kept out, not asked again today)
+   / other_time (a defer to `when`, no later than its date). User turn and evidence required. An
+   answer rebuilds the plan (`_ask_digest` → repair). Classified as an action; granted to the
+   Synthesizer in both routing files; one `synthesizer.md` sentence.
+3. **`behind_v2`** (rows 12–13). Behind = ≥ 3 overdue, or the day's top task skipped on 2 of the
+   last 3 days. While behind, the day leads with ≤ 2 quick wins (≤ 20 min), the first a ≤ 10-min
+   step of the hard task when one exists, each at its earliest free time. Raises replace Part A's
+   slipped-task asks under the flag: when skipped 2 days or out of slack, once a day, at most twice
+   without new information (a digest of what/when/how long/costs), then to `ranking_state.weekly`
+   for phase 3; while behind, only a severe task out of slack. One shared cap: 3 system-started
+   prompts a day (raises + protected-time questions), admitted on showing. **Shadow:**
+   `shadow_behind` / `trace.behind` — behind or not and why, the hard task, the quick wins, the
+   raises and weekly moves beside Part A's asks.
+4. **Probing at mention** (§ 4.7) — one `synthesizer.md` paragraph: infer the record, at most one
+   question, only when it would change the rank or the date; look a public fact up first.
+5. **`lookup_public_fact` + `tools/lookup_guard.py`** (R7). The guard is code and always runs:
+   refuses the user's or a contact's full name (with middle names, surname first, a partner's
+   name), email, phone, street address and postcode, account/reference numbers, and — the switch —
+   money amounts and health readings (a weight or a dose only beside a body word). Fails closed
+   when the contacts cannot be read. A contact recorded as an organisation is not a name. Bare
+   Research Agent, answer wrapped as untrusted, 5 a day per persona, a failed lookup gives its
+   place back. **Ships OFF** (`lookups.enabled: false`, Fable #1): price below.
+6. **Passions** (§ 4.8, test 11). `profile.yaml` `passions` `{what, source, since, basis, goals}`
+   via `write_profile(field="passions", source, basis)`. **Tied to goals and mission (Mike):** a
+   passion is `stated` only on the user's word — said in a user turn (`basis: chat`; no turn bound
+   = inferred), or written in their mission or a goal (`basis: mission` / a goal id), where code
+   checks that every word of it appears. A passion tied to a goal (by that goal's own words) lifts
+   the tasks on that goal; a task off any goal lifts only when its record names it (`passion`).
+   Lift = psychological and social one grade (severe stays severe, nothing added), importance only
+   — whether a task is vital stays the record's (R1) — and never on a record the user stated
+   (Fable #12). The judge receives stated passions only, may name only one of them, and its
+   `costs` rule now says not to raise a grade for a passion itself. The head layer sees passions,
+   inferred ones marked as a reason to ask.
+7. **Rewards, never named** (§ 4.9, row 14). `enjoyed` in `_PLAN_FIELD_PROPS` (`open_task`, and
+   `set_activity` on update). Under `ranking_v2`: placed within 15 min after a heavy or exercise
+   task; an enjoyed item that is not a must waits in the order for the effortful one after it.
+   Nothing says why.
+8. **Owed from § 11a:** (1) assumed dates for undated promises in the Tasks section and
+   `list_tasks`, under `ranking_v2` only; (2) the current undated step of each live goal as advance
+   work at `undated_step_factor` 0.5 of its weight, floor applying, one per goal; (3) the buffer
+   observation below, `learn.enabled` now **true** — inert until `ranking_v2` is on; (4) a non-focus
+   task placed in a focus window keeps the 15-minute attention block clear of other tasks.
+9. `scripts/ranking_report.py --protected` / `--behind` read the per-day trace (14 days).
+
+**Deviations from the prompt and plan, each with its reason.**
+1. **"Slack below 0" for a raise is `slack + 1 < 0`** — cannot be done by its date even starting
+   now. Phase 1's slack counts the days left *after* today, so every task due today reads below 0
+   by its own need; read literally, every task due today would be raised.
+2. **The buffer observation** (owed 3): learns only live (`ranking_v2` on); tracked from the day the
+   task is placed on its computed must-start day (−1 < slack ≤ 0) and only if it existed before
+   that day; observation `log(actual whole days ÷ max(1, ⌈raw × (1 + tier)⌉))` — done on its last
+   allotted day reads 0, where phase 1's read +0.19. A task opened late, due today, or past its
+   start on flip day is never tracked (Fable #7: it would teach "finishes early").
+3. **"The top task"** for behind is the first must that is a one-off doable within a day — a dose
+   or a habit stays open after it is done, and a multi-day task while it is worked, so either would
+   read "skipped" every day (Fable #2).
+4. **Quick wins** are one-off deadlines that are not advance work — never a dose or a habit.
+5. **Lookups ship off**, beyond the prompt's "capped" (Fable #1): the grounding spend starts at
+   deploy otherwise, before Mike has checked its price.
+6. **The rest of phase 2 that is live flag-off, accepted** (Fable #1): the three `synthesizer.md`
+   paragraphs; `enjoyed`/`passion` in the task schemas and `source`/`basis` in `write_profile`;
+   the judge's amended `costs` rule and its `passions` list; the head layer's Passions line; a
+   `ranking_state.json` write per build. None moves a placement or a plan line; recording passions
+   and enjoyed items before the flip is what gives the flip something to read.
+
+**Fable diff review, 2026-11-23 — reconciled.**
+
+| # | What a user would see | Resolution |
+|---|---|---|
+| 1 | Lookups go to Google, and the Synthesizer's new conduct is live, at deploy with every flag off | **Fixed** for lookups: off until Mike turns them on. The rest **accepted** (deviation 6); the phase 2 shadow moved off the reply path |
+| 2 | A user who takes their medication daily is permanently "behind" | **Fixed** (deviation 3); test "review (phase 2) #2" |
+| 3 | An essential task due today silently doesn't happen — the question only reaches a user who talks first | **Fixed.** The question is also a nudge an hour before the window (R5); past the cap it is "kept out of family time today", never "waiting"; test "#3" |
+| 4 | While behind, the day doesn't actually lead with the quick wins | **Fixed** in part: quick wins take their earliest free time, are one-offs only, and `behind.led` records whether the day really leads with them. **Open:** a model reshuffle's placements arrive as kept slots and can undo the lead — read `led` in the walkthrough before flipping |
+| 5 | A contact's full name with a middle initial, surname first, or a partner's name gets through; an unreadable contacts file lets every name through | **Fixed**; test "#5/#8". **Accepted:** names inside free-text profile fields (`household`, `other`) are not parsed |
+| 6 | A model can make a passion lift a goal's tasks with no word of the user's | **Fixed.** A goal tie needs the goal's own words; every word of the passion must appear; no user turn = inferred; an inference never ties a stated passion to a new goal |
+| 7 | The buffer learner would teach "finishes early" and shrink the start-late buffer | **Fixed** (deviation 2); test 13 |
+| 8 | Ordinary public questions refused ("2025-2026 term", "23 kg baggage") | **Fixed.** A phone needs 10 digits or a +; a weight or dose only beside a body word; an organisation contact is not a name |
+| 9 | An enjoyed must can lose its slot to lower-ranked tasks | **Fixed.** Only a non-must waits in the order |
+| 10 | A yes can leave a task stuck; a reply-path question can't be answered; tomorrow's draft carries questions; a Part A displacement is kept unasked on flip day | **Fixed**, all four: the id covers the whole window set; answer_ask builds and writes when the question isn't on disk; no guard on a draft; a displaced block without a yes is decided again |
+| 11 | A lookup that failed uses up the day's allowance | **Fixed.** The place is given back |
+| 12 | The passion lift overrides the user's own grade | **Fixed** for stated records. **Accepted:** a record the judge wrote under the old "keen gardener … major" wording may count the passion twice; the walkthrough's passion check catches it |
+| 13 | § 4.8's "at most once a month, never in a week they are behind" is prompt-only; the protected shadow sees only what Part A placed | **Accepted**, both: the cadence is conduct (the Synthesizer cannot see "behind"); a v2 must that Part A did not place in protected time is visible in `trace.intrusions` only once the flag acts |
+
+**Grounding price (§ 8, Unseen 1) — an (M) item.** Recalled, not verified (no web access in the
+build): Gemini 3-series grounding ≈ $14 per 1,000 search queries, a lookup may run a few; 2-series
+≈ $35 per 1,000 grounded requests. At 5 a day × ~3 queries the worst case is ≈ $0.21 a day per
+user (~$6/month). Written beside the cap in `ranking.yaml`. Mike checks it on the Vertex AI pricing
+page, then rules on figures, then sets `lookups.enabled: true`.
+
+**Revert.** `protected_v2` / `behind_v2` off restore phase 1 exactly (they are also inert while
+`ranking_v2` is off). `lookups.enabled: false` stops every lookup. Passions and `enjoyed` are
+records: off the flags they move nothing.

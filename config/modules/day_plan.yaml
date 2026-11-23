@@ -68,6 +68,21 @@ flags:
   # with scripts/ranking_report.py --compare. On only after Mike's three-morning comparison (v2
   # preferred on ≥ 2 of 3, no real obligation below the cut). Off restores Part A exactly.
   ranking_v2: false
+  # RANKING, PART B, PHASE 2 (2026-11-23; same plan, §§ 4.5, 4.10, 11 rows 10–13, 11b). Each acts
+  # only with `ranking_v2` also on — it needs v2's cost of delay — and is otherwise SHADOW: every
+  # build writes what it would have done to the plan's trace and ranking_state.json's `trace`
+  # (read with scripts/ranking_report.py --protected / --behind). Flip each after its own
+  # three-day walkthrough; off restores phase 1's behaviour exactly.
+  # `protected_v2`: a task enters family time, rest or exercise only when its cost of delay
+  # exceeds the intrusion cost (ranking.yaml `protected`), and never silently — the user is asked,
+  # with a recommendation, and answers in chat (answer_ask). Unanswered, the window stays
+  # protected. Off: Part A's rule — an essential task with no other room takes it, and says why.
+  protected_v2: false
+  # `behind_v2`: when the user is behind (≥ 3 overdue, or the top task skipped 2 of the last 3
+  # days) the day leads with 1–2 quick wins; a slipping task is raised at most twice without new
+  # information, then waits for the weekly list; at most 3 such prompts a day (ranking.yaml
+  # `behind`, `raise`). Off: Part A's slipped-task asks, once a day, every day (Mike's M3).
+  behind_v2: false
 
 replaces_jobs: [companion_checkin]
 

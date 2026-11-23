@@ -182,8 +182,30 @@ def _payload(tasks: list[dict], persona: str, wants: dict | None = None) -> dict
     }
     if any("costs" in w for w in wants.values()):
         out["rules"] = {k: O._COST_FIELD_PROPS[k]["description"]
-                        for k in ("costs", "bears", "shape", "real_due")}
+                        for k in ("costs", "bears", "shape", "real_due", "passion")}
+        # The user's STATED passions only (ranking § 4.8): an inferred one is a reason to ask
+        # them, never a reason to weigh a task — so the judge never sees it.
+        try:
+            from tools.profile import stated_passions
+            passions = [str(p["what"]) for p in stated_passions()]
+        except Exception:  # noqa: BLE001
+            passions = []
+        if passions:
+            out["passions"] = passions
     return out
+
+
+def _known_passion(name) -> str | None:
+    """The judge may name only a passion the user stated; anything else is dropped (None)."""
+    n = str(name or "").strip()
+    if not n:
+        return None
+    try:
+        from tools.profile import stated_passions
+        return next((str(p["what"]) for p in stated_passions()
+                     if str(p["what"]).strip().lower() == n.lower()), None)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _call_model(payload: dict, persona: str) -> str:
@@ -233,7 +255,8 @@ def validate(result, offered: set[str], wants: dict | None = None,
             rec, err = O._cost_fields(kinds.get(v["id"]) or "deadline", costs=v.get("costs") or {},
                                       bears=v.get("bears") or "self", shape=shape,
                                       real_due=v.get("real_due") or None,
-                                      costs_source="inferred", costs_why=why)
+                                      costs_source="inferred", costs_why=why,
+                                      passion=_known_passion(v.get("passion")))
             if err:
                 errors.append(f"{v['id']}: cost record — {err[:80]}")
             else:

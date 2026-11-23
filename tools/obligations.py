@@ -1771,7 +1771,8 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
               after: str | None = None, done_words=None,
               costs=None, bears: str | None = None, shape: str | None = None,
               real_due: str | None = None, costs_source: str | None = None,
-              costs_why: str | None = None, medication: str | None = None) -> str:
+              costs_why: str | None = None, medication: str | None = None,
+              enjoyed: bool | None = None, passion: str | None = None) -> str:
     """Record something the user has to do, or is waiting on, so it is tracked until done."""
     what = (what or "").strip()
     if not what:
@@ -1853,22 +1854,23 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
         entry["calendar_uid"] = str(calendar_uid).strip()
     if not _ledger_fields():
         # Not in the schema while the flag is off; a model that guesses one changes nothing.
-        goal_id = priority = stakes = zone = activity = None
+        goal_id = priority = stakes = zone = activity = enjoyed = None
     plan, err = _plan_fields(kind, goal_id=goal_id or None, priority=priority or None,
                              priority_source=priority_source, stakes=stakes or None,
                              stakes_source=stakes_source, zone=zone or None,
                              activity=activity or None, stakes_why=stakes_why,
-                             windowed=bool(_month_window(entry)))
+                             windowed=bool(_month_window(entry)), enjoyed=enjoyed or None)
     if err:
         return err
     entry.update({k: v for k, v in plan.items() if v is not None})
     if _cost_record():
         # The cost record (ranking § 10 R1) — beside stakes, never writing them.
         rec, err = _cost_fields(kind, costs=costs, bears=bears, shape=shape, real_due=real_due,
+                                passion=passion,
                                 costs_source=costs_source, costs_why=costs_why)
         if err:
             return err
-        entry.update(rec)
+        entry.update({k: v for k, v in rec.items() if v is not None})
     if _ledger_fields():
         win, err = _window_fields(kind, entry.get("due"), flexible, after)
         if err:
@@ -2143,9 +2145,13 @@ def _stakes_read(t: dict) -> str | None:
 
 
 def _cost_fields(kind: str, costs=None, bears=None, shape=None, real_due=None,
-                 costs_source=None, costs_why=None) -> tuple[dict, str | None]:
-    """Validate a cost record write. Returns (fields to set, error). Never touches `stakes`."""
+                 costs_source=None, costs_why=None, passion=None) -> tuple[dict, str | None]:
+    """Validate a cost record write. Returns (fields to set, error). Never touches `stakes`.
+    `passion` names one of the user's passions the task serves (ranking § 4.8); "" clears it.
+    Whether it lifts anything is code's: only a passion the profile marks stated does."""
     out: dict = {}
+    if passion is not None:
+        out["passion"] = str(passion).strip()[:60] or None
     if costs is not None:
         if isinstance(costs, str):
             try:
@@ -2180,7 +2186,7 @@ def _cost_fields(kind: str, costs=None, bears=None, shape=None, real_due=None,
         out["real_due"] = iso
     if str(costs_why or "").strip():
         out["costs_why"] = str(costs_why).strip()[:120]
-    if out:
+    if any(k != "passion" for k in out):
         src, err = _source_arg("costs_source", costs_source)
         if err:
             return {}, err
@@ -2205,7 +2211,11 @@ def _set_costs(task_id: str, **kw) -> str:
                     "costs_why. Nothing was written.")
         if t.get("costs_source") == "stated" and fields.get("costs_source") == "inferred":
             return f"{tid} keeps the user's own cost record — an inference does not replace it"
-        t.update(fields)
+        for k, v in fields.items():
+            if v is None:
+                t.pop(k, None)          # `passion` "" clears it
+            else:
+                t[k] = v
         t.setdefault("history", []).append({"event": "costs_set", "at": _stamp(),
                                             **{k: v for k, v in fields.items()
                                                if k != "costs_why"}})
@@ -2373,10 +2383,13 @@ def _deferred_until(t: dict) -> str | None:
 
 def _plan_fields(kind: str, goal_id=None, priority=None, priority_source=None, stakes=None,
                  stakes_source=None, zone=None, windowed: bool = False,
-                 activity=None, stakes_why=None) -> tuple[dict, str | None]:
+                 activity=None, stakes_why=None, enjoyed=None) -> tuple[dict, str | None]:
     """Validate the planner's fields. Returns (fields to set, error). An empty string for
-    `goal_id`, `zone` or `activity` clears it."""
+    `goal_id`, `zone` or `activity` clears it; `enjoyed` false clears it."""
     out: dict = {}
+    if enjoyed is not None:
+        # Something the user enjoys (ranking § 4.9): placed soon after an effortful item.
+        out["enjoyed"] = True if enjoyed is True or str(enjoyed).strip().lower() == "true" else None
     if activity is not None:
         act = str(activity).strip().lower()
         if act:
@@ -2481,11 +2494,17 @@ def _set_days(task_id: str, on_days, evidence: str | None) -> str:
 def _set_plan_field(task_id: str, action: str, **kw) -> str:
     wanted = {"link_goal": "goal_id", "set_priority": "priority", "set_stakes": "stakes",
               "set_zone": "zone", "set_activity": "activity"}[action]
-    if kw.get(wanted) is None:
+    # set_activity also carries `enjoyed` (ranking § 4.9) — what kind of thing it is, and whether
+    # the user enjoys it — so either one alone is enough.
+    with_enjoyed = action == "set_activity" and kw.get("enjoyed") is not None
+    if kw.get(wanted) is None and not with_enjoyed:
         return f"error: `{wanted}` is required for {action}. Nothing was written."
+    if kw.get(wanted) is None:
+        wanted = "enjoyed"
     tid = _split_id(task_id)
     only = {k: v for k, v in kw.items() if k in (wanted, f"{wanted}_source")
-            or (wanted == "stakes" and k == "stakes_why")}
+            or (wanted == "stakes" and k == "stakes_why")
+            or (with_enjoyed and k in ("activity", "enjoyed") and v is not None)}
 
     def apply(doc: dict) -> str:
         t = _find(doc["tasks"], tid)
@@ -2553,7 +2572,8 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
                 stakes_why: str | None = None, costs=None, bears: str | None = None,
                 shape: str | None = None, real_due: str | None = None,
                 costs_source: str | None = None, costs_why: str | None = None,
-                medication: str | None = None, done_words=None) -> str:
+                medication: str | None = None, done_words=None,
+                enjoyed: bool | None = None, passion: str | None = None) -> str:
     """Record what happened to a tracked task — done, done with a loose end, skipped,
     dismissed, reopen, reschedule, a new note, or a habit's link to a medication."""
     action = (action or "").strip().lower()
@@ -2569,7 +2589,7 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
         return f"error: `action` must be one of {', '.join(actions)}, not {action!r}"
     if action == "set_costs":
         return _set_costs(task_id, costs=costs, bears=bears, shape=shape, real_due=real_due,
-                          costs_source=costs_source, costs_why=costs_why)
+                          costs_source=costs_source, costs_why=costs_why, passion=passion)
     if action == "set_medication":
         return _set_medication(task_id, medication, done_words, evidence)
     if action == "done_with_followup":
@@ -2588,7 +2608,7 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
         return _set_plan_field(task_id, action, goal_id=goal_id, priority=priority,
                                priority_source=priority_source, stakes=stakes,
                                stakes_source=stakes_source, zone=zone, activity=activity,
-                               stakes_why=stakes_why)
+                               stakes_why=stakes_why, enjoyed=enjoyed)
     evidence = _evidence_arg(evidence)
     if action in ("done", "skipped", "dismissed", "reopen") and not evidence:
         return ("error: `evidence` is required — quote what the user said that shows this. "
@@ -2888,9 +2908,12 @@ def list_tasks(include_closed: bool = False, horizon: str | None = None) -> str:
     # The link is shown only to a caller that may set one (Finance and Logistics hold this tool
     # too, and the link names a profile entry — review item 8's no-oracle rule).
     show_link = _may_set_link()
+    implied = _implied_dates(open_items)
     for t in sorted(open_items, key=lambda t: _view(t, today)["sort"]):
         v = _view(t, today)
         lines.append(f"  {v['occ']}  [{t['kind']}] {t['what']} — {_state_line(t, today)}"
+                     + (f" (no date given — assumed by {implied[t['id']]})"
+                        if t["id"] in implied else "")
                      + (_link_tag(t) if show_link else ""))
     if waiting_steps:
         lines.append(f"  (+{waiting_steps} later step{'s' if waiting_steps != 1 else ''} of a "
@@ -3095,7 +3118,8 @@ def context_block(persona: str | None = None, as_of: date | None = None,
     later_text = ", ".join(f"{n} {singular.get(label, label) if n == 1 else label}"
                            for label, n in later.items() if n)
 
-    if not (shown or hidden or recent or pending or later_text):
+    implied = _implied_dates(tasks)
+    if not (shown or hidden or recent or pending or later_text or implied):
         return ""
     lines = ["## Tasks", _BLOCK_HEADER]
     boundary = _day_starts(persona)
@@ -3121,7 +3145,40 @@ def context_block(persona: str | None = None, as_of: date | None = None,
                      f"confirms it in words.")
     if later_text:
         lines.append(f"**Later:** {later_text} — `list_tasks` for detail.")
+    if implied:
+        # Ranking Part B (plan § 11a, owed 1): a promise to someone with no date is ranked by an
+        # assumed one (B25, R8) — shown, so it can be seen and corrected rather than acted on
+        # out of sight.
+        by_id = {t["id"]: t for t in tasks}
+        rows = sorted(implied.items(), key=lambda kv: kv[1])[:_IMPLIED_MAX]
+        lines.append("**Promised with no date — ranked as if due by the date shown** (a quick "
+                     "favour 3 days, an effortful one a week). If it comes up, say the date once; "
+                     "on the user's own date, reschedule it: " + "; ".join(
+                         f"`{tid}` {by_id[tid]['what']} — by {d}" for tid, d in rows))
     return "\n".join(lines)
+
+
+_IMPLIED_MAX = 3
+
+
+def _implied_dates(tasks: list[dict]) -> dict[str, str]:
+    """{task id: the assumed date} for open, undated promises to someone (ranking.implied_due) —
+    under `ranking_v2` only: before the flip the date ranks nothing, so nothing shows it."""
+    if not _ranking_v2():
+        return {}
+    try:
+        from tools import ranking as RK
+        c = RK.cfg()
+    except Exception:  # noqa: BLE001
+        return {}
+    out = {}
+    for t in tasks:
+        if t.get("status") != "open":
+            continue
+        d = RK.implied_due(t, c)
+        if d is not None:
+            out[t["id"]] = d.isoformat()
+    return out
 
 
 # --- The close gate -------------------------------------------------------------------------
@@ -5349,6 +5406,10 @@ _PLAN_FIELD_PROPS = {
     "after": {"type": "string",
               "description": "HH:MM — the earliest time of day it can start (\"after 4 pm\" is "
                              "16:00)."},
+    "enjoyed": {"type": "boolean",
+                "description": "true when the user enjoys doing it (a walk, a call with a friend, "
+                               "a hobby) — it is then placed soon after something effortful. "
+                               "With update_task, set by set_activity."},
 }
 
 # The cost record (ranking Part B, plan § 4.1 as amended by § 10 R1): what a delay would cost and
@@ -5370,9 +5431,10 @@ _COST_FIELD_PROPS = {
                              "health, social (someone let down, a relationship worn), psychological "
                              "(it would weigh on them, or they would regret it). minor — a "
                              "nuisance; major — a real loss they would feel for a while; severe — "
-                             "lasting harm, hard to undo. Judge against what they care about: for "
-                             "a keen gardener, losing the plants can be a major psychological "
-                             "cost. Taxes, bills, legal and official dates and health appointments "
+                             "lasting harm, hard to undo. Judge against their goals and "
+                             "circumstances; a passion it serves is named in `passion` and raises "
+                             "the grade by itself — do not raise it for that as well. Taxes, "
+                             "bills, legal and official dates and health appointments "
                              "carry a real cost whatever their goals say. A harm that rebounds on "
                              "the user (their job, their reputation) is graded as theirs."},
     "bears": {"type": "string", "enum": list(_BEARS),
@@ -5394,6 +5456,10 @@ _COST_FIELD_PROPS = {
     "costs_source": {"type": "string", "enum": ["stated", "inferred"],
                      "description": "stated — the user said so; inferred — your judgement. A "
                                     "stated record is never replaced by an inferred one."},
+    "passion": {"type": "string",
+                "description": "Which of the user's passions this serves, by its name in "
+                               "`passions` (\"gardening\") — only one they have; empty when "
+                               "none."},
     "costs_why": {"type": "string",
                   "description": "With costs: what the delay would cost, in a few words (\"£100 "
                                  "penalty\", \"Dad goes weeks without a call\")."},
