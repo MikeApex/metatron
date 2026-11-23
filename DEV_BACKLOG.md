@@ -105,6 +105,13 @@ back-tagging the rest is `[DB-0815-10]`.
   `2026-11-18T06:57:25.826411Z`
 - **Capture fidelity's live checks are owed — it went on 2026-11-21 (`f878ead`, deployed) and nobody has yet confirmed it runs on real messages.** Filed by Mike's request at the 11-21 close-out. Ordinary turns run in shadow (measured, never shown); first interviews show the interviewer what was said and not kept. Precision was 87% against a 90% floor, accepted by Mike (plan § 10 of `archive/plans/capture_fidelity_plan_2026-11-18.md`). **Check 1, after a day of ordinary use — VM:** `cd ~/multi-model-mcp && .venv/bin/python -m tools.capture --report --persona mike`. Pass: "extractor ran on N of N eligible turns" for `synthesizer` (N > 0), and only `held_out_*` outcomes. Fail signs: "no eligible turns recorded" (capture not running), or `accepted`/`not_acted` rows (shadow is showing notes). **Check 2, the day of Iva's first interview — VM:** the same command with her persona name; pass: rows for `goals_interviewer`, `ran` on each interview turn. Closes when both pass. `due: 2026-11-23` · `@kind: chore`
 - **A dropped plan step is checked "on purpose?" at the tap — built 11-22, to deploy and see once.** Live re-runs 11-22 found Synth never asks the question afterwards on an ordinary turn, even first among the asks (three tries; `e796ce6`, `11ad504` fixed a "do not raise" contradiction and a false stamp on the word "step"). Mike chose, as recommended: confirm at the tap — Drop on a step others wait on names what it stops and asks "Drop anyway" (`d1aaa01`); Synth's question remains the fallback for an older app. **Closes when:** after deploy, in the browser app, Drop on a plan step shows "This also stops …" and "Drop anyway", and no "on purpose?" question follows; and tomorrow's morning brief either asks about the blue-box test plan (`ob_261122_64e5e8`) once and not again, or does not — record which, then remove the test tasks (`Redo check …`, `Sort the spare-room cables …`, `Label the blue box …`). `due: 2026-11-24` · `@kind: chore` Revert if needed: `prep_tasks` / `horizon_cap` off in `config/modules/day_plan.yaml`. `due: 2026-11-25` · `@kind: chore`
+- **Model temperature can't be set for any agent: no provider path passes it through.** It
+  matters most for clinical flags and Finance arithmetic, where a run-to-run wobble in the answer
+  is the failure. It was parked inside `[DB-0810-11]` (now closed). Mike ruled on 2026-11-23 (D1)
+  that it gets its own line rather than being folded into the hard-fail cluster. Check the four
+  `run_session_*` paths in `core/orchestrator.py` before designing anything.
+  *Raised by Mike 2026-08-05; given its own line by Mike's ruling 2026-11-23
+  (`archive/plans/agent_instructions_to_code_sweep_2026-11-23.md` § 6).*
 
 ## Now
 
@@ -376,27 +383,6 @@ the condition has not arrived, push the date rather than closing the item.
   forecast does need re-baselining, and any unit economics built on $0.75/$3.75 breaks that day.
 
 ### Decisions — each needs one answer from Mike, not effort
-
-- **[DB-0810-11] Where should code replace model judgment?** Raised by Mike 2026-08-05, never given
-  its own session. Three strands: (a) deterministic lookups feeding agents evidence instead of asking
-  them to recall — `tools/scheduling.py` is the worked example; (b) code that removes agent calls
-  entirely, which cuts against the head-layer/specialist split and PoLP, so not free; (c) a standing
-  code/agent review protocol. Also parked here: `temperature`, **not plumbed through any of the four
-  provider paths**, most valuable for clinical flags and Finance arithmetic.
-  **What is left of (a), measured 2026-08-18:** contact-name matching is done. `write_contact` scores
-  similarity and flags near-matches, but **a nickname is a prefix, not a typo** — `Jon`/`Jonathan`
-  scores 0.545 against a 0.6 bar and slips, and raising the bar starts merging different people, so
-  that needs a separate prefix signal. **`write_archive` has no dedup of any kind**
-  ([tools/diarist.py:110](tools/diarist.py#L110)) — untouched.
-  **This item is now the anchor for the code-dominant rebuild notebook** —
-  `archive/plans/code_dominant_rebuild_notes.md`, the running note base for the architecture
-  inversion (opened 2026-08-22, round two 2026-08-27). Thinking only, no build; read it before
-  giving this decision its session, because the inversion is strand (b) taken seriously.
-  @session: is (c) — a standing review protocol — worth a session, or is this three items?
-  **Parked to the rebuild notebook (Mike, 2026-09-02, capstone review):** this decision rides
-  the code-dominant inversion question and is ruled there, before A8 — not in capstone scope.
-  *filed 2026-08-10 · the wisdom-embedding strand closed 2026-08-15 (`13134bc`) · notebook
-  anchored 2026-08-27 · parked to the rebuild question 2026-09-02*
 
 - **[DB-0814-03] Manage the mailbox as tickets rather than as a stream**, so a thread has a state
   instead of being re-read each pass. Real and unbuilt. **Blocked on what a ticket *is*** (a thread,
