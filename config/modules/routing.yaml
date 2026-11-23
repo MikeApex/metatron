@@ -183,7 +183,8 @@ agents:
     # read/write_archive + read_goals granted 2026-08-28 [DB-0810-03] — see routing_cloud.yaml.
     # read_intake_queue granted 2026-09-03 — see routing_cloud.yaml. Kept in parity.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_data_object, write_archive, read_goals, read_intake_queue, request_build]
+    # read_goals REMOVED 2026-11-23 (instructions-to-code sweep #5) — see routing_cloud.yaml. Parity.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, search_memory, read_wisdom, read_data_object, write_archive, read_intake_queue, request_build]
 
   relationships:
     local: true
@@ -204,14 +205,17 @@ agents:
     # write_archive + read_goals granted 2026-08-28 [DB-0810-03]; write_journal deliberately
     # NOT granted (Diarist routes journals) — see routing_cloud.yaml. Parity.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_data_object, write_archive, read_goals, open_task, update_task, list_tasks, search_memory, read_wisdom, read_intake_queue, request_build]
+    # read_goals REMOVED 2026-11-23 (instructions-to-code sweep #5) — see routing_cloud.yaml. Parity.
+    allowed_tools: [read_log, write_log, read_agent_config, write_agent_config, read_profile, write_profile, read_data_object, write_archive, open_task, update_task, list_tasks, search_memory, read_wisdom, read_intake_queue, request_build]
 
   learning_growth:
     local: true
     # read/write_archive granted 2026-08-28 [DB-0810-03]; write_config and write_journal
     # deliberately NOT granted — see routing_cloud.yaml. Parity.
     # request_build granted 2026-09-24 — reasoning on mental_wellbeing above.
-    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config, read_wisdom, read_data_object, write_archive, request_build]
+    # open_task/update_task/list_tasks granted 2026-11-23 (instructions-to-code Stage 4, #15):
+    # skill practice is a task-ledger habit, which computes streaks and misses. Parity.
+    allowed_tools: [read_log, write_log, search_memory, read_agent_config, write_agent_config, read_wisdom, read_data_object, write_archive, open_task, update_task, list_tasks, request_build]
 
   recreation_hobbies:
     local: true
