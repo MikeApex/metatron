@@ -52,7 +52,7 @@ user's behalf — approval-gated first, then trusted — is designed for and def
 | 5 | **E1's "no integration before B2" is waived for WhatsApp**, as it was in practice for email. |
 | 6 | **B1b gets a WhatsApp injection row** — required, not optional. |
 | 7 | **End-to-end encrypted backup with the 64-digit key** — turned on by Mike 2026-10-26. Prerequisite for the nightly reader. |
-| 8 | **TABLED: a local model** (Gemini Nano on the phone, a bundled Gemma, or a small model on the VM). Mike: *"raise it again before build time"* → checkpoint **LM**, § 4. |
+| 8 | ~~TABLED: a local model~~ **RULED 2026-11-22 (LM, § 4): no local model — V2/V3 stay code on the VM.** Tabled 10-26 (Gemini Nano on the phone, a bundled Gemma, or a small model on the VM; Mike: *"raise it again before build time"*). |
 
 ---
 
@@ -134,7 +134,8 @@ the last cursor for shared chats, deletes the decrypted copy before returning, a
 or cleared app data resumes where it left off rather than re-sending the whole W6 window.
 An app-start sweep deletes any copy a crash left behind. **The user's own sent messages travel as
 reply markers only — chat ID and time, no text** — the signal the listener cannot see, used by V6
-and nothing else.
+and nothing else. **It also reads the nightly increments** (ruled 2026-11-22, § 4 — full backups
+come only about every 6 days); how is designed from the increment-contents probe.
 
 **P4. The key.** Entered in a native screen, never the WebView — the WebView's `localStorage` is
 where the session token sits today (`static/index.html:986`). Stored wrapped by the Android
@@ -321,6 +322,11 @@ probe is throwaway; **the decrypt module from 0b is not** — it becomes P3's co
    sending and one long enough to be trimmed** — does the message time match, and does the
    edit/length difference show up? (Reports match/no-match counts only.)
 4. **Survival:** the listener still delivers after 24 hours screen-off (OEM battery killers).
+   **PASSED 2026-11-23, battery optimisation at its default (ON):** phone untouched from ~21:46 to
+   after 07:00 (Mike); a one-to-one message at 07:00:19 was heard with `rx` delay +0s, and no
+   listener "connected" mark after 21:26 — the process ran through the night, not killed and
+   revived. One night, one phone. Read passively from real traffic once the probe recorded `rx`
+   (the planted-message protocol was dropped as impractical — Mike).
 5. **For LM:** phone model, Android version, RAM and free storage, whether AICore (the system app
    that runs Gemini Nano) is present.
 
@@ -340,6 +346,31 @@ the parked intake extractor). That was decided for email on price; a local model
 and the third party, but adopting one for WhatsApp is still a departure from a settled ruling and
 needs his explicit word, recorded with its reason. **If LM puts a model on the phone, Phase 2 grows
 by ~2–4M tokens** (§ 6).
+
+> **LM RULED — Mike, 2026-11-22: no local model now; V2/V3 stay code on the VM** (*"Code on vm as
+> rec."*). Device facts (Phase 0, 10-30): Unihertz Jelly Star, Helio G99, Android 13, 8.2 GB RAM,
+> 170 GB free, **AICore absent** — Gemini Nano unavailable, only a slow ~1B bundled model would
+> run. **Reason:** the settled ruling (correspondence read as code, `[DB-0905-01]`) holds, and
+> nothing yet shows code extraction falling short. **Revisit only on evidence:** if M2 (labelling)
+> shows code extraction misses too much, re-open LM and choose VM or phone then. Phase 2's
+> estimate keeps no model allowance (§ 6).
+
+> **INCREMENTS RULED — Mike, 2026-11-22: (a), read the nightly increments, clean-room — no
+> reference session** (*"whatever the easiest, least invasive way is to finish this out"* — put to
+> him as (a) at one install and one tap more, against (b)'s up-to-6-day lag in daily use).
+> **Found 11-22 (probe, shapes only):** WhatsApp writes an unforced full backup **about every 6
+> days** (11-05, 11-11, 11-17, 11-23 — four in a row, each 02:00) and a small increment each night between. **Live
+> increments carry no date** — `msgstore-increment-N.db.crypt15`; the dated
+> `msgstore-increment-N-YYYY-MM-DD.1.db.crypt15` form appears only when the next full backup
+> rotates the set. **The increment test:** our reader accepts the increment's key and container
+> (a wrong key or other format fails earlier, as `wrong_key`/`unknown_format`) but refuses the
+> payload as `not_a_message_database` — either a ZIP payload or inflated non-SQLite; the probe as
+> built cannot say which, and it tested a rotated 11-16 file because its pattern required a date.
+> **Next:** a probe revision (`archive/handoffs/2026-11-22-whatsapp-phase-0-increment-contents-probe-prompt.md`)
+> reports what is inside; the reader extension (P3) is then designed from those shapes. **A
+> narrowed Phase 0a′ only if the contents are a format we cannot recognise.** Why not (b): a
+> ~6-day gap against 72-hour keys loses group senders and edits for half of every week, and even
+> with keys kept ~8 days, answered questions would re-surface for up to 6 days.
 
 **Phase 1 — VM side** (~1–2 sessions; **after the second-user build has landed**). V1–V9; offline tests on synthetic messages in the
 `tests/test_intake_pipeline.py` pattern (fake adapter, monkeypatched persona directory). **Then

@@ -14,7 +14,7 @@ on the VM 11-18 (ids + Bulgarian/taxes/Prudential). **Still next, unchanged:** I
 first); M3 restarts on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
 reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
-**WhatsApp Phase 0 close-out** (probe APK built 11-22; Mike's walkthrough left — § Current state);
+**WhatsApp:** the increment-contents probe, then the reader extension (§ Current state);
 day-planner live checks `[DB-1029-01]` (due 10-31; the check script is already on the VM — no deploy needed); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
 boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
@@ -116,12 +116,16 @@ dedup key 5/5. **Mike's phone runs the throwaway `waprobe` build** (`./gradlew a
 (4 rounds, all closed; log § 11-22 third). **The probe build is DONE 11-22** (log § 11-22
 fourth, clean-room): the write-time briefing skips reference-reading fragments (Fable-reviewed;
 **never put that phrase in a non-reference fragment's first heading** — the match fails closed);
-probe `rx` + 72-hour event list + "5. Try newest increment"; APK at
-`android/app/build/outputs/apk/waprobe/app-waprobe.apk`, uncommitted with the rest of the tree.
-Left: `archive/handoffs/2026-11-22-whatsapp-phase-0-mike-walkthrough-prompt.md` (delete the
-`/private/tmp` copy, install + daytime check, increment test, LM and increments rulings, overnight
-planted-message survival test; reads the revised 10-31 prompt). Then Phase 1
-([plan](archive/plans/whatsapp_input_plan_2026-10-26.md)).
+probe `rx` + 72-hour event list + "5. Try newest increment"; installed on Mike's phone 11-22.
+**The walkthrough is DONE 11-23** (log § 11-23 first, clean-room): **survival PASSED** (idle
+night, battery optimisation at default, `rx` +0s, no restart mark); **LM ruled: no local model**,
+V2/V3 stay code on the VM; **increments ruled: read them, clean-room**. Full backups every 6 days
+(four in a row); live increments are undated; the increment's key and container are accepted but
+the payload is refused `not_a_message_database` (ZIP or other — unknown). The `/private/tmp`
+reference copy is left to the next ordinary restart (Mike); rule 4 still binds.
+**Next:** `archive/handoffs/2026-11-22-whatsapp-phase-0-increment-contents-probe-prompt.md`
+(Opus, clean-room) → serve the APK, Mike taps 5 → design the reader extension (P3) from the shapes
+→ Phase 1 ([plan](archive/plans/whatsapp_input_plan_2026-10-26.md) § 4).
 Clean room: open no transcripts; WhatsApp log entries only 10-30-02 and fragments titled
 "clean-room"; every WhatsApp session titles its fragment "clean-room" or "reference-reading".
 
