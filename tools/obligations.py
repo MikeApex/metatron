@@ -1768,7 +1768,10 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
               stakes_source: str | None = None, zone: str | None = None,
               activity: str | None = None, flexible: bool | None = None,
               stakes_why: str | None = None,
-              after: str | None = None, done_words=None) -> str:
+              after: str | None = None, done_words=None,
+              costs=None, bears: str | None = None, shape: str | None = None,
+              real_due: str | None = None, costs_source: str | None = None,
+              costs_why: str | None = None) -> str:
     """Record something the user has to do, or is waiting on, so it is tracked until done."""
     what = (what or "").strip()
     if not what:
@@ -1844,6 +1847,13 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
     if err:
         return err
     entry.update({k: v for k, v in plan.items() if v is not None})
+    if _cost_record():
+        # The cost record (ranking § 10 R1) — beside stakes, never writing them.
+        rec, err = _cost_fields(kind, costs=costs, bears=bears, shape=shape, real_due=real_due,
+                                costs_source=costs_source, costs_why=costs_why)
+        if err:
+            return err
+        entry.update(rec)
     if _ledger_fields():
         win, err = _window_fields(kind, entry.get("due"), flexible, after)
         if err:
@@ -2052,9 +2062,10 @@ def is_essential(t: dict, goals: dict[str, dict] | None = None) -> bool:
         if g and g.get("essential") is True:
             return True
     # A monthly habit with a window is a recurring deadline — a bill due by the 15th — so its
-    # stakes count exactly as a deadline's do (review F4).
+    # stakes count exactly as a deadline's do (review F4). Under `ranking_v2` the stakes are
+    # derived from the cost record (ranking § 10 R1); off, Part A's stored stakes, exactly.
     return ((t.get("kind") == "deadline" or bool(_month_window(t)))
-            and stakes_of(t) == "vital")
+            and _stakes_read(t) == "vital")
 
 
 def _ledger_fields() -> bool:
@@ -2063,6 +2074,104 @@ def _ledger_fields() -> bool:
         return flag("ledger_fields")
     except Exception:  # noqa: BLE001
         return False
+
+
+def _cost_record() -> bool:
+    """Ranking Part B (§ 10 R1): the cost record may be written and is offered in the schemas.
+    Needs `ledger_fields` too — the planner's fields are the record's neighbours."""
+    try:
+        from tools.day_plan_config import flag
+        return flag("cost_record") and flag("ledger_fields")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _ranking_v2() -> bool:
+    try:
+        from tools.day_plan_config import flag
+        return flag("ranking_v2")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _stakes_read(t: dict) -> str | None:
+    """The stakes every reader of 'is it vital?' uses: Part A's stored stakes (`stakes_of`), or
+    under `ranking_v2` the stakes derived from the cost record (`ranking.stakes_v2`, R1)."""
+    if _ranking_v2():
+        from tools.ranking import stakes_v2
+        return stakes_v2(t)
+    return stakes_of(t)
+
+
+def _cost_fields(kind: str, costs=None, bears=None, shape=None, real_due=None,
+                 costs_source=None, costs_why=None) -> tuple[dict, str | None]:
+    """Validate a cost record write. Returns (fields to set, error). Never touches `stakes`."""
+    out: dict = {}
+    if costs is not None:
+        if isinstance(costs, str):
+            try:
+                costs = json.loads(costs)
+            except ValueError:
+                costs = None
+        if not isinstance(costs, dict):
+            return {}, ("error: `costs` is an object of kind → grade, e.g. {\"financial\": "
+                        "\"major\"}. Nothing was written.")
+        clean = {}
+        for dim, grade in costs.items():
+            d, g = str(dim).strip().lower(), str(grade or "").strip().lower()
+            if d not in _COST_DIMENSIONS or g not in _COST_GRADES:
+                return {}, (f"error: `costs` kinds are {', '.join(_COST_DIMENSIONS)}, each "
+                            f"{'/'.join(_COST_GRADES)} — not {dim!r}: {grade!r}. Nothing was "
+                            f"written.")
+            clean[d] = g
+        out["costs"] = clean
+    for name, value, allowed in (("bears", bears, _BEARS), ("shape", shape, _SHAPES)):
+        if value is not None:
+            v = str(value).strip().lower()
+            if v not in allowed:
+                return {}, (f"error: `{name}` must be one of {', '.join(allowed)}, not {value!r}. "
+                            f"Nothing was written.")
+            out[name] = v
+    if out.get("shape") == "neglect" and kind != "interval":
+        return {}, "error: `shape` neglect is for an interval task only. Nothing was written."
+    if real_due is not None:
+        iso, err = _iso_arg("real_due", real_due)
+        if err:
+            return {}, err
+        out["real_due"] = iso
+    if str(costs_why or "").strip():
+        out["costs_why"] = str(costs_why).strip()[:120]
+    if out:
+        src, err = _source_arg("costs_source", costs_source)
+        if err:
+            return {}, err
+        out["costs_source"] = src
+    return out, None
+
+
+def _set_costs(task_id: str, **kw) -> str:
+    """update_task(action="set_costs"): record or correct the cost record — the fields given
+    replace those on file; a stated record is never replaced by an inference (B4)."""
+    tid = _split_id(task_id)
+
+    def apply(doc: dict) -> str:
+        t = _find(doc["tasks"], tid)
+        if t is None:
+            return f"error: no task with id {task_id!r}"
+        fields, err = _cost_fields(t.get("kind", "deadline"), **kw)
+        if err:
+            return err
+        if not fields:
+            return ("error: set_costs needs at least one of costs, bears, shape, real_due, "
+                    "costs_why. Nothing was written.")
+        if t.get("costs_source") == "stated" and fields.get("costs_source") == "inferred":
+            return f"{tid} keeps the user's own cost record — an inference does not replace it"
+        t.update(fields)
+        t.setdefault("history", []).append({"event": "costs_set", "at": _stamp(),
+                                            **{k: v for k, v in fields.items()
+                                               if k != "costs_why"}})
+        return f"{tid} cost record set: {_summarise(t)}"
+    return _with_store(None, apply)
 
 
 def _unconfirmed_rule() -> bool:
@@ -2402,7 +2511,9 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
                 priority_source: str | None = None, stakes: str | None = None,
                 stakes_source: str | None = None, zone: str | None = None,
                 on_days=None, activity: str | None = None, after: str | None = None,
-                stakes_why: str | None = None) -> str:
+                stakes_why: str | None = None, costs=None, bears: str | None = None,
+                shape: str | None = None, real_due: str | None = None,
+                costs_source: str | None = None, costs_why: str | None = None) -> str:
     """Record what happened to a tracked task — done, done with a loose end, skipped,
     dismissed, reopen, reschedule, or a new note."""
     action = (action or "").strip().lower()
@@ -2410,9 +2521,13 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
     # review S-8): off, they are neither offered in the schema nor named in this error, nor
     # accepted — a model cannot reach them by guessing.
     actions = ("done", "done_with_followup", "skipped", "dismissed", "reopen", "reschedule",
-               "note", "set_minutes") + (_PLAN_ACTIONS if _ledger_fields() else ())
+               "note", "set_minutes") + (_PLAN_ACTIONS if _ledger_fields() else ()) + (
+               ("set_costs",) if _cost_record() else ())
     if action not in actions:
         return f"error: `action` must be one of {', '.join(actions)}, not {action!r}"
+    if action == "set_costs":
+        return _set_costs(task_id, costs=costs, bears=bears, shape=shape, real_due=real_due,
+                          costs_source=costs_source, costs_why=costs_why)
     if action == "done_with_followup":
         return _done_with_followup(task_id, evidence, followup, on_date)
     if action == "set_minutes":
@@ -4335,6 +4450,54 @@ _PLAN_FIELD_PROPS = {
                              "16:00)."},
 }
 
+# The cost record (ranking Part B, plan § 4.1 as amended by § 10 R1): what a delay would cost and
+# how that cost grows. Beside `stakes`, never instead of it — nothing here writes `stakes`, so
+# `ranking_v2` off reads Part A's stakes exactly. These descriptions ARE the judging rule (One Home
+# Per Rule Class): config/agents/task_judge.md defers to them, and tools/task_judge.py hands them
+# to the judge verbatim. Exposed in the schemas only while `cost_record` is on.
+_COST_GRADES = ("minor", "major", "severe")
+_COST_DIMENSIONS = ("financial", "legal", "health", "social", "psychological")
+_BEARS = ("self", "close", "own_org", "others", "org")
+_SHAPES = ("step", "accruing", "neglect", "cliff")
+
+_COST_FIELD_PROPS = {
+    "costs": {"type": "object",
+              "properties": {d: {"type": "string", "enum": list(_COST_GRADES)}
+                             for d in _COST_DIMENSIONS},
+              "description": "What letting it slip would cost this user — only the kinds that "
+                             "apply, each graded: financial (a fee, a penalty, money lost), legal, "
+                             "health, social (someone let down, a relationship worn), psychological "
+                             "(it would weigh on them, or they would regret it). minor — a "
+                             "nuisance; major — a real loss they would feel for a while; severe — "
+                             "lasting harm, hard to undo. Judge against what they care about: for "
+                             "a keen gardener, losing the plants can be a major psychological "
+                             "cost. Taxes, bills, legal and official dates and health appointments "
+                             "carry a real cost whatever their goals say. A harm that rebounds on "
+                             "the user (their job, their reputation) is graded as theirs."},
+    "bears": {"type": "string", "enum": list(_BEARS),
+              "description": "Who mainly bears that cost: self; close — their partner, children, "
+                             "parents, closest friends (weighs as their own); own_org — a business "
+                             "they own or run; others — anyone else; org — an employer or "
+                             "organisation they do not own."},
+    "shape": {"type": "string", "enum": list(_SHAPES),
+              "description": "How the cost of putting it off grows: step — lands once, at the date "
+                             "(an RSVP, a late fee); accruing — keeps growing after the date "
+                             "(interest, a backlog); cliff — after the date it cannot be done at "
+                             "all (a closing fund, a plant that dies); neglect — grows the longer "
+                             "it goes undone, for upkeep and keeping in touch (an interval task). "
+                             "When unsure: step for a dated task, neglect for an interval."},
+    "real_due": {"type": "string",
+                 "description": "YYYY-MM-DD — the real date behind the stated one, when the two "
+                                "differ and it is known (the fund's close, not the day they said "
+                                "they would get to it)."},
+    "costs_source": {"type": "string", "enum": ["stated", "inferred"],
+                     "description": "stated — the user said so; inferred — your judgement. A "
+                                    "stated record is never replaced by an inferred one."},
+    "costs_why": {"type": "string",
+                  "description": "With costs: what the delay would cost, in a few words (\"£100 "
+                                 "penalty\", \"Dad goes weeks without a call\")."},
+}
+
 # Replaces the shipped `on_days` while the planner's fields are on: a monthly habit can then take
 # days of the month (plan § 18, R2-10).
 _ON_DAYS_PROP = {
@@ -4399,6 +4562,14 @@ def task_schemas() -> tuple[dict, dict, dict]:
     upd["input_schema"]["properties"]["new_due"]["description"] = (
         "reschedule: the new YYYY-MM-DD. set_window: the last day it can happen. defer: the day "
         "it comes back (after today, no later than its due date).")
+    if _cost_record():
+        open_s["input_schema"]["properties"].update(_copy.deepcopy(_COST_FIELD_PROPS))
+        upd["input_schema"]["properties"].update(_copy.deepcopy(_COST_FIELD_PROPS))
+        upd["description"] += (
+            " set_costs — record or correct what a delay would cost (costs, bears, shape, "
+            "real_due, costs_why, costs_source); the fields given replace those on file.")
+        upd["input_schema"]["properties"]["action"]["enum"] = (
+            list(upd["input_schema"]["properties"]["action"]["enum"]) + ["set_costs"])
     return open_s, upd, LIST_TASKS_SCHEMA
 
 

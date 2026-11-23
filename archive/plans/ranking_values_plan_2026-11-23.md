@@ -565,3 +565,85 @@ each user's evidence. "§ n" below means the report's section.
    nudge and an end check per essential task) are system-initiated too. Row 13's cap counts only
    this plan's paths. Whether the existing nudges should share the cap is a question for the
    phase 2 live check, which judges "no nagging" on the whole day.
+
+---
+
+## 11a. Phase 1 built (2026-11-23) — in shadow
+
+Built by Opus 5.5 from `archive/handoffs/2026-11-23-ranking-part-b-phase-1-build-prompt.md`;
+diff reviewed by Fable 5.1 (13 findings, reconciled below). **Nothing a user sees changes until
+`ranking_v2` is switched on** — with one deliberate exception, item 3 of the deviations.
+
+**What exists.**
+1. `config/modules/ranking.yaml` — every value from § 11, each citing the report section;
+   heuristics labelled; a persona overlay `config/personas/{p}/ranking.yaml` is merged if present
+   (none written).
+2. `tools/ranking.py` — importance (multiplicative, social × 1.5, share capped at 0.99), who bears
+   it (cost of delay only), the four shapes, neglect `G × min(3, (r − 1)^1.5)`, slack with the
+   tiered buffer, attention blocks, `stakes_v2`, implied promise dates, the people offer, the
+   shadow state.
+3. The cost record (`costs`, `bears`, `shape`, `real_due`, `costs_source`, `costs_why`) in
+   `tools/obligations.py` beside `_PLAN_FIELD_PROPS`, with `update_task(set_costs)`, behind
+   `cost_record` (**on** in the committed `day_plan.yaml`). It never writes `stakes`.
+4. `task_judge` records it in the same pass that judges stakes (one call; `want` per task; the
+   field descriptions travel as `rules`). `config/agents/task_judge.md` defers to them.
+5. `tools/day_plan.py` — `_candidates_v2` (musts by absolute cost; advance work by cost per
+   attention block above `advance_floor`; a flexible task in its window stays a candidate every
+   day of it, Mike 10-27), hard-first sequencing, the advance label, the people offer under
+   `ranking_v2`, and the shadow: each build with the flag off writes `plan["shadow_v2"]`, a
+   content-free `v2_would_reshuffle` in `log.jsonl`, and keeps the day's first build after waking
+   in `ranking_state.json` (14 days).
+6. `scripts/ranking_report.py --compare --persona P [--day] [--live]` — both top tens; consent-gated.
+7. `config/agents/synthesizer.md` — grades shown and corrected on request, advance work as a
+   suggestion, the R9 override through `request_replan`, the keep-in-touch offer.
+8. `tests/test_ranking_v2.py` 26/26; `tests/test_task_ranking.py` 21/21 with the flag off.
+
+**Where the build differs from the brief — each on purpose.**
+1. **Implied promise dates are derived on read, not written by `open_task`** (brief item 9, R8).
+   `bears` usually arrives from the judge after the task is opened, so `open_task` rarely knows
+   it; and a stored `due` would put the date on the Today list before the flip. No `due_source:
+   implied` exists. *Owed at the flip:* the Synthesizer and the Tasks section cannot see the
+   implied date (Fable #4) — phase 2 shows it.
+2. **The climb window `S` is the 14-day look-ahead, not the task's own need** (§ 4.10's first
+   reading). A must costs its whole weight whatever `S` is, so `S` orders advance work only; with
+   `S` = need, nothing more than a day ahead could ever clear the floor. `advance_floor` is **10**
+   (a minor's whole weight): a minor task is never pulled forward; a major one is suggested
+   within ~9 days of its date.
+3. **The `request_replan` sentence is live with the flag off** (Fable #8). It is Mike's R9 ruling
+   — the Synthesizer may override the code's order when the moment calls for it — and it applies
+   to Part A's order as much as to v2's. Kept; it is the one flag-off change, and it is one
+   sentence: delete it to restore Part A's conduct text exactly.
+4. **Buffer learning is built and switched off** (`buffer.learn.enabled: false`, Fable #7). In
+   shadow the user is never shown an early start, so every long task would train "starts late",
+   and the first measure read +0.2–0.4 for a task done on its date. The tier defaults govern.
+5. **Attention blocks are fractional** and a batch of small same-kind tasks shares its blocks pro
+   rata (Fable #11) — what "share one block" means; § 4.4's `ceil` would charge each its own.
+6. **Steps of a plan inherit their end's record** for the cost of delay (`ranking.inherit`) and
+   are not offered to the judge; their stakes stay Part A's.
+7. Not read in phase 1, kept in `ranking.yaml` with a note: the 15-minute focus block (placement,
+   phase 2) and the aversive 100% buffer (no signal yet).
+
+**Fable diff review, 2026-11-23 — reconciled.**
+
+| # | What a user would see | Resolution |
+|---|---|---|
+| 1 | A task the user called vital turns missable at the flip | **Fixed.** `stakes_v2` returns a stated stake as is; test "review #1" |
+| 2 | A judge reply without costs leaves a permanent empty record (G 0 under v2) | **Fixed.** No costs given = no record; test "review #2/#3" |
+| 3 | One task the judge keeps mis-recording spends the daily cap, and a later task reads vital | **Fixed.** A parsed reply that fails a task's record counts one attempt; after 2 it is not offered again (ranks on Part A's stakes). A garbled reply counts against the batch, not the task |
+| 4 | Old undated promises all become overdue musts on flip day | **Fixed** the burst: the grace runs from the first cost record, not from opening. Visibility of the date is **phase 2** (deviation 1) |
+| 5 | Advance work placed ahead of today's musts | **Fixed.** Hard-first orders within a tier, and stands only if it places exactly what selection placed |
+| 6 | Advance work announced as "vital, due tomorrow" | **Fixed.** Never an Important candidate; Now/Next say "ahead of time, a suggestion only" |
+| 7 | The buffer learns a biased number, and only in shadow | **Learning off** (deviation 4); phase 2 designs the observation |
+| 8 | The widened `request_replan` sentence is live flag-off | **Kept** (deviation 3) — put to Mike at the close |
+| 9 | Undated goal steps are never advance work | **Phase 2.** The project planner dates its steps, so the gap is undated hand-made steps |
+| 10 | "A ten-minute task tomorrow doesn't appear" holds for minors only | **Accepted**, test renamed: by the floor, a major task due tomorrow is advance work, as intended |
+| 11 | Batching removes the minimum block | **Kept** (deviation 5) |
+| 12 | The people offer labels a code-chosen grade as the user's | **Fixed.** Inferred unless the user says how much it matters; names matched as words |
+| 13 | An overdue cliff on today's list stays a must | **Fixed.** A cliff past its date is moot: never a must, cost 0; test "review #13" |
+
+The rest of finding 13 (an interval due today costs 0; a severe deadline a day overdue costs 18,
+below a major due today) is § 11's arithmetic as ruled — **for the three-morning comparison to
+judge**, not changed here.
+
+**Revert.** `ranking_v2` off restores Part A exactly; `cost_record` off stops recording and hides
+the fields. Part A's own revert (goal network plan § 16) is unchanged.

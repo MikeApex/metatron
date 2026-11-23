@@ -56,6 +56,18 @@ flags:
   # priority, against the user's goals, mission and values, by what missing it would cost. Until
   # judged a task is back-burner. Off: unjudged tasks stay back-burner, and no model is called.
   task_judge: true
+  # RANKING, PART B, PHASE 1 (2026-11-23; archive/plans/ranking_values_plan_2026-11-23.md, values
+  # in config/modules/ranking.yaml). `cost_record`: every open task gets a cost record — what a
+  # delay would cost, who bears it, how it grows — written by task_judge (one pass on the day it
+  # ships, ~$0.04 for one user, under the caps below) and correctable in chat. It never writes
+  # `stakes`, so it changes no ranking by itself. Off: nothing is recorded and the fields leave
+  # the schemas.
+  cost_record: true
+  # `ranking_v2`: rank the day by the regret of delay (§ 10 R3, R9). OFF in phase 1 — each build
+  # computes the v2 order beside Part A's and writes it to the plan's trace only (shadow); compare
+  # with scripts/ranking_report.py --compare. On only after Mike's three-morning comparison (v2
+  # preferred on ≥ 2 of 3, no real obligation below the cut). Off restores Part A exactly.
+  ranking_v2: false
 
 replaces_jobs: [companion_checkin]
 

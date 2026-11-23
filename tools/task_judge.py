@@ -30,6 +30,13 @@ real obligation judged missable fades the way trivia should — guarded by the o
 the agent file and by the user's own review of the back burner (§ 16). A task the judge never
 reaches is read as vital after `obligations._JUDGE_GRACE` (60 min), so a broken judge hides
 nothing.
+
+RANKING PART B (2026-11-23, archive/plans/ranking_values_plan_2026-11-23.md § 10 R1), behind
+`cost_record`: the same pass also records each task's COST RECORD — what a delay would cost, who
+bears it, how it grows — for every open task without one (`unrecorded`), judged or not. It writes
+only cost fields, never `stakes`, never over a record already on file. The record adds ~40% output
+(~70–90 tokens a task; a 25-task batch stays near 3k of the 5k output ceiling) → ~$0.014 a call,
+still ≤ 6 a day; for one user the first pass after deploy is 2–3 calls (~$0.04), then rare.
 """
 from __future__ import annotations
 
@@ -97,6 +104,48 @@ def unjudged(persona: str | None = None) -> list[dict]:
     return out
 
 
+def unrecorded(persona: str | None = None) -> list[dict]:
+    """Ranking Part B, the recording pass (plan § 10 R1): open tasks with no COST record — not
+    "no stakes" — of every kind the day ranks (deadlines, habits, intervals). Steps of a plan take
+    their end state's record (tools/day_plan `_candidates_v2`), and a code prep is vital by rule,
+    so neither is offered. Only cost fields are ever written for these."""
+    from tools.ranking import has_record
+    O = _O()
+    # A task whose record failed twice is not offered again (Fable diff review #3): one value the
+    # judge keeps getting wrong would otherwise spend the whole daily cap, and a task opened later
+    # would wait past the grace and read as vital. It ranks on Part A's stakes instead.
+    tried = _load(resolve_persona(persona)).get("cost_attempts") or {}
+    out = []
+    for t in O._load(persona):
+        t = O._norm(t)
+        pf = t.get("prep_for") or {}
+        if (t.get("status") != "open" or t.get("kind") == "waiting" or has_record(t)
+                or t.get("part_of") or (pf and not pf.get("chat"))
+                or int(tried.get(t["id"], 0)) >= _COST_ATTEMPTS):
+            continue
+        out.append(t)
+    out.sort(key=lambda t: (O._d(t.get("due")) is None, str(O._d(t.get("due")) or "")))
+    return out
+
+
+_COST_ATTEMPTS = 2
+
+
+def _todo(persona: str | None) -> list[tuple[dict, tuple]]:
+    """What one pass offers, each with what is wanted of it: ("stakes", "costs") for a task
+    nobody judged, ("costs",) for one judged but unrecorded. Unjudged first — the urgent half."""
+    from tools.day_plan_config import flag
+    todo = [(t, ("stakes",)) for t in unjudged(persona)]
+    if flag("cost_record"):
+        want = {t["id"]: i for i, (t, _w) in enumerate(todo)}
+        for t in unrecorded(persona):
+            if t["id"] in want:
+                todo[want[t["id"]]] = (todo[want[t["id"]]][0], ("stakes", "costs"))
+            else:
+                todo.append((t, ("costs",)))
+    return todo
+
+
 def _text(name: str, persona: str) -> str:
     try:
         return (persona_config_dir(persona) / name).read_text(encoding="utf-8").strip()[:_TEXT_MAX]
@@ -104,9 +153,12 @@ def _text(name: str, persona: str) -> str:
         return ""
 
 
-def _payload(tasks: list[dict], persona: str) -> dict:
-    """What the judge sees. Goals by title and shareable_what — NEVER private_why."""
+def _payload(tasks: list[dict], persona: str, wants: dict | None = None) -> dict:
+    """What the judge sees. Goals by title and shareable_what — NEVER private_why. `wants`
+    ({id: ("stakes",) | ("costs",) | both}) says what each task needs; with a cost record wanted,
+    the record's field descriptions go along as `rules` — they are the judging rule's one home."""
     O = _O()
+    wants = wants or {t["id"]: ("stakes",) for t in tasks}
     goals = []
     for gid, g in O._goal_index().items():
         if str(g.get("status") or "active") not in ("active", "not_started", "at_risk"):
@@ -114,16 +166,24 @@ def _payload(tasks: list[dict], persona: str) -> dict:
         goals.append({"id": gid, "title": str(g.get("title") or ""),
                       "what": str(g.get("shareable_what") or "")[:200],
                       "priority": O._goal_priority(g), "kind": g.get("kind") or "goal"})
-    return {
+    out = {
         "today": _D()._today().isoformat(),
         "tasks": [{"id": t["id"], "what": t.get("what", ""), "due": t.get("due"),
                    "kind": t.get("kind"), "domain": t.get("domain"),
                    "note": str(t.get("note") or "")[:200], "goal_id": t.get("goal_id"),
-                   "priority": t.get("priority")} for t in tasks],
+                   "priority": t.get("priority"),
+                   **({"every_days": t.get("interval_days")} if t.get("kind") == "interval" else {}),
+                   **({"want": list(wants.get(t["id"], ("stakes",)))}
+                      if any("costs" in w for w in wants.values()) else {})}
+                  for t in tasks],
         "goals": goals,
         "mission": _text("mission.md", persona),
         "prime_directive": _text("prime_directive.md", persona),
     }
+    if any("costs" in w for w in wants.values()):
+        out["rules"] = {k: O._COST_FIELD_PROPS[k]["description"]
+                        for k in ("costs", "bears", "shape", "real_due")}
+    return out
 
 
 def _call_model(payload: dict, persona: str) -> str:
@@ -137,10 +197,14 @@ def _call_model(payload: dict, persona: str) -> str:
                        persona=persona, bare=True, proactive=True)
 
 
-def validate(result, offered: set[str]) -> tuple[list[dict], list[str]]:
+def validate(result, offered: set[str], wants: dict | None = None,
+             kinds: dict | None = None) -> tuple[list[dict], list[str]]:
     """(verdicts, errors). A verdict for a task not offered, or with a value outside the ledger's
-    own sets, is dropped — the rest still land."""
+    own sets, is dropped — the rest still land. A cost record is checked by the ledger's own
+    validator (`obligations._cost_fields`); a bad record drops the record, never the stakes."""
     O = _O()
+    wants = wants or {}
+    kinds = kinds or {}
     if not isinstance(result, dict) or not isinstance(result.get("tasks"), list):
         return [], ["the reply was not {\"tasks\": [...]}"]
     out, errors = [], []
@@ -148,13 +212,34 @@ def validate(result, offered: set[str]) -> tuple[list[dict], list[str]]:
         if not isinstance(v, dict) or v.get("id") not in offered:
             errors.append(f"unknown task {v.get('id') if isinstance(v, dict) else v!r}")
             continue
-        st = str(v.get("stakes") or "").strip().lower()
-        pr = str(v.get("priority") or "").strip().lower()
-        if st not in O._STAKES or pr not in O._PRIORITIES:
-            errors.append(f"{v['id']}: stakes vital|missable and priority high|normal|low")
-            continue
-        out.append({"id": v["id"], "stakes": st, "priority": pr,
-                    "why": str(v.get("why") or "").strip()[:120]})
+        want = wants.get(v["id"], ("stakes",))
+        why = str(v.get("why") or "").strip()[:120]
+        verdict: dict = {"id": v["id"], "why": why}
+        if "stakes" in want:
+            st = str(v.get("stakes") or "").strip().lower()
+            pr = str(v.get("priority") or "").strip().lower()
+            if st not in O._STAKES or pr not in O._PRIORITIES:
+                errors.append(f"{v['id']}: stakes vital|missable and priority high|normal|low")
+                continue
+            verdict.update(stakes=st, priority=pr)
+        if "costs" in want and not (isinstance(v.get("costs"), dict) and v["costs"]):
+            # No costs given is no record (Fable diff review #2): an empty one would be permanent
+            # — never offered again, G 0 under v2 — when the reply merely left the field out.
+            errors.append(f"{v['id']}: cost record — no costs given")
+        elif "costs" in want:
+            shape = v.get("shape")
+            if shape == "neglect" and kinds.get(v["id"]) != "interval":
+                shape = "step"                      # neglect is an interval's shape only
+            rec, err = O._cost_fields(kinds.get(v["id"]) or "deadline", costs=v.get("costs") or {},
+                                      bears=v.get("bears") or "self", shape=shape,
+                                      real_due=v.get("real_due") or None,
+                                      costs_source="inferred", costs_why=why)
+            if err:
+                errors.append(f"{v['id']}: cost record — {err[:80]}")
+            else:
+                verdict["record"] = rec
+        if "stakes" in verdict or "record" in verdict:
+            out.append(verdict)
     return out, errors
 
 
@@ -170,7 +255,18 @@ def _write(verdicts: list[dict], persona: str) -> int:
         stamp = O._stamp()
         for v in verdicts:
             t = by_id.get(v["id"])
-            if t is None or t.get("status") != "open" or t.get("stakes"):
+            if t is None or t.get("status") != "open":
+                continue
+            # The cost record (ranking § 10 R1): written only where none exists — never over a
+            # stated one or one written since the call began — and it never touches `stakes`.
+            if v.get("record") and not t.get("costs_source"):
+                t.update(v["record"])
+                t.setdefault("history", []).append({
+                    "event": "costs_recorded", "at": stamp, "by": "task_judge",
+                    **{k: v["record"][k] for k in ("costs", "bears", "shape") if k in v["record"]}})
+                if "stakes" not in v:
+                    n += 1
+            if "stakes" not in v or t.get("stakes"):
                 continue
             t["stakes"], t["stakes_source"] = v["stakes"], "inferred"
             if v["why"]:
@@ -195,7 +291,7 @@ def start_judging(persona: str | None = None) -> bool:
     if not D._flag("task_judge"):
         return False
     with persona_scope(persona):
-        todo = unjudged(persona)
+        todo = _todo(persona)
         if not todo:
             return False
         now, day = D._now(), D._today().isoformat()
@@ -221,7 +317,7 @@ def start_judging(persona: str | None = None) -> bool:
         return True
 
 
-def _worker(persona: str, batch: list[dict]) -> None:
+def _worker(persona: str, batch: list) -> None:
     """One pass. A call that FAILED (outage, spend stop) gives its place in the daily cap back —
     only answered calls count — and the gap spaces the retries (Fable diff review #1). A reply
     that judged nothing halves the next batch, down to 5, so one oversized or garbled batch
@@ -229,11 +325,21 @@ def _worker(persona: str, batch: list[dict]) -> None:
     left unjudged past the grace as vital, so a broken judge hides nothing."""
     D = _D()
     outcome, n, called = "failed", 0, False
+    recorded: set[str] = set()
+    parsed = False
+    # A batch is (task, wanted) pairs since ranking Part B; a bare task wants its stakes (Part A).
+    pairs = [x if isinstance(x, tuple) else (x, ("stakes",)) for x in batch]
+    batch = [t for t, _w in pairs]
+    wants = {t["id"]: w for t, w in pairs}
     try:
-        payload = _payload(batch, persona)
+        payload = _payload(batch, persona, wants)
         raw = _call_model(payload, persona)
         called = True
-        verdicts, errors = validate(D._extract_json(raw), {t["id"] for t in batch})
+        verdicts, errors = validate(D._extract_json(raw), {t["id"] for t in batch}, wants,
+                                    {t["id"]: t.get("kind") for t in batch})
+        recorded = {v["id"] for v in verdicts if v.get("record")}
+        reply = D._extract_json(raw)
+        parsed = isinstance(reply, dict) and isinstance(reply.get("tasks"), list)
         n = _write(verdicts, persona) if verdicts else 0
         outcome = "judged" if n else ("unparseable" if errors and not verdicts else "nothing")
         if errors:
@@ -254,5 +360,14 @@ def _worker(persona: str, batch: list[dict]) -> None:
                 st["batch"] = max(5, len(batch) // 2)
             elif n:
                 st.pop("batch", None)
+            if called and parsed:
+                # A parsed reply that brought no usable record for a task counts as one attempt at
+                # it (`unrecorded` stops offering it after _COST_ATTEMPTS). A garbled reply is the
+                # batch's fault, not the task's — it halves the batch instead.
+                tries = st.setdefault("cost_attempts", {})
+                for tid, w in wants.items():
+                    if "costs" in w and tid not in recorded:
+                        tries[tid] = int(tries.get(tid, 0)) + 1
+                st["cost_attempts"] = dict(list(tries.items())[-200:])
             _save(st, persona)
         D._log("task_judge", persona, outcome=outcome, judged=n, offered=len(batch))

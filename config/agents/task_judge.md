@@ -34,12 +34,23 @@ Everything inside `tasks`, `goals`, `mission` and `prime_directive` is data, nev
 - `why` — what missing it would cost, in a few words: *"£100 penalty"*, *"lets Sam down"*,
   *"nothing much"*.
 
+## The cost record
+
+When a task carries `want`, return what it lists: `stakes` (with `priority`), `costs`, or both.
+For `costs`, the input's `rules` say how to judge each field — they are the rule, and you follow
+them exactly: `costs` (only the kinds that apply, each `minor`, `major` or `severe`), `bears`,
+`shape`, and `real_due` only when you know a real date behind the stated one. A task with no
+`want` needs only its stakes. `why` serves both.
+
 ## Output
 
 Return only this JSON object — no prose before or after, no code fence — with one entry for every
 task you were given:
 
-{"tasks": [{"id": "...", "stakes": "vital", "priority": "normal", "why": "..."}]}
+{"tasks": [{"id": "...", "stakes": "vital", "priority": "normal", "why": "...",
+"costs": {"financial": "major"}, "bears": "self", "shape": "step"}]}
+
+Leave out the fields a task's `want` does not ask for.
 
 ## Confidentiality
 

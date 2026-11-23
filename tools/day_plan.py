@@ -598,12 +598,16 @@ def _candidates(today: date, persona: str | None) -> list[dict]:
     The Today list's own rule, `_on_todays_list`, and not the head layer's wider Now (round 2,
     R2-3): on 10-25 the two-day lead put two tasks due Monday on Sunday's plan, and undated ones
     beside them. Mike: "these are FOR Monday … Metatron should focus attention on the present."
-    One definition of today for the list and the plan, so they cannot disagree."""
-    from tools.day_shape import activity_of, shape_for
+    One definition of today for the list and the plan, so they cannot disagree.
+
+    Under `ranking_v2` (ranking Part B, § 10 R3) today is wider and ordered by the regret of
+    delay: `_candidates_v2`. Off, this is Part A exactly."""
+    if _flag("ranking_v2"):
+        return _candidates_v2(today, persona)
+    from tools.day_shape import shape_for
     O = _O()
     goals = O._goal_index()
     w = _cfg().score_weights()
-    default_minutes = int(_limit("default_task_minutes") or 30)
     shape = shape_for(today, persona)
     out = []
     for raw in O._load(persona):
@@ -616,41 +620,197 @@ def _candidates(today: date, persona: str | None) -> list[dict]:
         if not ((v.get("actionable") and O._on_todays_list(t, v))
                 or v.get("state") in ("lapsed", "in_window")):
             continue
-        activity, attrs = activity_of(t, shape)
-        target = O._habit_target(t) if t.get("kind") == "habit" else 1
-        copies = 1
-        if t.get("kind") == "habit" and (t.get("every") or "day") == "day":
-            occ = (t.get("occurrences") or {}).get(O._period("day", today)[0]) or {}
-            copies = max(1, target - int(occ.get("done") or 0))
-        g = goals.get(str(t.get("goal_id") or "")) or {}
-        score = _score(t, v, today, goals, w)
-        out.append({
-            "ref": v["occ"], "task_id": t["id"], "what": t["what"], "kind": t.get("kind"),
-            "domain": str(t.get("domain") or "").lower(), "state": v.get("state"),
-            "minutes": int(t.get("minutes") or default_minutes),
-            "length_known": bool(t.get("minutes")),
-            "essential": O.is_essential(t, goals) and v.get("state") != "in_window",
-            "stakes": t.get("stakes"), "after": t.get("after"), "before": t.get("before"),
-            # A step of a plan or a prep for an event: code places it, no reshuffle (R5).
-            "step": bool(t.get("part_of") or t.get("prep_for")),
-            "vital": ((t.get("kind") == "deadline" or bool(O._month_window(t)))
-                      and O.stakes_of(t) == "vital"),
-            "due": t.get("due"), "zone": t.get("zone"), "copies": copies,
-            # What kind of activity it is, and what that needs (plan § 18.3): where it may go.
-            "activity": activity, "device": bool(attrs.get("device")),
-            "heavy": attrs.get("concentration") == "heavy", "solo": bool(attrs.get("solo")),
-            "attrs": attrs,
-            # A daily habit done more than once a day (a medicine twice a day): each dose is its
-            # own block, and `copies` is how many are still unrecorded (review S-2).
-            "multi": t.get("kind") == "habit" and (t.get("every") or "day") == "day" and target > 1,
-            "goal": {k: g.get(k) for k in ("title", "shareable_what") if g.get(k)},
-            "score": score,
-            "digest": _digest(t.get("status"), v.get("state"), v.get("text"), t.get("due"),
-                              t.get("minutes"), t.get("priority"), t.get("stakes"),
-                              t.get("goal_id"), t.get("zone"), activity, t.get("before")),
-        })
+        out.append(_entry(t, v, today, shape, goals, _score(t, v, today, goals, w)))
     out.sort(key=lambda c: (-c["score"], str(c.get("due") or "9999"), c["minutes"]))
     return out
+
+
+def _entry(t: dict, v: dict, today: date, shape: dict, goals: dict, score: int,
+           stakes: str | None = None) -> dict:
+    """One candidate, as the fill, the validator and the gate read it. `stakes` — the stakes to
+    show and test for vital (Part A's stored value, or ranking v2's derived one)."""
+    from tools.day_shape import activity_of
+    O = _O()
+    default_minutes = int(_limit("default_task_minutes") or 30)
+    activity, attrs = activity_of(t, shape)
+    target = O._habit_target(t) if t.get("kind") == "habit" else 1
+    copies = 1
+    if t.get("kind") == "habit" and (t.get("every") or "day") == "day":
+        occ = (t.get("occurrences") or {}).get(O._period("day", today)[0]) or {}
+        copies = max(1, target - int(occ.get("done") or 0))
+    g = goals.get(str(t.get("goal_id") or "")) or {}
+    vital_read = O.stakes_of(t) if stakes is None else stakes
+    return {
+        "ref": v["occ"], "task_id": t["id"], "what": t["what"], "kind": t.get("kind"),
+        "domain": str(t.get("domain") or "").lower(), "state": v.get("state"),
+        "minutes": int(t.get("minutes") or default_minutes),
+        "length_known": bool(t.get("minutes")),
+        "essential": O.is_essential(t, goals) and v.get("state") != "in_window",
+        "stakes": t.get("stakes") if stakes is None else stakes,
+        "after": t.get("after"), "before": t.get("before"),
+        # A step of a plan or a prep for an event: code places it, no reshuffle (R5).
+        "step": bool(t.get("part_of") or t.get("prep_for")),
+        "vital": ((t.get("kind") == "deadline" or bool(O._month_window(t)))
+                  and vital_read == "vital"),
+        "due": t.get("due"), "zone": t.get("zone"), "copies": copies,
+        # What kind of activity it is, and what that needs (plan § 18.3): where it may go.
+        "activity": activity, "device": bool(attrs.get("device")),
+        "heavy": attrs.get("concentration") == "heavy", "solo": bool(attrs.get("solo")),
+        "attrs": attrs,
+        # A daily habit done more than once a day (a medicine twice a day): each dose is its
+        # own block, and `copies` is how many are still unrecorded (review S-2).
+        "multi": t.get("kind") == "habit" and (t.get("every") or "day") == "day" and target > 1,
+        "goal": {k: g.get(k) for k in ("title", "shareable_what") if g.get(k)},
+        "score": score,
+        "digest": _digest(t.get("status"), v.get("state"), v.get("text"), t.get("due"),
+                          t.get("minutes"), t.get("priority"), t.get("stakes"),
+                          t.get("goal_id"), t.get("zone"), activity, t.get("before")),
+    }
+
+
+# --- ranking Part B: the regret of delay (ranking_values_plan_2026-11-23 §§ 10–11) -------------
+
+_V2_SKIP = ("blocked", "dormant", "moot", "waiting", "waiting_due")
+
+
+def _candidates_v2(today: date, persona: str | None, record: dict | None = None) -> list[dict]:
+    """Today by the regret of delay (§ 10 R3, R9; Mike, 2026-11-23: "the time should be filled
+    with something, or intentionally with nothing").
+
+    (a) The musts: today's list (Part A's `_on_todays_list`) plus anything that must start today
+        to be done in time — slack ≤ 0 with the start-late buffer. Placed by absolute cost of
+        delay, largest first.
+    (b) Advance work, when room remains: upcoming deadlines and the current steps of goals, by
+        cost of delay per attention block, above `advance_floor`. Suggested, never a must —
+        never essential, so never nudged, never into protected time, and lapsing costs nothing.
+        A flexible task inside its window stays a candidate every day of it (Mike, 10-27).
+    (c) Time left unfilled is the user's own (`_free_line` says so).
+    A neglect clock is a candidate from `next_due`; the curve governs its rank after it.
+
+    `record` (optional) receives {task_id: assessment} for the shadow and the buffer learner."""
+    from tools import ranking as RK
+    from tools.day_shape import shape_for
+    O = _O()
+    goals = O._goal_index()
+    shape = shape_for(today, persona)
+    c = RK.cfg(persona)
+    try:
+        st = RK.load_state(persona)
+    except Exception:  # noqa: BLE001 — no state yet: no learned bias
+        st = {}
+    bias = RK.bias_of(st, c)
+    floor = float(c.get("advance_floor", 10))
+    tasks = [O._norm(raw) for raw in O._load(persona)]
+    by_id = {t["id"]: t for t in tasks}
+    out = []
+    for t in tasks:
+        if t.get("status") != "open" or t.get("kind") == "waiting":
+            continue
+        v = O._view(t, today)
+        state = v.get("state")
+        if state in _V2_SKIP:
+            continue
+        on_list = bool(v.get("actionable") and O._on_todays_list(t, v))
+        a = RK.assess(RK.inherit(t, by_id), v, today, c, bias, on_list=on_list)
+        if record is not None:
+            record[t["id"]] = a
+        advance = False
+        if not a["must"]:
+            if t.get("kind") != "deadline" or a.get("due") is None:
+                continue
+            if not (state == "in_window" or a["cod"] >= floor):
+                continue
+            advance = True
+        e = _entry(t, v, today, shape, goals, 0, stakes=RK.stakes_v2(t))
+        if advance:
+            e["essential"] = False
+            e["advance"] = True
+        e["v2"] = {**a, "tier": "advance" if advance else "must"}
+        out.append(e)
+    blocks = RK.attention_blocks(out, c)
+    scale = float(c.get("score_scale", 1.0))
+    for e in out:
+        r = e["v2"]
+        r["blocks"] = round(blocks.get(e["ref"], 1.0), 3)
+        r["rank"] = round(r["cod"] if r["must"] else r["cod"] / max(1e-6, r["blocks"]), 3)
+        e["score"] = int(round(r["cod"] * scale))
+    return RK.order(out)
+
+
+def _hard_first(cands: list[dict], placed: list[dict], unplaced: list[dict], args: tuple
+                ) -> tuple[list[dict], list[dict]]:
+    """Sequence (B7, § 10 R2 — hard-first only in phase 1): selection decided WHAT fits; among
+    what fits, the harder thing goes first — heavy concentration, then the longer task. Filled
+    again in that order; kept only if it places at least as much and leaves no further essential
+    unplaced (a reordering may fragment the day — then selection's own placement stands)."""
+    fit = {b.get("ref") for b in placed if b["kind"] == "task"}
+    # The musts keep their place ahead of advance work (Fable diff review #5): hardness orders
+    # within a tier, never across one.
+    first = sorted((c for c in cands if c["ref"] in fit),
+                   key=lambda c: (bool(c.get("advance")), not c.get("heavy"), -int(c["minutes"])))
+    rest = [c for c in cands if c["ref"] not in fit]
+    p2, u2 = _fill(first + rest, *args)
+
+    def refs(p):
+        return sorted(b.get("ref") for b in p if b["kind"] == "task")
+
+    # Exactly what selection placed, or selection's placement stands.
+    if refs(p2) == refs(placed):
+        return p2, u2
+    return placed, unplaced
+
+
+def _shadow(today: date, persona: str, v1: list[dict], prev: dict | None) -> dict:
+    """Phase 1 (§ 4.4, R4): the v2 order beside Part A's, with each term kept apart so the
+    comparison can say which one moved a task — and whether v2 would have reshuffled. Code only;
+    nothing here changes the plan. Task words stay out: ids and numbers, titles read at report
+    time."""
+    from tools import ranking as RK
+    assessed: dict = {}
+    v2 = _candidates_v2(today, persona, record=assessed)
+    c = RK.cfg(persona)
+    scores = {e["ref"]: e["score"] for e in v2}
+    old = ((prev or {}).get("shadow_v2") or {}).get("scores") if prev and \
+        prev.get("day") == today.isoformat() else None
+    would, why = False, ""
+    if old is not None:
+        delta = int(c.get("reshuffle_delta", 15))
+        steps = {e["ref"] for e in v2 if e.get("step")}
+        added = [r for r in scores if r not in old and r not in steps]
+        moved = [r for r in scores if r in old and abs(scores[r] - int(old[r])) >= delta]
+        if added:
+            would, why = True, f"{len(added)} task(s) added"
+        elif moved:
+            would, why = True, f"{len(moved)} score move(s) ≥ {delta}"
+    keys = ("G", "bearer", "shape", "factor", "slack", "needed", "buffer", "blocks", "cod",
+            "rank", "tier", "due", "recorded")
+    return {
+        "v1": [[x["ref"], x["score"]] for x in v1[:15]],
+        "v2": [{"ref": e["ref"], "task_id": e["task_id"], **{k: e["v2"].get(k) for k in keys}}
+               for e in v2[:15]],
+        "scores": scores, "would_reshuffle": would, "why": why,
+        "_assessed": assessed,
+    }
+
+
+def _keep_shadow(persona: str, plan: dict, shadow: dict) -> None:
+    """Store what the shadow learned: the buffer learner's observations, and the first build of
+    the day at or after waking (what the three-morning comparison reads). Best effort."""
+    from tools import ranking as RK
+    try:
+        O = _O()
+        day = date.fromisoformat(plan["day"])
+        st = RK.load_state(persona)
+        RK.observe(st, [O._norm(t) for t in O._load(persona)], day, RK.cfg(persona),
+                   shadow.get("_assessed") or {})
+        wake = str((plan.get("window") or {}).get("wake") or "")
+        if str(plan.get("built_at") or "") >= wake:
+            RK.keep_shadow(st, day, {"built_at": plan.get("built_at"),
+                                     **{k: v for k, v in shadow.items()
+                                        if k in ("v1", "v2", "would_reshuffle", "why")}})
+        RK.save_state(st, persona)
+    except Exception as exc:  # noqa: BLE001 — the shadow never breaks a plan
+        logger.warning(f"[day_plan] ranking shadow not kept: {exc}")
 
 
 # --- the timeline ----------------------------------------------------------------------------
@@ -1143,6 +1303,8 @@ def _fill(cands: list[dict], blocks: list[dict], shape: dict, plan_start: dateti
                        "activity": c["activity"],
                        # Read by render_block's Important line (synth_now_next plan § 8 F4).
                        "stakes": c.get("stakes"), "due": c.get("due"),
+                       # Ranking v2's advance work (§ 10 R3 b): a suggestion, never a must.
+                       **({"advance": True} if c.get("advance") else {}),
                        **({"condition": cond} if cond else {}),
                        **({"displaced_protected": True} if displaced else {})})
         counts[c["ref"]] = counts.get(c["ref"], 0) + 1
@@ -1428,6 +1590,10 @@ def _classify(prev: dict | None, day: date, now: datetime, cands: list[dict], ev
         return "reshuffle", [f"requested: {req.get('reason', '')}"[:80]]
     reasons, mode = [], "none"
     delta = int((_cfg().score_weights() or {}).get("reshuffle_delta", 10))
+    if _flag("ranking_v2"):
+        # v2 scores are on their own scale, so the move that counts is its own (§ 10 R4).
+        from tools.ranking import cfg as _rk_cfg
+        delta = int(_rk_cfg().get("reshuffle_delta", 15))
     stored = (prev.get("digests") or {}).get("tasks") or {}
     fresh = {c["ref"]: (c["digest"], c["score"]) for c in cands}
     history = {b.get("ref") for b in prev.get("blocks") or [] if b.get("history")}
@@ -1580,6 +1746,10 @@ def _build(day: date, persona: str, mode: str, reasons: list[str], prev: dict | 
             placeable.append({**c, "copies": more, "prior": [b["start"] for b in hist + prog]})
     placed, unplaced = _fill(placeable, skeleton + history + inprog, shape, plan_start, bed_dt,
                              extra["windows"], keep, day)
+    if _flag("ranking_v2"):
+        placed, unplaced = _hard_first(placeable, placed, unplaced,
+                                       (skeleton + history + inprog, shape, plan_start, bed_dt,
+                                        extra["windows"], keep, day))
     # A kept slot never outranks what matters more (Mike, 2026-10-27: "important things happen
     # first and don't get bumped in favor of less important things"). Kept placements go in
     # before anything new, so a nice-to-have placed this morning could leave a task due today
@@ -1748,6 +1918,15 @@ def current(persona: str | None = None, reason: str = "", for_reply: bool = Fals
         plan = _build(day, persona, mode, reasons, prev, now, events, cands,
                       allow_lookup=not for_reply)
         plan["snapshot_at"] = (state.get("snapshot") or {}).get("fetched_at")
+        # Ranking Part B, phase 1 (shadow): with `ranking_v2` off, the v2 order is computed beside
+        # Part A's and written to the plan's trace — never used to place anything.
+        shadow = None
+        if not _flag("ranking_v2"):
+            try:
+                shadow = _shadow(day, persona, cands, prev)
+                plan["shadow_v2"] = {k: v for k, v in shadow.items() if k != "_assessed"}
+            except Exception as exc:  # noqa: BLE001 — the shadow never breaks a plan
+                logger.warning(f"[day_plan] ranking shadow failed: {exc}")
         wait = int(_limit("reply_lock_ms") or 200) if for_reply else None
         with _locked(persona, wait_ms=wait) as got:
             if not got:
@@ -1757,6 +1936,8 @@ def current(persona: str | None = None, reason: str = "", for_reply: bool = Fals
                     and str(on_disk.get("built_at") or "") > plan["built_at"]):
                 return on_disk
             _write_json(_plan_path(day, persona), plan)
+            if shadow is not None:
+                _keep_shadow(persona, plan, shadow)
             st = _load_state(persona)
             if mode == "reshuffle":
                 rs = st.setdefault("reshuffle", {})
@@ -1775,7 +1956,8 @@ def current(persona: str | None = None, reason: str = "", for_reply: bool = Fals
              fail_rules=sorted({f.split(":")[0] for f in plan["failures"]}),
              placed=sum(1 for b in plan["blocks"] if b["kind"] == "task" and not b.get("history")),
              unplaced=len(plan["unplaced"]), **_churn(prev, plan),
-             ms=int((_time.monotonic() - t0) * 1000))
+             ms=int((_time.monotonic() - t0) * 1000),
+             **({"v2_would_reshuffle": shadow["would_reshuffle"]} if shadow else {}))
         return plan
 
 
@@ -1962,7 +2144,8 @@ def _free_line(plan: dict, now: datetime, now_b: dict | None) -> str | None:
         for b in inside[:2]:
             mins = int((_dt(b["end"]) - _dt(b["start"])).total_seconds() // 60)
             due = f", due {b['due']}" if b.get("due") else ""
-            bits.append(f"{b['title']} `{b['ref']}` ({mins} min{due})")
+            ahead = " — ahead of time, a suggestion only" if b.get("advance") else ""
+            bits.append(f"{b['title']} `{b['ref']}` ({mins} min{due}){ahead}")
         line += ". Placed in it: " + "; ".join(bits) + ". The rest is the user's own time."
     else:
         line += " — nothing placed; the user's own time."
@@ -1985,6 +2168,8 @@ def _important(blocks: list[dict], day: date, now: datetime, exclude: set, horiz
             continue
         if _status_of(b.get("ref"), b.get("copy", 0)) != "open":
             continue
+        if b.get("advance"):
+            continue        # advance work is a suggestion, never Important (Fable diff review #6)
         due = _O()._d(b.get("due"))
         if b.get("stakes") == "vital" and due and due <= day + timedelta(days=1):
             when = "due today" if due <= day else "due tomorrow"
@@ -2077,12 +2262,14 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
     now_b = next((b for b in listed if _dt(b["start"]) <= now < _dt(b["end"])
                   and b["kind"] not in _NEXT_SKIP), None)
     nxt = next((b for b in listed if _dt(b["start"]) > now and b["kind"] not in _NEXT_SKIP), None)
+    ahead = " — ahead of time, a suggestion only"
     out.append(f"Now ({now:%H:%M}): " + (
         f"{_label(now_b)} (until {_hm(now_b['end'])})"
         + (_task_status_text(now_b, now) if now_b["kind"] == "task" else "")
+        + (ahead if now_b.get("advance") else "")
         if now_b else "nothing planned"))
     if nxt:
-        out.append(f"Next: {_hm(nxt['start'])} {_label(nxt)}")
+        out.append(f"Next: {_hm(nxt['start'])} {_label(nxt)}" + (ahead if nxt.get("advance") else ""))
     free = _free_line(plan, now, now_b)
     if free:
         out.append(free)
@@ -2194,6 +2381,17 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
                        for g in allocation_gaps[:5]))
     if offer_rhythm:
         out.append(offer_rhythm)
+    if brief_or_close and _flag("ranking_v2"):
+        # Ranking Part B § 4.6: one intimate contact offered a keep-in-touch clock, once ever, on
+        # a brief or a close — spent by showing it (after_render), so it is never asked twice.
+        try:
+            from tools import ranking as RK
+            offer = RK.people_offer(None, today, RK.load_state())
+        except Exception:  # noqa: BLE001 — no persona bound or no contacts: nothing to offer
+            offer = None
+        if offer:
+            out.append(RK.offer_line(offer))
+            record["people"] = [offer["contact_id"]]
     if ask_length:
         out.append(ask_length)
     if heads_up:
@@ -3338,6 +3536,15 @@ def after_render(persona: str, shown: dict) -> None:
     if shown.get("findings"):
         from tools.horizon import charge
         charge(shown["findings"], persona)
+    if shown.get("people"):
+        # A keep-in-touch offer (ranking § 4.6) is offered once: spent on showing, like a finding.
+        from tools import ranking as RK
+        with _locked(persona):
+            rst = RK.load_state(persona)
+            po = rst.setdefault("people_offered", {})
+            for cid in shown["people"]:
+                po.setdefault(cid, _today().isoformat())
+            RK.save_state(rst, persona)
     offered = {k: list(dict.fromkeys(shown.get(k) or [])) for k in ("slips", "riders", "cascades")}
     if not any(offered.values()):
         return

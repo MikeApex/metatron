@@ -35,6 +35,7 @@ _DEFAULTS: dict = {
         "owns_checkins": False, "prep_tasks": False, "horizon_cap": False,
         "project_planner": False,
         "task_judge": False,
+        "cost_record": False, "ranking_v2": False,
     },
     "replaces_jobs": ["companion_checkin"],
     "score": {

@@ -1,0 +1,126 @@
+# config/modules/ranking.yaml — ranking Part B: rank by the regret of delay.
+#
+# Plan: archive/plans/ranking_values_plan_2026-11-23.md (§ 11 governs the values, § 10 the design).
+# Research: archive/plans/ranking_research_2026-11-23_claude-chat.md — "research § n" below is its
+# section. A value the report marks heuristic is labelled heuristic here; a value nothing in the
+# report supports is labelled placeholder. Every value is a starting point, refined by each user's
+# evidence and, where a user differs, by config/personas/{p}/ranking.yaml (merged over this file;
+# none is written by code).
+#
+# Read by tools/ranking.py, re-read when this file (or the persona's) changes on disk. The
+# switches live in day_plan.yaml: `cost_record` (the judge records costs) and `ranking_v2` (the
+# day is ranked by this file). With `ranking_v2` off, this file changes nothing a user sees —
+# the v2 order is computed beside v1 and written to the plan's trace only (phase 1, shadow).
+
+# --- importance: what missing it would cost -----------------------------------------------------
+
+# The grade ladder, geometric so the worst cost dominates (research § 10: ratio 3 kept).
+grades: {minor: 10, major: 30, severe: 90}
+
+# Several costs combine as shares of the maximum: G = 100 × [1 − ∏(1 − sᵢ)] (research § 10, the
+# multiplicative comorbidity rule, Flanagan 2006). Worst sets the floor; each further cost adds
+# less; the total is bounded. Two majors = 51; severe + major = 93.
+shares: {minor: 0.1, major: 0.3, severe: 0.9}
+# A weighted share never reaches 1 (a social severe × 1.5 would be 1.35): capped here, so the bound
+# holds. Social still outranks financial at every grade; at severe the gap narrows (99 vs 90).
+share_cap: 0.99
+
+# Dimension weight at an equal grade (research § 3a, heuristic: relationship harm ≥ financial,
+# 1.5 : 1; others 1.0).
+dimension_weight: {financial: 1.0, legal: 1.0, health: 1.0, social: 1.5, psychological: 1.0}
+
+# Who mainly bears it (B3; research § 10). Applied in the cost of delay only — never to whether a
+# task is vital (§ 10 R1). `own_org`: an organisation the user owns or runs, whose harm is largely
+# theirs (research § 10, "close to 1.0 where the person owns the organisation"). Harms that rebound
+# on the user (job, reputation, legal) are recorded as the user's own costs, not folded in here.
+bearer_weight: {self: 1.0, close: 1.0, own_org: 1.0, others: 0.7, org: 0.5}
+
+# A task with stakes but no cost record yet (all of Part A's; § 4.1's fallback, read only while
+# a task awaits the judge's recording pass).
+fallback: {vital: major, missable: minor, unjudged: minor}
+
+# --- cost of delay: the four shapes ----------------------------------------------------------------
+
+shapes:
+  # step, after its date: the cost already landed; one more day costs this share of G (plan § 4.3,
+  # placeholder).
+  step_residual: 0.2
+  # accruing, after its date: G × (1 + rate × days late) (placeholder — interest, a backlog).
+  accrual_rate: 0.1
+  # cliff, before its date: × this; after its date the task is moot (plan § 4.3, placeholder:
+  # reversibility "a strong vector", B1).
+  reversibility_weight: 2.0
+  # neglect: G × min(cap, (r − 1)^k), r = days since last done ÷ the wished cadence, zero until the
+  # cadence has passed (research § 3b). k = 1.5 for kin and friends alike — Mike, 2026-11-23: keep
+  # it convex (the report's kin 1.0 is a guess it says no study fits). cap = M (plan § 10 R4).
+  neglect_k: 1.5
+  neglect_cap: 3
+
+# --- slack: can it still be done in time? ----------------------------------------------------------
+
+# Start-late buffer, tiered by the task's length (research § 2, medium confidence):
+# < 15 min 0% (short tasks are OVER-estimated), 15 min – 4 h 35% (effort overrun), longer —
+# a multi-day completion — 65% (Buehler 1994). No length on file: the fallback.
+buffer:
+  tiers:
+    - {under_minutes: 15, buffer: 0.0}
+    - {under_minutes: 240, buffer: 0.35}
+    - {under_minutes: null, buffer: 0.65}
+  fallback: 0.40
+  # An aversive one-off (research § 2: +100%). Not read in phase 1 — nothing yet marks a task as
+  # aversive; phase 2's "behind" work is where that signal arrives.
+  aversive: 1.0
+  # Learning the user's own bias (research § 2, heuristic statistics): pooled across task classes,
+  # shrunk toward the tier defaults with weight n/σ² ÷ (n/σ² + 1/τ²) on the log actual/predicted
+  # ratio — 0.43 at 3 observations, 0.71 at 10, 0.83 at 20.
+  # OFF in phase 1 (Fable diff review #7): in shadow the user is never shown an early start, so
+  # every long task would train "starts late", and the first measure (calendar days from the
+  # must-start day) reads +0.2–0.4 even for a task done on its date. The tier defaults govern until
+  # phase 2 designs an observation that holds under v2.
+  learn: {enabled: false, sigma: 0.5, tau: 0.25, keep: 50}
+
+# How many minutes of a day are free for tasks, to turn a length into days (heuristic, phase 1 —
+# the shadow measures it; reading the real day shape is a later refinement). It is what makes a
+# four-hour task due Tuesday a must on Sunday while a ten-minute Monday task is not.
+free_minutes_per_day: 120
+
+# The climb: a step's cost of delay rises from 0 to G as its slack falls from this many days to 0
+# (Part A's 14-day climb). A must — slack ≤ 0 — costs its whole weight whatever this is, so it
+# orders advance work only; a task needing longer than this climbs over its own need instead.
+climb_max_days: 14
+
+# --- attention: the base cost of any task ----------------------------------------------------------
+
+# Every task costs at least one attention block (B7; research § 1, low confidence): 5 min when
+# slotted between tasks; 15 when it breaks into a focus block (read at placement — phase 2).
+# Similar small tasks of one kind share one block (Ibanez 2018).
+attention_block: {between: 5, focus: 15, batch_max_minutes: 15}
+
+# --- what goes into the day (§ 10 R3, R9) ----------------------------------------------------------
+
+# Advance work — upcoming tasks and current goal steps, offered when the musts leave room — is
+# suggested only above this cost of delay; below it the time is the user's own, on purpose
+# (heuristic, measured in the shadow). 10 = a minor cost's whole weight: a minor task is never
+# pulled forward, it waits for its own day; a major one is suggested within ~9 days of its date.
+advance_floor: 10
+
+# Medication keeps a fixed lift, as in Part A, in grade units (placeholder: a severe's worth).
+medication_lift: 90
+
+# The v2 cost of delay is written to a candidate's integer `score` × this, so the Important line
+# and the build's comparisons keep working.
+score_scale: 1.0
+# A move this large between builds is a change in what matters — a reshuffle (§ 10 R4: its own
+# value, measured in the shadow; placeholder).
+reshuffle_delta: 15
+
+# --- promises and people -----------------------------------------------------------------------
+
+# A promise to someone with no date gets one (B25; research § 9, low confidence): 3 days for a
+# quick digital favour (photos, a link, an intro), 7 for an effortful or physical one. A task is
+# "quick" when it takes at most `quick_max_minutes`, or has no length and is admin.
+implied_promise_days: {quick: 3, effortful: 7, quick_max_minutes: 15}
+
+# Suggested cadences when the user leaves it to Metatron (research § 3c, Dunbar layers, medium-low;
+# descriptive, not normative — the user's answer sets the clock, B9).
+cadence_defaults: {intimate: 7, close_friend: 30, wider: 120, network: 365}
