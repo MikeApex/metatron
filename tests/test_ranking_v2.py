@@ -1595,14 +1595,15 @@ def _():
 
 
 @check("schemas (phase 3): record_signal is classified as an action, registered and granted to the "
-       "Synthesizer in both routing files; every phase 3 flag ships off, the dry run on")
+       "Synthesizer in both routing files; the back burner ships as the dry run, the weekly look "
+       "back and signals on (Mike, 2026-11-23)")
 def _():
     from core import actions
     assert "record_signal" in actions.ACTION_TOOLS
     raw = yaml.safe_load((ROOT / "config" / "modules" / "day_plan.yaml").read_text())
     f = raw["flags"]
     assert (f["back_burner"], f["back_burner_dry_run"], f["weekly_priorities"],
-            f["ranking_signals"]) == (False, True, False, False)
+            f["ranking_signals"]) == (False, True, True, True)
     for name in ("routing_cloud.yaml", "routing.yaml"):
         r = yaml.safe_load((ROOT / "config" / "modules" / name).read_text())
         syn = next(v for k, v in (r.get("agents") or r).items() if k == "synthesizer")

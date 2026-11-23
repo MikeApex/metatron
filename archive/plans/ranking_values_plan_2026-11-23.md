@@ -928,3 +928,10 @@ reviewer; each fix below has a test.
 - A parked task comes back by being mentioned, or by `update_task reopen`.
 - `weekly_priorities: false` makes the weekly review the week ahead only.
 - `ranking_signals: false` stops all writing.
+
+**At the deploy (Mike, 2026-11-23): "include everything in the deploy."**
+- `weekly_priorities` and `ranking_signals` are switched ON in the committed `day_plan.yaml`, so
+  the deploy starts the weekly look back and the signals record.
+- `back_burner` stays off. Off IS the dry run, and parking waits for the dry-run review.
+- The four checks this leaves are filed to the backlog at his ask: the dry-run review, the weekly
+  live check, the first monthly review, and the passion re-count.

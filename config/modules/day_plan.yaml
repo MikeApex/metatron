@@ -96,12 +96,14 @@ flags:
   # what is slipping or about to be parked, one keep-in-touch or upkeep clock, the regret question,
   # one check on how things feel — from material code assembles; and a user with no weekly review
   # is offered one, once, at a day and time they pick. Off: the weekly review is the week ahead only.
-  weekly_priorities: false
+  # ON at the phase 3 deploy (Mike, 2026-11-23) — its live check is two weekly reviews.
+  weekly_priorities: true
   # `ranking_signals`: the daily tick appends what the ledger shows to ranking_signals.jsonl
   # (completion, momentum, missed obligations, intrusions, questions asked, overrides) and
   # record_signal keeps what the user says (regret, how things feel, overload, nagging,
   # satisfaction). Recording only — nothing a user sees. Off: nothing is written.
-  ranking_signals: false
+  # ON at the phase 3 deploy (Mike, 2026-11-23), so the first monthly review has a month to read.
+  ranking_signals: true
 
 replaces_jobs: [companion_checkin]
 
