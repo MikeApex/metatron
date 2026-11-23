@@ -455,6 +455,44 @@ def pending_accounts(server: str) -> int:
     return sum(1 for r in rows if isinstance(r, dict) and r.get("status") == "pending")
 
 
+def account_personas(server: str) -> list[str]:
+    """
+    Every signed-up user whose account is live (status `active` — approval sets it; there is no
+    `approved` status). [] on any failure, so an unreachable store degrades to Mike's own events
+    rather than to none. Their quality events are read with Mike's, because a problem a second
+    user hits is as much the backlog's as one he hits (her data carries his clearances on every
+    developer channel — ROADMAP.md § 0, amendment 2026-11-18).
+    """
+    payload = _get_json(server, "/monitor/accounts")
+    rows = payload.get("accounts") if payload else None
+    if not isinstance(rows, list):
+        return []
+    return sorted(str(r["username"]) for r in rows
+                  if isinstance(r, dict) and r.get("status") == "active" and r.get("username"))
+
+
+def _persona_of(event: dict) -> str:
+    return str(event.get("_persona") or DEFAULT_PERSONA)
+
+
+def _seen_key(event: dict) -> str:
+    """The ledger key. Mike's stay the bare timestamp, so the existing ledger stays valid;
+    anyone else's carries the persona, because two users' events can share a timestamp."""
+    ts = str(event.get("timestamp", ""))
+    persona = _persona_of(event)
+    return ts if persona == DEFAULT_PERSONA or not ts else f"{persona}:{ts}"
+
+
+# The tag a non-Mike entry carries straight after its label. Distinctive on purpose: an event's
+# own detail can open with a bracket ("[N/A …]", "[already applied by the tool]").
+PERSONA_TAG_RE = re.compile(r"\*\*\[[^\]]*\]\*\*\s*\[from ([a-z0-9_-]+)\]")
+
+
+def _line_persona(line: str) -> str:
+    m = PERSONA_TAG_RE.search(line)
+    return m.group(1) if m else DEFAULT_PERSONA
+
+
 def _parse_ts(value) -> datetime | None:
     """An ISO timestamp as an aware datetime (naive read as UTC), or None."""
     try:
@@ -822,7 +860,8 @@ def escalated(text: str) -> list[str]:
         denial = DENIAL_RE.search(line)
         name = (f"{denial.group(1)}/{denial.group(2)}" if denial
                 else _entry_text(line)[:40].rstrip())
-        out.append(f"{name}{tally}")
+        who = _line_persona(line)
+        out.append(f"{'' if who == DEFAULT_PERSONA else f'[{who}] '}{name}{tally}")
     return out
 
 
@@ -836,6 +875,9 @@ def signature(event: dict) -> str:
     same treatment via the uid pair rather than DENIAL_RE's (agent, tool) shape
     — see CALENDAR_UID_RE.
     """
+    persona = _persona_of(event)
+    if persona != DEFAULT_PERSONA:
+        return f"{persona}|" + signature({k: v for k, v in event.items() if k != "_persona"})
     kind = event.get("event_type", "")
     detail = " ".join(str(event.get("detail", "")).split())
     match = DENIAL_RE.search(detail)
@@ -854,6 +896,7 @@ def _entry_text(line: str) -> str:
     body = COUNT_RE.sub("", line.lstrip("- ").strip())
     body = re.sub(r"^⚠\s*", "", body)
     body = re.sub(r"^\*\*\[[^\]]*\]\*\*\s*", "", body)
+    body = re.sub(r"^\[from [a-z0-9_-]+\]\s*", "", body)
     return re.sub(r"[`*_]", "", body).lower()
 
 
@@ -884,7 +927,9 @@ def render(event: dict, count: int = 1) -> str:
     detail = " ".join(str(event.get("detail", "")).split()) or "(no detail recorded)"
     warn = "⚠ " if count >= ESCALATE_AT else ""
     tally = f"  ×{count}" if count > 1 else ""
-    return f"- {warn}**[{label}]** {detail}{tally}  \n  `{event.get('timestamp', '')}`"
+    persona = _persona_of(event)
+    who = f"[from {persona}] " if persona != DEFAULT_PERSONA else ""
+    return f"- {warn}**[{label}]** {who}{detail}{tally}  \n  `{event.get('timestamp', '')}`"
 
 
 CAPTURE_CAT_RE = re.compile(r'no capture kind, \\?"([^"\\]+)\\?"', re.I)
@@ -910,8 +955,13 @@ def merge(block: str, event: dict, machine: bool) -> tuple[str, bool, int]:
     incoming = _entry_text(render(event))
     sig = signature(event) if machine else None
 
+    persona = _persona_of(event)
     for i, line in enumerate(lines):
         if not line.startswith("- "):
+            continue
+        # One user's entry never absorbs another's: a shared ×N would mix two people's
+        # counts into one escalation, and the line would name whoever fired last.
+        if _line_persona(line) != persona:
             continue
         if machine:
             # Machine entries carry a stable (agent, tool) key; compare on that
@@ -923,11 +973,15 @@ def merge(block: str, event: dict, machine: bool) -> tuple[str, bool, int]:
             match = DENIAL_RE.search(line)
             if match:
                 existing_sig = f"{event.get('event_type','')}:{match.group(1)}/{match.group(2)}"
+                if persona != DEFAULT_PERSONA:
+                    existing_sig = f"{persona}|{existing_sig}"
             elif event.get("event_type") == "CALENDAR_DUPLICATE":
                 uid_match = CALENDAR_UID_RE.search(line)
                 if uid_match:
                     uid_a, uid_b = sorted((uid_match.group(1), uid_match.group(2)))
                     existing_sig = f"CALENDAR_DUPLICATE:{uid_a}/{uid_b}"
+                    if persona != DEFAULT_PERSONA:
+                        existing_sig = f"{persona}|{existing_sig}"
             same_label = f"**[{LABELS.get(event.get('event_type', ''), '')}]**" in line
             alike = (existing_sig == sig) if existing_sig else (
                 same_label
@@ -1045,7 +1099,8 @@ def fold_fragments(text: str) -> tuple[str, list]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--persona", default=DEFAULT_PERSONA)
+    ap.add_argument("--persona", default=None,
+                    help="read one persona only (default: mike plus every active account)")
     ap.add_argument("--server", default=DEFAULT_SERVER)
     ap.add_argument("--quiet", action="store_true", help="print nothing when there is nothing new")
     # Testing seam for due_now(), not a feature for normal use: at the time this
@@ -1065,7 +1120,15 @@ def main() -> int:
     if INBOX_HEADING not in text or MACHINE_HEADING not in text:
         return 0
 
-    events = fetch_events(args.server, args.persona)
+    personas = ([args.persona] if args.persona
+                else [DEFAULT_PERSONA] + [p for p in account_personas(args.server)
+                                          if p != DEFAULT_PERSONA])
+    events = []
+    for persona in personas:
+        for event in fetch_events(args.server, persona):
+            if persona != DEFAULT_PERSONA:
+                event["_persona"] = persona
+            events.append(event)
 
     # A stopped VM (routine, cost control) and a running-but-unreachable VM
     # (an outage) both surface here as "no events" — indistinguishable without
@@ -1079,13 +1142,13 @@ def main() -> int:
     # First run against an existing backlog: adopt whatever is already written in
     # rather than re-adding every historical event as "new".
     if not SEEN.exists():
-        seen = {str(e.get("timestamp", "")) for e in events if str(e.get("timestamp", "")) in text}
+        seen = {_seen_key(e) for e in events if str(e.get("timestamp", "")) in text}
 
-    new = [e for e in events if (ts := str(e.get("timestamp", ""))) and ts not in seen]
+    new = [e for e in events if str(e.get("timestamp", "")) and _seen_key(e) not in seen]
 
     added = 0
     if new:
-        seen.update(str(e.get("timestamp", "")) for e in new)
+        seen.update(_seen_key(e) for e in new)
         SEEN.write_text("\n".join(sorted(seen)) + "\n")
 
         for event in new:

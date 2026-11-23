@@ -227,6 +227,70 @@ def test_coverage_reflects_what_is_stored():
     assert "location_sharing" not in block, "plain words only — see _SHAPE_SECTIONS"
 
 
+def test_a_paused_interview_is_invited_back_once_a_day_three_times_in_all():
+    """Mike, 2026-11-23: scheduled sessions start on pause (D2), but encourage her to finish."""
+    _new_user("zz_invite")
+    assert interview.resume_invitation("zz_invite", "2026-12-01") == "", "not paused yet"
+    interview.claim_start("zz_invite")
+    assert interview.resume_invitation("zz_invite", "2026-12-01") == "", "active: no invitation"
+    interview.pause("zz_invite")
+    assert interview.resume_invitation("zz_invite", "2026-12-01").startswith("Their first setup")
+    assert interview.resume_invitation("zz_invite", "2026-12-01") == "", "twice in one day"
+    assert interview.resume_invitation("zz_invite", "2026-12-02")
+    assert interview.resume_invitation("zz_invite", "2026-12-03")
+    assert interview.resume_invitation("zz_invite", "2026-12-04") == "", "past the limit"
+    assert "Continue setting up" in interview.RESUME_INVITATION
+
+
+def test_no_invitation_and_no_file_for_a_persona_without_an_interview():
+    state = interview.state_path("zz_nointerview")
+    assert interview.resume_invitation("zz_nointerview") == ""
+    assert not state.parent.exists(), "an existing persona must not grow an interview directory"
+
+
+def test_the_invitation_reaches_a_scheduled_run():
+    _new_user("zz_sched")
+    interview.claim_start("zz_sched")
+    interview.pause("zz_sched")
+    with persona_mod.persona_scope("zz_sched"):
+        block = orchestrator._scheduled_focus_block("companion_checkin")
+    assert "Continue setting up" in block, block
+
+
+def test_coverage_counts_people_and_practicalities():
+    """2026-11-23: what the interview gathers beyond goals shows up as saved, and an untapped
+    contact card is named, since an untapped card is never saved (plan review L7)."""
+    _new_user("zz_people")
+    block = interview.coverage_block("zz_people")
+    assert "People saved: 0" in block and "Standing facts saved: 0" in block, block
+    assert "Home — set: nothing yet" in block, block
+    data = _tmp / "data" / "personas" / "zz_people"
+    (data / "crm").mkdir(parents=True, exist_ok=True)
+    (data / "crm" / "contacts.json").write_text(json.dumps([{"id": "c1", "name": "Sam"}]))
+    (data / "wisdom").mkdir(parents=True, exist_ok=True)
+    (data / "wisdom" / "wisdom.json").write_text(json.dumps(
+        [{"key": "who_pays_bills", "value": "Sam pays the bills.", "domain": "home"}]))
+    (_tmp / "config/personas/zz_people/profile.yaml").write_text(
+        "name: Z\nhousehold: lives with Sam\n")
+    block = interview.coverage_block("zz_people")
+    assert "People saved: 1" in block and "Standing facts saved: 1" in block, block
+    assert "who they live with" in block and "home address" not in block, block
+    assert "write_contact" not in block and "household" not in block, "plain words only"
+
+    from tools import confirm
+    with persona_mod.persona_scope("zz_people"):
+        confirm.request("write_contact", {"name": "Sam Two"}, description="Add Sam Two?")
+    assert "1 contact change(s) are waiting for the user's tap" in interview.coverage_block("zz_people")
+
+    (_tmp / "config/personas/zz_people/profile.yaml").write_text(
+        "name: Z\nhousehold: lives with Sam\n")
+    from tools import profile as profile_tool
+    with persona_mod.persona_scope("zz_people"):
+        profile_tool.write_profile("address", "1 Test Row")
+    assert "home address" in interview.coverage_block("zz_people"), (
+        "an address write_profile actually stored is not seen as set")
+
+
 def test_filter_suppresses_a_leak_in_an_interviewer_reply():
     _new_user("zz_leak")
     interview.claim_start("zz_leak")

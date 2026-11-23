@@ -278,6 +278,30 @@ def _():
         assert row["job_id"].startswith(TODAY), row
 
 
+@check("a signed-up user is never told gaps are waiting; the developer still is (#40)")
+def _():
+    from core import accounts as A
+    from tools import build as B
+    _reset()
+    TK.file_ticket(gap="a real gap", trigger="test", persona=F.PERSONA,
+                   writer=sorted(TK.TICKET_WRITERS)[0])
+    real_get = A.get
+    try:
+        A.get = lambda username, path=None: None                    # type: ignore
+        dev = B.context_block(F.PERSONA)
+        assert "Capability building" in dev, dev
+        assert "Mention these" not in dev, "the invitation to narrate is still there"
+        A.get = lambda username, path=None: {"username": username}  # type: ignore
+        assert B.context_block(F.PERSONA) == "", "the block reached an account user"
+
+        def _broken(username, path=None):
+            raise OSError("store unreadable")
+        A.get = _broken                                              # type: ignore
+        assert B.context_block(F.PERSONA) == "", "an unreadable store must fail closed"
+    finally:
+        A.get = real_get                                             # type: ignore
+
+
 try:
     code = suite.report()
 finally:

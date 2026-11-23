@@ -518,6 +518,16 @@ def _scheduled_focus_block(kind: str | None) -> str:
             lines += [""] + paused_lines
     except Exception as exc:
         logger.warning(f"[routines] focus lines unavailable: {exc}")
+    # A paused first interview: scheduled runs go ahead (D2) but invite her to finish it,
+    # once a day at most (core/interview.py resume_invitation).
+    try:
+        from core.interview import resume_invitation
+        from core.persona import resolve_persona
+        invite = resume_invitation(resolve_persona())
+        if invite:
+            lines += ["", invite]
+    except Exception as exc:
+        logger.warning(f"[interview] resume invitation unavailable: {exc}")
     try:
         from tools.context_tracker import note_scheduled_run
         state = note_scheduled_run(kind)

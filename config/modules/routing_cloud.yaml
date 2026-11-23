@@ -245,7 +245,10 @@ agents:
     # goals_interviewer.md:236, never granted.
     # pause_interview + finish_interview granted 2026-10-28: the in-app first interview
     # (archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.7).
-    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline, update_goal, write_baseline_period, set_day_shape, pause_interview, finish_interview]
+    # write_contact + write_profile + write_wisdom granted 2026-11-23: the first interview gathers
+    # the people and practicalities an account otherwise learns over months
+    # (archive/plans/iva_onboarding_prereqs_plan_2026-11-23.md § A4).
+    allowed_tools: [read_goals, write_goals, write_config, write_retrospective, create_semantic_anchor, write_aspirational_baseline, update_goal, write_baseline_period, set_day_shape, pause_interview, finish_interview, write_contact, write_profile, write_wisdom]
 
   # ── Personal specialists ─────────────────────────────────────────────────────
   #

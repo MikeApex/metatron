@@ -122,6 +122,20 @@ def _context_block(persona: str | None) -> str:
     # learn one number.
     from core.build import tickets as T
 
+    # Starting a build is the developer's act (/build, in Claude Code), so only the developer
+    # is told gaps are waiting. A signed-up user — anyone with an account record — still has
+    # her gaps filed, invisibly, and never hears of them (review #40; coordinator.md: "Filing is
+    # invisible to the user"). The account store has no role field: an account IS a user, and
+    # the developer is the persona that predates accounts.
+    if not persona:
+        try:
+            from core.persona import resolve_persona
+            persona = resolve_persona()
+        except Exception:  # noqa: BLE001 — no identity, no block
+            return ""
+    if not persona or _is_account_user(persona):
+        return ""
+
     waiting = T.open_tickets(persona)
     if not waiting:
         return ""
@@ -139,10 +153,19 @@ def _context_block(persona: str | None) -> str:
 
     lines += [
         "",
-        "*Mention these only if they are relevant to what the user is doing, or "
-        "if they ask. Nothing here is urgent and nothing is running unattended.*",
+        "*Nothing here is urgent and nothing is running unattended.*",
     ]
     return "\n".join(lines)
+
+
+def _is_account_user(persona: str) -> bool:
+    """True when the persona signed up through the app. Fails closed: an unreadable store
+    counts as a user, so the block is withheld rather than narrated to the wrong person."""
+    try:
+        from core import accounts
+        return accounts.get(persona) is not None
+    except Exception:  # noqa: BLE001
+        return True
 
 
 # ---------------------------------------------------------------------------

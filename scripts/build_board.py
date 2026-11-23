@@ -111,7 +111,7 @@ def fetch_tickets(server: str, persona: str) -> tuple[list[dict], str]:
 # Views
 # ---------------------------------------------------------------------------
 
-def show_tickets(rows: list[dict], note: str) -> None:
+def show_tickets(rows: list[dict], note: str, persona: str | None = None) -> None:
     from core.build import tickets as T
 
     print("## Tickets — the VM's inbox\n")
@@ -122,7 +122,7 @@ def show_tickets(rows: list[dict], note: str) -> None:
         return
 
     ids = [str(r["job_id"]) for r in rows]
-    decided = set(T.decided_awaiting_deploy(ids))
+    decided = set(T.decided_awaiting_deploy(ids, persona))
     for row in rows:
         job_id = str(row["job_id"])
         mark = "decided, awaiting deploy" if job_id in decided else "open"
@@ -231,7 +231,7 @@ def main() -> int:
     chosen = args.tickets or args.jobs or args.registry or args.run_cost
     if args.tickets or not chosen:
         rows, note = fetch_tickets(args.server, args.persona)
-        show_tickets(rows, note)
+        show_tickets(rows, note, args.persona)
     if args.jobs or not chosen:
         show_jobs(args.persona)
     if args.run_cost or not chosen:

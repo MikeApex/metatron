@@ -83,6 +83,36 @@ def holds_proactive(persona: str) -> bool:
     return status(persona) in ("not_started", "active")
 
 
+# While she has paused setup, scheduled sessions run (D2) — so they carry a light invitation to
+# finish it: at most once a day, and RESUME_INVITES_MAX times in all, so an interview she has
+# chosen to leave is not nagged about forever (Mike, 2026-11-23: "start on pause, but encourage
+# her to complete the interview").
+RESUME_INVITES_MAX = 3
+
+RESUME_INVITATION = (
+    "Their first setup conversation is paused, so you know little about them yet. In this "
+    "message, once and lightly, invite them to finish it with the app's 'Continue setting up' "
+    "button, saying in a few words what it would change for them — check-ins and a plan that "
+    "fit their life. Do not press, and do not raise it again in this message.")
+
+
+def resume_invitation(persona: str, today: str | None = None) -> str:
+    """The invitation line for a scheduled run, or "" — and records that it was given."""
+    if status(persona) != "paused":       # checked before the lock: no file is ever created
+        return ""
+    day = today or datetime.now().date().isoformat()
+    with _locked(persona) as path:
+        state = read_state(persona)
+        if not state or state.get("status") != "paused":
+            return ""
+        given = list(state.get("resume_invites") or [])
+        if day in given or len(given) >= RESUME_INVITES_MAX:
+            return ""
+        state["resume_invites"] = given + [day]
+        _write(path, state)
+    return RESUME_INVITATION
+
+
 @contextlib.contextmanager
 def _locked(persona: str):
     path = state_path(persona)
@@ -215,6 +245,44 @@ _SHAPE_SECTIONS = {"day": "when the day starts and ends", "windows": "when each 
                    "location_sharing": "whether they share their location"}
 
 
+def _practicalities(persona: str) -> list[str]:
+    """The people-and-practicalities half (goals_interviewer.md, 2026-11-23): what is saved,
+    in plain words, plus any contact still waiting on her tap — a contact card left untapped is
+    never saved, and nothing else would tell the interviewer so (plan review L7)."""
+    from core.persona import persona_scope
+    lines: list[str] = []
+    try:
+        from tools import crm, profile, wisdom
+        with persona_scope(persona):
+            people = len(crm._load_contacts())
+            facts = sum(1 for e in wisdom._all_entries()
+                        if isinstance(e, dict) and not e.get("archived") and not e.get("merged_into"))
+            prof = profile._load()
+        # write_profile keeps a scalar field at the top level and a contact field (address,
+        # email, phone) under `contact` — tools/profile.py write_profile.
+        home = [label for label, present in (
+            ("who they live with", prof.get("household")),
+            ("home address", (prof.get("contact") or {}).get("address")))
+            if present]
+        lines += [f"- People saved: {people}",
+                  f"- Standing facts saved: {facts}",
+                  f"- Home — set: {', '.join(home) or 'nothing yet'}"]
+    except Exception:  # noqa: BLE001 — coverage must never take the turn down
+        pass
+    try:
+        from tools import confirm
+        cards = [p for p in confirm.pending(persona) if p.get("action") == "write_contact"]
+        if cards:
+            # A card lapses unseen after confirm.TTL_SECONDS, and nothing then tells the
+            # interviewer (review 2026-11-23, finding 2) — so the line says so while it can.
+            lines.append(f"- {len(cards)} contact change(s) are waiting for the user's tap in the "
+                         "app and lapse after ten minutes; until they tap, they are not saved. If "
+                         "one lapses, the people count will not have risen: ask again.")
+    except Exception:  # noqa: BLE001
+        pass
+    return lines
+
+
 def _calendar_connected(persona: str) -> bool:
     import yaml
     from core.persona import persona_config_dir
@@ -249,6 +317,7 @@ def coverage_block(persona: str, capture_lines: str = "") -> str:
         f"- Remembered good period: {'recorded' if _baseline_recorded(persona) else 'not yet'}",
         f"- Shape of the day — set: {', '.join(have) or 'nothing yet'}; "
         f"missing: {', '.join(missing) or 'nothing'}",
+        *_practicalities(persona),
     ]
     if waiting:
         lines.append("- Something is waiting for the user's confirmation in the app; tell them "

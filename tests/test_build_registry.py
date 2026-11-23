@@ -206,6 +206,39 @@ def _():
     assert TK.decided_awaiting_deploy(["BLD-0924-99"]) == []
 
 
+@check("another persona's decided row with the same ticket id leaves this one open (#41)")
+def _():
+    _reset()
+    _ticket()
+    other = _row("landed")
+    other["persona"] = "someone_else"
+    _write(other)
+    assert F.JOB_ID in TK.open_tickets(F.PERSONA), "a second user's decision closed this ticket"
+    assert TK.duplicate_of(TK.fingerprint("construct", "the plants"), F.PERSONA) == (
+        F.JOB_ID, "already filed and not yet decided")
+    assert TK.decided_awaiting_deploy([F.JOB_ID], F.PERSONA) == []
+    assert TK.decided_awaiting_deploy([F.JOB_ID], "someone_else") == [F.JOB_ID]
+
+
+@check("a registry row with no persona is the legacy persona's, and no one else's")
+def _():
+    _reset()
+    row = _row("abandoned")
+    row.pop("persona")
+    _write(row)
+    assert R.rows_by_ticket(persona=R.LEGACY_PERSONA), "the pre-accounts row lost its owner"
+    assert R.rows_by_ticket(persona=F.PERSONA) == {}
+
+
+@check("abandoned rows carry the persona in their name, so two users' same id cannot collide")
+def _():
+    _reset()
+    a = R.mark_abandoned(F.JOB_ID, "not needed", F.PERSONA, REGISTRY)
+    b = R.mark_abandoned(F.JOB_ID, "not needed", "someone_else", REGISTRY)
+    assert a["name"] != b["name"], (a["name"], b["name"])
+    assert len(R.rows(REGISTRY)) == 2
+
+
 # ---------------------------------------------------------------------------
 # Dispatch counting
 # ---------------------------------------------------------------------------

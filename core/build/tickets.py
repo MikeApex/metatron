@@ -202,7 +202,7 @@ def duplicate_of(fp: str, persona: str | None = None) -> tuple[str, str] | None:
     landed_at: dict[str, tuple[str, str]] = {}
     try:
         from core.build.registry import rows_by_ticket
-        landed_at = rows_by_ticket()
+        landed_at = rows_by_ticket(persona=persona or _resolved_persona() or None)
     except Exception:
         landed_at = {}
 
@@ -336,13 +336,13 @@ def open_tickets(persona: str | None = None) -> dict[str, dict]:
     """
     try:
         from core.build.registry import rows_by_ticket
-        decided = set(rows_by_ticket())
+        decided = set(rows_by_ticket(persona=persona or _resolved_persona() or None))
     except Exception:
         decided = set()
     return {jid: row for jid, row in tickets(persona).items() if jid not in decided}
 
 
-def decided_awaiting_deploy(open_ids: list[str]) -> list[str]:
+def decided_awaiting_deploy(open_ids: list[str], persona: str | None = None) -> list[str]:
     """
     Of the ticket ids the VM still reports OPEN, the ones the working tree has
     already decided — finding 7's named lag, made visible instead of inferred.
@@ -355,7 +355,7 @@ def decided_awaiting_deploy(open_ids: list[str]) -> list[str]:
     """
     try:
         from core.build.registry import rows_by_ticket
-        decided = set(rows_by_ticket())
+        decided = set(rows_by_ticket(persona=persona))
     except Exception:
         return []
     return sorted(set(str(i) for i in open_ids) & decided)

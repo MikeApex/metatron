@@ -42,6 +42,9 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 
 REGISTRY_PATH = _ROOT / "config" / "build" / "registry.yaml"
 
+# Whose a registry row is when it names no persona: every row before the second user was mike's.
+LEGACY_PERSONA = "mike"
+
 STATUSES: tuple[str, ...] = ("staged", "landed", "abandoned", "retired")
 
 # Rows whose wiring must exist in the tree. `staged` is deliberately absent.
@@ -89,16 +92,26 @@ def row_for(name: str, path: Path | None = None) -> dict | None:
     return None
 
 
-def rows_by_ticket(path: Path | None = None) -> dict[str, tuple[str, str]]:
+def rows_by_ticket(path: Path | None = None,
+                   persona: str | None = None) -> dict[str, tuple[str, str]]:
     """
     ticket id -> (status, timestamp). What tickets.duplicate_of() deduplicates
     against, and the only thing the VM reads from this file.
+
+    Ticket ids restart at 01 per persona per day (ids.py), so two users can hold
+    the same id. With `persona` given, only that persona's rows count — otherwise
+    a ticket Mike decided would hide or unlock another user's open ticket with the
+    same id (review #41). A row with no persona predates the second user and is
+    `mike`'s, which every such row on 2026-11-23 is.
     """
     out: dict[str, tuple[str, str]] = {}
     for row in rows(path):
         ticket = str(row.get("ticket") or "")
-        if ticket:
-            out[ticket] = (str(row.get("status") or ""), str(row.get("at") or ""))
+        if not ticket:
+            continue
+        if persona and str(row.get("persona") or LEGACY_PERSONA) != persona:
+            continue
+        out[ticket] = (str(row.get("status") or ""), str(row.get("at") or ""))
     return out
 
 
@@ -216,7 +229,10 @@ def mark_abandoned(ticket: str, reason: str, persona: str,
     abandoned row with no reason is indistinguishable from a lost one.
     """
     return upsert({
-        "name": f"abandoned_{ticket.lower().replace('-', '_')}",
+        # The persona is in the name because the name is the upsert key and ticket ids
+        # repeat across personas (#41). Rows written before 2026-11-23 lack it; they are
+        # mike's and are left as they are.
+        "name": f"abandoned_{persona}_{ticket.lower().replace('-', '_')}",
         "kind": "none",
         "ticket": ticket,
         "job_id": ticket,
