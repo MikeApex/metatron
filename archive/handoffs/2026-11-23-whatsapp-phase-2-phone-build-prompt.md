@@ -57,9 +57,19 @@ Model: Opus 5.5, high. Plan and build run in Opus (`docs/WORKFLOW.md`); the plan
 4. **Any VM change.** The § 2.2 contract has no field for a run's counts or the backup's write time. Either extend `/device/whatsapp/events` (a VM change, a deploy) or keep the checks on the phone. Name the cost of each.
 5. **Reply-marker types**, after the probe count.
 
-## Before the nightly job is wired
+## Step 0 — the real-data test of the 11-23 reader changes (a gate: nothing else is built before it passes)
 
-**(M) One tap on a rebuilt probe: button 7, the set proof.** The seven reader changes of 11-23 (review § 5) have passed their tests but have not met real files. Pass: 9 of 9 increments still decode, and each rotated set's combine still matches the newest full backup. A refusal here is a finding about the new `jid` checks, to be read before anything else is built. Build and serve steps: `docs/INFRASTRUCTURE.md` § APK. Run this as a short walkthrough with Mike at the start of the session, together with the message-type count.
+The seven reader changes of 11-23 (review § 5, commit `e2aa904`) have passed their unit tests but have met synthetic files only. Run this as a short walkthrough with Mike at the start of the session (about 15 minutes, two taps).
+
+1. **Before building, confirm the baseline:** `cd android && ./gradlew --offline testDebugUnitTest testWaprobeUnitTest` — 42 and 87 tests, 0 failures.
+2. **Add the message-type count to the probe first** (finding 6; `src/waprobe/` only): per `message_type`, how many rows are from-me and how many of those carry text, and whether an increment's messages carry any type. Counts only. This saves a second build and a second install.
+3. **Rebuild and serve the probe** (`docs/INFRASTRUCTURE.md` § APK; check the APK hash before serving). Mike installs it. Installing the ordinary debug build over the probe revokes All-files access — it must be the `waprobe` build.
+4. **(M) Mike taps button 7, "Read the set (P3 proof)"**, and reads the report back. Counts and refusal codes only — no message content enters the conversation.
+   - **Pass:** "every increment decoded: yes" (9 of 9 on 11-23; the number moves as sets rotate); each set's "window to the last increment" line still matches the newest full backup as it did on 11-23 (547 and 362 then); "decrypted copies deleted: yes".
+   - **Fail:** any `REFUSED` line. `increment_missing_part` naming a `jid` or `jid_map` row or key points at the 11-23 checks (finding 8) being stricter than real files — read which, loosen only that check, and record it in the review file § 5. `crypt14_end_to_end_off` means a crypt14 file newer than the backup sits in the folder (finding 3) — report it to Mike, do not work round it. `unknown_format` or `increment_format_unknown` on a file that decoded on 11-23 is a fault in finding 7's change.
+   - **Also read:** the combine now orders by whole second then row id, so any count that differs from 11-23 by more than new messages is a finding, not noise.
+5. **(M) Mike taps the message-type count** and reads it back. It settles decision 5 below.
+6. **Record the result** in the review file § 5 and the input plan § 4 before going on. If step 4 fails and the fix is not a one-line loosening, stop and bring it to Mike.
 
 ## Output
 
