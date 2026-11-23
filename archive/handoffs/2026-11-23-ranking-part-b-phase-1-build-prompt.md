@@ -2,23 +2,25 @@ Model: Opus 5.5, high effort — the scoring maths and the Red conduct text are 
 
 # Ranking Part B, phase 1 — rank by the regret of delay, in shadow
 
-You are building phase 1 of `archive/plans/ranking_values_plan_2026-11-23.md`. **§ 10 governs
-wherever it differs from §§ 4–8.** Nothing in this phase changes what a user sees until the
+You are building phase 1 of `archive/plans/ranking_values_plan_2026-11-23.md`. **§ 11 (research
+applied) governs the values and formulas; § 10 governs the design wherever it differs from
+§§ 4–8.** Nothing in this phase changes what a user sees until the
 `ranking_v2` flag is flipped. The flip is not in this session: it follows Mike's three-morning
 comparison.
 
 ## Read first, in order
 
 1. `SESSION.md`, then `ROADMAP.md` (the mandatory pre-edit context check).
-2. The plan: § 2 (rulings B1–B32), §§ 4.1–4.4, 4.6, 4.10, 4.14–4.16, then **§ 10 in full**
-   (R1–R9, the amended Red list, and Mike's two rulings of 2026-11-23 inside R3 and R9).
+2. The plan: § 2 (rulings B1–B32), §§ 4.1–4.4, 4.6, 4.10, 4.14–4.16, then **§§ 10 and 11 in
+   full** (R1–R9, the amended Red list, Mike's two rulings inside R3 and R9, and the research
+   values with Mike's two rulings on them).
 3. `archive/plans/adversarial_review_ranking_values_plan_2026-11-23.md`: what the plan got wrong
    once, so the build does not reintroduce it.
-4. **The research:** `archive/plans/ranking_research_2026-11-23_*.md`. If it is there, set each
-   `ranking.yaml` value from it and cite the section beside the value; anything it cannot support
-   stays a labelled placeholder. **If it is not there, build with the plan's placeholders, each
-   labelled `# placeholder — research pending`, and say so in the close-out.** The shadow touches
-   no user, so this does not block the build. It does block the flag flip.
+4. **The research is in:** `archive/plans/ranking_research_2026-11-23_claude-chat.md`, applied in
+   plan § 11 (rows 1–9 are phase 1). Set every `ranking.yaml` value from § 11 and cite the
+   report's section beside each one (`# research § 2`). A value the report marks heuristic is
+   labelled heuristic. Mike ruled on two of them: **neglect stays convex for kin** (k = 1.5, not
+   the report's 1.0), and the back burner is 21 days (phase 3).
 5. `archive/plans/goal_task_network_plan_2026-11-18.md` § 16: what Part A built and the 16 Fable
    findings it fixed. `tests/test_task_ranking.py` (18/18) is the proof that flag-off is still
    Part A.
@@ -49,10 +51,13 @@ another session's lines out of your commit.
    returns the record; the field descriptions stay the one home for the judging rule.
 4. **`stakes_v2(t)`**, derived on read from the **unweighted** floor; a required plan step stays
    vital. Under `ranking_v2`, `is_essential` reads it; with the flag off, nothing changes.
-5. **Importance and cost of delay** (§§ 4.2–4.3 with R4): the ladder, the bearer weight (in `CoD`
-   only), the compounding with its cap, the four shapes, neglect saturating at `M`. Slack uses the
-   start-late buffer (§ 4.10), learned per user from ≥ 10 closed deadlines into
-   `data/personas/{p}/day_plan/ranking_state.json`.
+5. **Importance and cost of delay** (§§ 4.2–4.3 with R4, values and formulas from § 11): the
+   ladder; **multiplicative compounding** (§ 11 row 1); the social ×1.5 dimension weight; the
+   bearer weight, in `CoD` only, with org ≈ 1.0 for an owner; the four shapes; neglect as
+   `G × min(M, (r − 1)^1.5)`. Slack uses the **tiered** start-late buffer, learned by **pooled
+   hierarchical shrinkage** (§ 11 row 5) into `data/personas/{p}/day_plan/ranking_state.json`.
+   **Attention block:** 5 min between tasks, 15 inside a focus block, and batched small tasks share
+   one (row 6).
 6. **Candidacy** (R3 and Mike's ruling): (a) the musts are today's list plus must-start-today
    (slack ≤ 0 with the buffer); (b) when room remains, **advance work is suggested**: upcoming
    tasks and the current steps of active goals, by `CoD` per block, above `advance_floor`, never a
@@ -65,8 +70,10 @@ another session's lines out of your commit.
    `synthesizer.md` paragraph (Red): an intimate contact with a wished frequency is offered once
    as a clock and becomes an interval task on yes, seeded from `last_contact`. History informs
    the question and never sets the cadence (B9).
-9. **Implied promise dates** (R8): code in `open_task`. `bears: close|others`, no `due` →
-   mention + `implied_promise_days`, `due_source: implied`.
+9. **Implied promise dates** (R8, § 11 row 9): code in `open_task`. `bears: close|others`, no
+   `due` → mention + 3 days (quick digital) or 7 days (effortful or physical), `due_source:
+   implied`. The people offer suggests § 11 row 8's default cadences, and the user's answer sets
+   `T`.
 10. **`synthesizer.md` (Red), three sentences beside the paragraph in item 8:** show and correct a
     task's grades on request, via `update_task` (B4); offer advance work as a suggestion, never as
     a must; and override the code's order for the moment through `request_replan(reason)` when
@@ -95,8 +102,8 @@ passions, rewards, the back burner, the weekly conversation, signals.
    deploy, `cost_record` goes on (one judge pass, ~$0.04 for `mike`), and `ranking_v2` stays off.
 3. **Propose the walkthrough** (plan § 7.2 item 2): three mornings after deploy, ~5 minutes each.
    Mike runs `--compare` on the VM with steps you prepare, and says which order is right and why.
-   **The flip needs the research values in place, plus Mike preferring v2 on ≥ 2 of 3 mornings
-   with no obligation he calls real below the cut.**
+   **The flip needs Mike to prefer v2 on ≥ 2 of 3 mornings, with no obligation he calls real
+   below the cut.**
 4. **Write the phase 2 build prompt**, model line first.
 5. `/archive`.
 

@@ -526,3 +526,42 @@ event meanings; `run_subagent(agent_name, message, complexity, …)` has no path
 **Budget delta:** phase 2 gains two tools, their grants and conduct (~+$15–25); phase 3 gains
 `record_signal` (~+$5–10). Run cost is unchanged — both tools are code, and `lookup_public_fact`
 is the same capped Research call. **Revised build total ~$175–325** including the plan review.
+
+---
+
+## 11. Research applied (2026-11-23)
+
+Source: `archive/plans/ranking_research_2026-11-23_claude-chat.md`. Mike ran it in a regular
+Claude chat; it is saved verbatim. **This section sets `ranking.yaml`'s starting values and
+governs over §§ 4 and 10 wherever they differ.** Every value stays a config value, refined by
+each user's evidence. "§ n" below means the report's section.
+
+| # | What | Was (plan) | Now | Report | Phase |
+|---|---|---|---|---|---|
+| 1 | Combining harms | floor + 25% of each further major, capped | **`100 × [1 − ∏(1 − sᵢ)]`**, `s` = minor 0.1 / major 0.3 / severe 0.9. The worst still sets the floor and the total is bounded (B2); two majors = 51 | § 10 | 1 |
+| 2 | Grade ladder | 10 / 30 / 90 | **kept** | § 10 | 1 |
+| 3 | Dimension weight | none | **social ×1.5** against financial ×1.0 at an equal grade; others 1.0 | § 3a | 1 |
+| 4 | Bearer weight | self/close 1.0, others 0.7, org 0.5 | **kept; org ≈ 1.0 when the user owns it**. Harms that rebound on the user (job, reputation, legal) are recorded as separate `self` costs | § 10 | 1 |
+| 5 | Start-late buffer | 50%, median after ≥ 10 | **tiered by `minutes`:** < 15 min 0%, 15 min – 4 h 35%, multi-day 65%, aversive one-off 100%, fallback 40%. **Learned by hierarchical shrinkage:** weight `n/σ² ÷ (n/σ² + 1/τ²)` with σ 0.5, τ 0.25 on the log actual/estimate ratio, pooled across task classes (≈ 0.7 at 10 observations) | § 2 | 1 |
+| 6 | Attention block | 10 min | **5 min between tasks, 15 min when placed inside a focus block.** Similar small tasks batched together share one block | § 1 | 1 |
+| 7 | Neglect curve | `G × min(M, (t/T)^k)`, k 2, M 3 | **`G × min(M, (r − 1)^k)` for `r = t/T > 1`, else 0**; **k = 1.5 for kin and friends alike** (Mike: *keep convexity*; the report's kin 1.0 is a guess it says no study fits); M 3 kept | § 3b | 1 |
+| 8 | Default cadence, when the user gives none | none | the people offer *suggests* **7 days** (intimate), **30** (close friends), **120** (wider), **365** (network); the user's answer sets `T` (B9) | § 3c | 1 |
+| 9 | Implied promise date | 7 days | **3 days for quick digital** (photos, a link, an intro); **7 days for effortful or physical** | § 9 | 1 |
+| 10 | Intrusion bases | own 10, family 30, exercise/meals 10, sleep 180 | **ratios family 2.5 : rest 1.5 : exercise 1.0**, scaled so family = 30 (rest 18, exercise 12). Sleep and meals are outside the grid (R6) | § 4a | 2 |
+| 11 | Intrusion shape and recovery | `(1+n)^2`, 7-day count | **k-th intrusion costs `base × k^1.5`**; the count **decays with a 3.5-day half-life** instead of a hard 7-day window. Test: a severe task due today against family time, once and twice in a week | § 4b–c | 2 |
+| 12 | Behind | ≥ 3 overdue vital, or ≥ 3 skips in 3 days | **≥ 3 overdue, or the top-ranked task skipped on 2 of the last 3 days**. Then 1–2 quick wins (≤ 20 min in all, max 3), **the first ideally a ≤ 10-min first step of the hard task**, then the hard task. Easy-first is an on-ramp, never a mode (KC et al. 2020; Ibanez et al. 2018) | § 6 | 2 |
+| 13 | Raising and prompts | once when skipped twice / slack < 0; ≤ 1 a day | **plus: at most twice per item without new information, then it moves to the weekly conversation as "keep, reschedule or drop?"; ≤ 3 system-initiated prompts a day** from this plan's paths, at natural breakpoints | § 7 | 2 |
+| 14 | Rewards | directly after | **gap ≤ 15 min**; where possible also offer the liked thing *during* the effort (concurrent pairing has the stronger evidence). Never framed as a reward (B14) | § 5 | 2 |
+| 15 | Back burner | quiet archive at 30 days | **Mike: archive quietly at 21 days, mentioned once in the weekly conversation the week before** (§ 4.12 item 3 already carries it). Archived as parked and retrievable, as before | § 8 | 3 |
+
+**Design notes the report adds:**
+1. **Questions are tasks too** (Horvitz): asking costs attention, so a probe, a raise or an ask can
+   be weighed by the same regret logic against the cost of interrupting. Phase 2 implements this
+   only as the caps in row 13. A weighed version is a later refinement, not built here.
+2. **The 23-minute "resume" figure, Zeigarnik, and the long-run inaction-regret effect are
+   weaker than commonly quoted** (report's corrections 1, 2, 13). Nothing in this plan rests on
+   them.
+3. **Outside this plan's scope, but relevant to B31:** the day planner's existing nudges (a start
+   nudge and an end check per essential task) are system-initiated too. Row 13's cap counts only
+   this plan's paths. Whether the existing nudges should share the cap is a question for the
+   phase 2 live check, which judges "no nagging" on the whole day.

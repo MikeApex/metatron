@@ -49,6 +49,18 @@ its phase 1; no back-burner review exists yet"*).
 **Scope call put to Mike, no objection:** no task enters sleep (the planner has no slots there).
 B11's emergency example is delivery, not ranking.
 
-**Mike-gated next:** the research run; after phase 1 deploys, a three-morning shadow comparison
-(plan § 7.2), proposed as a walkthrough.
+**Research, same session:** Mike ran the prompt in a regular Claude chat; the report is saved verbatim
+(`archive/plans/ranking_research_2026-11-23_claude-chat.md`) and applied in plan § 11. Values that
+changed the design: multiplicative compounding (two majors 51, not 37.5), a buffer tiered by task
+size and learned by pooled shrinkage, a 5- or 15-minute attention block, social harm ×1.5, neglect
+costing nothing until the cadence passes, intrusion counts decaying with a 3.5-day half-life, at
+most two raises per item without new information. **Mike overruled the report twice:** neglect
+stays convex for kin (k = 1.5; the report's 1.0 is its own guess), and the back burner archives
+quietly at 21 days, mentioned once in the weekly conversation the week before. **Corrected
+citations I gave from memory:** the 23-minute figure is Mark, Gonzalez & Harris 2005, not Mark,
+Gudith & Klocke 2008; the regret-over-time data are Gilovich & Medvec 1994, and the long-run
+inaction effect failed to replicate (Richardson & Gilovich 2023).
+
+**Mike-gated next:** after phase 1 deploys, a three-morning shadow comparison (plan § 7.2),
+proposed as a walkthrough.
 
