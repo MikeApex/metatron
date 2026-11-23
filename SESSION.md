@@ -118,9 +118,9 @@ metatron-scheduler@mike --since "13:27" --no-pager | grep -i intake` — pass: a
 `whatsapp housekeeping failed` / `task evidence check failed`. **M2 DROPPED as the gate (Mike, 11-23,
 before any score):** a sample without the thread can't say what needs a reply, and he won't base it on
 old history — **real use is the baseline**, tuned from what he sees (plan § 4; log § 11-23 tenth).
-Button 8 and `scripts/whatsapp_m2_label.py` are kept for re-measuring, **uncommitted for Mike's review**;
-the export is deleted. 30 days held 0 Cyrillic messages. **Next:** a Fable review of
-`src/main/…/whatsapp/` (~0.2M), then **Phase 2** (nothing reaches the VM before the phone posts),
+Button 8 and `scripts/whatsapp_m2_label.py` are kept for re-measuring (`067b0bc`); the export is
+deleted. 30 days held 0 Cyrillic messages. **Next:** a Fable review of
+`src/main/…/whatsapp/` (~0.2M; `archive/handoffs/2026-11-23-whatsapp-phone-reader-fable-review-prompt.md`), then **Phase 2** (nothing reaches the VM before the phone posts),
 then **M4** for `mike`: seed the `whatsapp` consent (`scripts/accounts.py seed-consent mike --scopes
 whatsapp --evidence "Mike W10, 2026-10-26"`), the stanza on, `scripts/fetch_whatsapp_translation_model.py`
 then `--check` on the VM. **Phase 2 also builds a "this should have come up" action** — now the only

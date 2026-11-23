@@ -30,7 +30,7 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
-### 2026-11-23 (WhatsApp M2, clean-room — the labelling tools were built and the sample exported; Mike dropped M2 as the gate before any score: real use is the baseline) — **uncommitted, for Mike's review; nothing deployed**
+### 2026-11-23 (WhatsApp M2, clean-room — the labelling tools were built and the sample exported; Mike dropped M2 as the gate before any score: real use is the baseline) — **`067b0bc`, pushed; nothing to deploy** (probe is phone-only, the script Mac-only)
 
 **Incoming handoff:** `archive/handoffs/2026-11-23-whatsapp-m2-labelling-prep-prompt.md`. Clean-room rules held:
 - no transcript opened;
@@ -39,7 +39,7 @@ file is the only narrative record, alongside the verbatim transcripts.*
 - **no message text, contact name or number entered this conversation.** The export was never read. Two stray files in Downloads were identified by counts-only checks, and the one read in full is the probe's counts-only report.
 - The write-time briefing on `SESSION.md` injected excerpts of other fragments (Iva onboarding, the goal network, two clean-room ones). No WhatsApp reference-reading entry was among them.
 
-**Built (Amber/Green, uncommitted):**
+**Built (Amber/Green; committed `067b0bc` after Mike's own test run passed):**
 - **Probe button 8, "Export a labelling sample".** `ProbeM2Sample.java` (platform-free) and `ProbeM2Run.java`, with `ProbeActivity`/`ProbeStore` wiring.
   - It draws about 200 received text messages from the last 30 days: Cyrillic ≥ 30, kinds in proportion, **≤ 15 per chat** (Mike).
   - Rows carry n/kind/time/text only. The share sheet goes through the existing FileProvider `cache-path`.
@@ -79,6 +79,12 @@ file is the only narrative record, alongside the verbatim transcripts.*
 3. M4.
 
 **Ruled at close (Mike):** a "this should have come up" action, now the only measure of misses, is built into Phase 2 (~0.3–0.5M tokens): *"Build it in."* `tests/test_whatsapp_m2_label.py` re-run by Mike in his own terminal: pass.
+
+**The post-deploy intake check is still unsettled — not failed.** Mike's run showed scheduler starts at 13:27 and 14:01 and no sweep: the VM's code counts "every 60 min" from each start, so the 14:01 deploy reset it. Another window holds an uncommitted on-the-clock fix in `core/scheduler.py`. Same check the Phase 1 chat is owed. Re-run after 15:05 with no deploy in between.
+
+**Other commits this session:** `edf2d14` (the Phase 1 deploy chat's uncommitted deploy record, committed on its own after it sat idle half an hour), `cb057c8` and a follow-up (this close-out).
+
+**Next prompt:** `archive/handoffs/2026-11-23-whatsapp-phone-reader-fable-review-prompt.md` (Fable 5.2, read-only) — the gate before Phase 2.
 
 ### 2026-11-23, ninth (ranking Part B phase 1 built — the regret-of-delay ranking runs beside the old one in shadow, and every task starts recording what a delay would cost) — `05f3110` — **committed, NOT deployed**
 
