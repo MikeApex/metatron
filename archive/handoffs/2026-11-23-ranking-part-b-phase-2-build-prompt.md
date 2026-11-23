@@ -7,11 +7,13 @@ values, § 10 the design wherever it differs from §§ 4–8, and § 11a records
 owes.** Each new behaviour ships behind its own flag and runs **in shadow for three days** before
 it goes on (R2). The flags are flipped after their own comparison, never in this session.
 
-**Precondition — check it, don't assume it.** Phase 1 is deployed, and the three-morning comparison
-has been run (`archive/handoffs/2026-11-23-ranking-phase-1-shadow-comparison-walkthrough.md`). Its
-result is recorded in plan § 11a. If `ranking_v2` is still off because the comparison failed, read
-which values Mike wanted changed first. Phase 2 builds on v2's order, so a v2 that Mike rejected is
-fixed before anything is added on top.
+**Precondition — check it, don't assume it.** Phase 1 is deployed (11-23, `cost_record` live). The
+three-morning comparison **does not gate this build** (Mike, 2026-11-23: build on, the comparison is
+in the backlog). It gates only the `ranking_v2` flip. Read plan § 11a for its result if one is
+recorded, and build on whatever values `ranking.yaml` holds now: every phase 2 behaviour ships
+behind its own flag, in shadow, and its numbers are config, so a v2 value the comparison later
+corrects is a one-line change, not a rebuild. If the comparison has *failed*, fix the values Mike
+named first.
 
 ## Read first, in order
 
