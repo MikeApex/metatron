@@ -191,6 +191,15 @@ final class ProbeStore {
         return prefs(ctx).getString("fieldmap_report", null);
     }
 
+    /** Button 8's counts-only report (ProbeM2Run). */
+    static void saveM2Report(Context ctx, String report) {
+        prefs(ctx).edit().putString("m2_report", report).apply();
+    }
+
+    static String savedM2Report(Context ctx) {
+        return prefs(ctx).getString("m2_report", null);
+    }
+
     /** "Delete probe data": events, lifecycle marks, saved reports. The key is ProbeKeyVault's. */
     static synchronized void deleteAll(Context ctx) {
         file(ctx).delete();

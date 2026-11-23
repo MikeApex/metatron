@@ -456,6 +456,43 @@ measure the extractor on Mike's labelled sample (M2) before any alert goes live.
 > then M4 (seed `mike`'s `whatsapp` consent, the stanza on, `scripts/fetch_whatsapp_translation_model.py`
 > then `--check` on the VM). Tests: `tests/test_intake_whatsapp.py` 35/35.
 
+> **M2 — the pass bar, set by Mike BEFORE labelling (11-23, clean-room).** Mike: *"let's aim for
+> 95% and see how it goes"* — so a target, to be weighed against the numbers rather than applied
+> mechanically. Recorded as:
+> - **recall ≥ 95% overall** ("needs action" in Mike's labels that the code surfaced as needing him);
+> - **no miss on a one-to-one proposal with a date or time** (his `p` answer);
+> - **precision ≥ 60%** — carried from the recommended option, which Mike did not override: a false
+>   alarm costs one look, and the channel only surfaces facts, never alerts, until Phase 3.
+>
+> Group and Bulgarian results are reported separately and not gated (too few positives for a rate
+> to mean much); misses are broken down by chat kind × language × our type. Mike chose to see our
+> verdict **before** answering, accepting that it may pull labels toward agreement. Tooling: probe
+> button 8 (`ProbeM2Sample`/`ProbeM2Run`, ~200 received text messages over 30 days, Cyrillic ≥ 30,
+> ≤ 15 per chat, no ids or names) and `scripts/whatsapp_m2_label.py`, run only in Mike's own
+> terminal. **Result: not yet scored.**
+>
+> **M2 DROPPED AS THE GATE — Mike's ruling, 11-23, before any score.** Labelling started and was
+> stopped: *"there's not enough information. Moreover, this is something I don't want to predicate
+> on my message history. Let's run the tool and see how Metatron would handle things, then adjust
+> from that baseline."* The bar above is therefore **void**; **real use is the baseline**, and
+> tuning works from what Mike sees Metatron do. Why the sample could not carry the decision:
+> - **A message's need depends on the thread, which a no-ids sample strips.** Mike's example: "Have
+>   a great day" may need a reply when the other person is signing off, and needs none when it
+>   answers his own "talk to you later". The VM keeps each chat's last reply time (reply markers,
+>   § V6), so "arrived just after the user's own message" is a candidate tuning signal — unbuilt.
+> - **Whether it needs a reply is moot until Metatron can reply on WhatsApp** (Mike).
+> - **The last 30 days held 0 Cyrillic messages** of 1,054 received with text (button 8, 11-23;
+>   330 one-to-one, 724 group, across 37 chats sampled), so ruling D's translation path had nothing
+>   to be measured on. If Bulgarian arrives in Latin letters it is treated as English — untranslated,
+>   English markers only. Not asked to be built.
+>
+> **Consequence:** the next WhatsApp step is no longer M2 but **Phase 2** (the phone posts
+> messages; nothing reaches the VM before it), preceded by the owed Fable review of
+> `src/main/…/whatsapp/`, then **M4**. With M2 gone, recall in real use has **no measure** unless the
+> user can mark "this should have come up" — **proposed** for Phase 2 (~0.3–0.5M tokens, $0 to run,
+> a few hundred bytes per flagged miss, removed by the 90-day expiry). **RULED — Mike, 11-23: "Build it in."** It is part of Phase 2's scope.
+> The export was deleted 11-23 (with its resume file); button 8 and the script are kept for re-measuring.
+
 **Phase 2 — Phone** (~2 sessions). P1–P5.
 
 **Phase 3 — Alerts and security** (~1 session). P6 if W5; the WhatsApp cards (V7); **B1b WhatsApp rows** in
