@@ -295,3 +295,22 @@ The code-dominant direction itself was not withdrawn and is already being applie
 piecemeal (e.g. the 10-30 Synth now/next change: "a rule that tells a model not to use data it is
 given is weaker than not giving it the data"). Whether this file stays open as the architecture
 reading for Mark 1 work or closes is not yet ruled.
+
+---
+
+## 2026-11-23 — Closing round: the notebook closes into the sweep
+
+**This notebook is CLOSED (Mike, D2, 2026-11-23).** Its retirement condition ("when the rebuild is
+commissioned") could no longer fire once Mark 2 ended (round above), so it closes by ruling instead.
+Where its thinking went:
+
+- **The inversion, applied inside Mark 1:** [agent_instructions_to_code_sweep_2026-11-23.md](agent_instructions_to_code_sweep_2026-11-23.md)
+  — every agent instruction file read against its code, 25 findings plus 19 review misses, Mike's
+  rulings D1–D13 in § 6. Built from `archive/handoffs/2026-11-23-instructions-to-code-build-driver-prompt.md`.
+- **The founding principle, amended explicitly (D3), as the anchors above required:** *config owns
+  judgement and policy; code owns procedure, evidence and anything a rule can decide exactly* — in
+  `CLAUDE.md` (core principle and § Key Design Decisions) and `.claude/rules/orchestrator.md`.
+- **`[DB-0810-11]`**, the backlog decision this notebook fed, closed 11-23 into
+  `archive/backlog_closed_2026-11.md`.
+
+No further rounds are appended here; a new architecture question opens its own dated plan.

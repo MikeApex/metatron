@@ -8,9 +8,12 @@ paths:
 
 Relocated from `CLAUDE.md` on 2026-08-14, in full.
 
-**`core/` is infrastructure; `config/` is the product.** Changing behaviour should mean editing
-`config/`, not `core/`. If a behaviour change requires a code change, that is a design failure —
-that is the project's founding principle, not a style preference.
+**Config owns judgement and policy; code owns procedure, evidence and anything a rule can decide
+exactly** (D3, Mike, 2026-11-23 — amending the founding "`config/` is the product; a code change for
+behaviour is a design failure"). Why: a model asked to count, look up or check what code already
+knows does it less reliably and pays a model turn for it — the 11-23 sweep found ~25 such rules
+(`archive/plans/agent_instructions_to_code_sweep_2026-11-23.md`). What to value, notice and say
+stays in `config/`; a change to *that* still means editing config, not code.
 
 **`core/orchestrator.py` carries active ownership and refactor plans** (the A8 module-split work)
 tracked in `ROADMAP.md`. Check whether a pending refactor will relocate the code being touched

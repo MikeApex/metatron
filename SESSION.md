@@ -62,7 +62,7 @@ number copied here goes stale the next time anything is edited.
 
 ## What this is
 
-A voice-first personal AI life manager — a director and companion for a human life, not a scheduler or task manager. Built on a thin Python harness (`core/orchestrator.py`) with all behavior living in editable config files. Config files are the product; code is infrastructure.
+A voice-first personal AI life manager — a director and companion for a human life, not a scheduler or task manager. Built on a thin Python harness (`core/orchestrator.py`) with judgement and policy in editable config files. Config owns judgement and policy; code owns procedure, evidence and anything a rule can decide exactly (D3, 2026-11-23).
 
 ---
 

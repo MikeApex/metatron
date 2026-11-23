@@ -21,7 +21,7 @@ This file is loaded into every Claude Code session. It describes the project arc
 
 A voice-first personal AI life manager. A director and companion for a human life, not a scheduler or task manager. Built on a thin Python harness with all behavior living in editable config files.
 
-**Core principle:** Config files are the product. Code is infrastructure. If changing behavior requires a code change, that is a design failure.
+**Core principle (amended 2026-11-23, D3):** config owns judgement and policy; code owns procedure, evidence and anything a rule can decide exactly — because a model asked to count, look up or check what code already knows does it less reliably, and pays a model turn for it.
 
 ---
 
@@ -241,9 +241,9 @@ the moment you need it and go find it. These do not.
 6. **Vertex will not create a cache below 4,096 tokens, and fails silently when you cross that
    floor.** The 2026-06-24 token-reduction work shrank the Coordinator/Synthesizer prompts under
    it, so every cache attempt failed and every call ran uncached — for a month, with no error.
-   `_pad_for_vertex_cache()` absorbs the gap now. **Any future prompt-shrinking pass on
-   `coordinator` or `synthesizer`** — the only two agents on the cached path — must re-check
-   that real prompt sizes stay clear of the floor.
+   `_pad_for_vertex_cache()` absorbs the gap now. **Any future prompt-shrinking pass on an
+   agent on the cached path** — `coordinator`, `synthesizer` and, since 08-28, the eight
+   `_CACHED_SPECIALISTS` — must re-check that real prompt sizes stay clear of the floor.
 7. **Tailscale DNS can come up unhealthy after a VM resume**, silently blocking *all* outbound
    DNS, not just tailnet. Symptom: `NameResolutionError` on Google APIs while the metadata
    server is reachable. Check `sudo tailscale status`; fix with
@@ -294,7 +294,7 @@ first looked like the whole set. Both are merged here.
 - **Tools are plain Python functions** registered as tool schemas — no separate MCP server processes at runtime.
 - Scheduler daemon invokes orchestrator sessions; the orchestrator itself is stateless between sessions.
 - FAISS for memory — prevents context window limits from degrading long-term recall.
-- Config files are the product; code is infrastructure. Behaviour changes are config edits.
+- **Config owns judgement and policy; code owns procedure, evidence and anything a rule can decide exactly** (D3, 2026-11-23, amending "config files are the product") — a model re-deriving what code can count is slower and less reliable.
 - **Sensitive data never reaches shared cloud infrastructure — fail-closed, no fallbacks (binding ruling 2026-06-10).** Head layer and all personal-data specialists run local. Ollama down = hard error, never a cloud call. **Amendment 2026-06-18:** a dedicated VM with verified Zero Data Retention (e.g. Vertex AI ZDR) is acceptable during testing — contractual sequestration is a distinct threat model from shared cloud. North star remains architectural security on private hardware; **the VM path is explicitly temporary.** **Clarification 2026-08-09:** that amendment is the project-wide default for the single-user development phase, not a per-feature exception — new sensitive paths on the ZDR VM (e.g. correspondence-derived tone extraction) need no separate ruling. Fail-closed, the north star and the expiry condition are unchanged, and the clarification additionally lapses if the deployment stops being single-user. **Amendment 2026-10-26:** extended to a second user on her informed consent, given in the app and recorded per user (`data/personas/{p}/consents.json`) — it lapses for any user without the same record. **Amendment 2026-11-18:** her data carries exactly the assumptions and clearances `mike`'s does, universally — every developer channel included; the consent records still gate their paths for every user. Full text: `ROADMAP.md` § Section 0.
 - **Archive-on-merge:** data is never deleted — it is moved to archive with a `merged_into` pointer.
 - `age` encryption in Phase 6 — not before real sensitive data accumulates. Until then, file permissions (`600`) are the protection.
