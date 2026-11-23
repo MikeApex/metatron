@@ -2072,7 +2072,7 @@ _COMPLETION_CLAIM_RES = [
         r"(?:merged|added|created|sent|deleted|removed|updated|saved|renamed|"
         r"unmerged|closed|booked|scheduled)\b",
         # "sent|merged|..." added 2026-09-03: on 2026-08-29 the live reply *"That's
-        # sent to Iva."* matched none of these four patterns, so enforce_pending_receipt
+        # sent to Ida."* matched none of these four patterns, so enforce_pending_receipt
         # took the append branch and the user was shown the false claim and its
         # correction stacked together, rather than the correction alone. [DB-0829-01].
         r"\bthat(?:'s| is)\s+(?:all\s+)?(?:done|sorted|taken care of|sent|merged|"
@@ -2157,7 +2157,7 @@ def enforce_pending_receipt(text: str, new_pending: list[dict]) -> str:
 
     [DB-0822-03, live 2026-08-26]. `merge_contacts` returned PENDING_CONFIRMATION and
     merged nothing — the gate worked exactly as designed — and the Synthesizer told
-    Mike *"That's done. I've merged the records and kept Marcus Whitfield."* five
+    Mike *"That's done. I've merged the records and kept Arun Hale."* five
     seconds later. He believed the merge had happened before he had approved anything.
 
     That is the mirror of the failure tools/confirm.py calls the worst available
@@ -2252,12 +2252,12 @@ def pending_directive_note(directive: str, new_pending: list[dict]) -> tuple[str
     """Correct a dispatch directive that describes a gated action as already done.
 
     [DB-0829-01], live 2026-08-29 and read off the trace on 2026-09-03. Mike asked for
-    an email to Iva Diamond at 13:00. `send_email` raised the confirm gate and sent
+    an email to Ida Pearson at 13:00. `send_email` raised the confirm gate and sent
     nothing; the `relationships` specialist, which watched that happen, logged it
     correctly as *"Initiated outreach ... Pending user approval in the app."* But the
     fire-and-forget Diarist had been dispatched 1.6 seconds into the turn — BEFORE the
     blocking specialist ever called `send_email` — carrying a Coordinator-authored
-    directive that read *"Log that user sent an email to Iva Diamond."* It wrote exactly
+    directive that read *"Log that user sent an email to Ida Pearson."* It wrote exactly
     that into the day log. Mike declined the send five minutes later.
 
     So the durable record said an email was sent that never was, and later runs read a
@@ -6546,7 +6546,7 @@ def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
     sees. Returns the cleaned outputs.
 
     [DB-0822-09]. The findings do not go to the Synthesizer as part of a specialist's prose
-    any more — that is the channel that lost the Death Cab item on 2026-09-02, where a
+    any more — that is the channel that lost the a concert item on 2026-09-02, where a
     536-token package reached a Synthesizer that emitted 177 words about something else.
     They go to tools/horizon.py, which drops anything the user has already been told about,
     and come back through `context_block()` as their own block with their own delivery
@@ -7060,7 +7060,7 @@ def _dispatch_from_coordinator(
     # and not in the loop above where they used to. [DB-0829-01]: the Diarist was
     # starting ~1.6s into the turn, before the specialist that would call `send_email`
     # had called it, so a directive written in the Coordinator's optimistic past tense
-    # ("user sent an email to Iva Diamond") could never be contradicted by the gate that
+    # ("user sent an email to Ida Pearson") could never be contradicted by the gate that
     # then refused the send. Deferring the start is what makes the confirmation store
     # authoritative at the moment the directive is handed over.
     #
@@ -7342,7 +7342,7 @@ _PERSISTENCE_CLAIM_PATTERNS = [
 
 _SCHEDULING_CLAIM_PATTERNS = [
     # Set / queued / lined up (Mike, raised 2026-10-27, ruled 2026-10-29). Live replies with
-    # nothing written behind them: "the Chase and Rowan windows are set to surface…" (10-25)
+    # nothing written behind them: "the Chase and Quinn windows are set to surface…" (10-25)
     # and "dinner prep queued for 16:30" (10-27). Added HERE, to the log-only set, and not to
     # _COMPLETION_CLAIM_RES — that set REPLACES a reply in enforce_pending_receipt().
     #

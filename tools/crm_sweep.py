@@ -35,11 +35,11 @@ Three more constraints ship with it, each closing a specific recorded failure:
   stored value is wrong, that is information for the digest, never a proposal.
 - **No merges, ever.** `merge_contacts` is confirm-gated and reversible now
   (`fd0aed1`/`158cebe`), and the sweep still stays additive: merging is a conversational
-  act behind its own gate. The Steven incident (`[DB-0822-03]`) is what that costs when
+  act behind its own gate. The Rebecca incident (`[DB-0822-03]`) is what that costs when
   it is wrong.
 - **Ambiguity is never resolved here.** A name matching two contacts is carried into the
   proposal as a question and cannot be applied at all. Silent resolution is the exact
-  failure mode of the two-Stevens incident, and this pipeline would perform that
+  failure mode of the two-Rebeccas incident, and this pipeline would perform that
   operation class at volume.
 
 IDENTITY FIELDS ARE NOT FILLABLE, AND THAT IS DELIBERATE
@@ -48,7 +48,7 @@ IDENTITY FIELDS ARE NOT FILLABLE, AND THAT IS DELIBERATE
 `_FILLABLE_SCALARS`/`_FILLABLE_COLLECTIONS` even when empty. Two reasons, and the second
 is the load-bearing one:
 
-1. A sweep-inferred given name is the `Kathaleen → Kathleen` shape (`[DB-0818-08]`) —
+1. A sweep-inferred given name is the `Cathrine → Catherine` shape (`[DB-0818-08]`) —
    an unsourced value landing on top of a sourced one.
 2. `tools/crm.py`'s update gate raises a confirmation card for any identity-field change.
    Reached from inside `apply_crm_proposals` — itself already behind a batch confirm —
@@ -515,7 +515,7 @@ def validate(props: list[dict], contacts: list[dict], days: list[str],
 
         if kind == "new_contact":
             if matches:
-                # Never resolved here. A near-match is the two-Stevens shape: presented
+                # Never resolved here. A near-match is the two-Rebeccas shape: presented
                 # as a question, and `write_contact`'s own near-match gate backstops it
                 # if the user accepts anyway.
                 row["ambiguity"] = (

@@ -2250,7 +2250,7 @@ def today_view(persona: str | None = None) -> dict:
     rows = []
     listed = _listed(plan)
     # A meal asked about inside an event is one question on that event's row, not a second row
-    # (watch day 2: "Marta and kids over for dinner" read as two entries).
+    # (watch day 2: "Greta and kids over for dinner" read as two entries).
     ids = {b.get("id") for b in listed}
     folded: dict[str, list[dict]] = {}
     for b in listed:
@@ -2726,7 +2726,7 @@ def _build_from(day: date, persona: str, prev: dict | None, now: datetime, event
 
 # --- prep tasks: the Red Book (goal–task network plan § 4.7, § 10 R2) -------------------------
 # A horizon finding that needs something done first — "gather the Red Book and paperwork before
-# Benny's 09:30 session" — becomes a task the plan places, nudges and checks, and that follows
+# Betty's 09:30 session" — becomes a task the plan places, nudges and checks, and that follows
 # its event. Code only, in the scheduler's tick (R1 made the two ledgers safe to write from it).
 # Behind `prep_tasks`; off closes the open ones with a reason and `prep_items` says them again (A3).
 
@@ -2789,8 +2789,8 @@ def _chat_event(t: dict, events: list[dict], today: date) -> dict | None:
     toks = O._task_tokens(text) - _EVENT_GENERIC
     if not toks:
         return None
-    # One shared word is not enough on its own (Fable diff review #2: "Buy Manny new shoes" beside
-    # a lone "Manny swim" would have moved a day earlier and closed itself when swimming started).
+    # One shared word is not enough on its own (Fable diff review #2: "Buy Matty new shoes" beside
+    # a lone "Matty swim" would have moved a day earlier and closed itself when swimming started).
     # It takes two, or one plus words that point AT an event: "to tomorrow's appointment",
     # "before the visit", "for the interview".
     cue = bool(_EVENT_CUE_RE.search(text))
@@ -3581,7 +3581,7 @@ def _near_fixed(persona: str) -> str | None:
         # from `shield_jobs:` in day_plan.yaml; core/scheduler.py is unchanged. No list = every
         # fixed job, as before.
         # A fixed job run by the Coordinator is a conversation; `shield_jobs:` in day_plan.yaml
-        # only ADDS names to that. Not a name list alone: mike's VM has `manny_school` (Sun
+        # only ADDS names to that. Not a name list alone: mike's VM has a child's school-run key (Sun
         # 16:00), which a list written from the template missed (2026-11-21).
         names = set(_cfg().load().get("shield_jobs") or [])
         cfg = {**cfg, "schedules": {k: v for k, v in (cfg.get("schedules") or {}).items()

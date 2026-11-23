@@ -182,7 +182,6 @@ runtime, and not invoked from the command line in normal use:
 | Script | Purpose |
 |---|---|
 | [scripts/migrate_health_notes.py](scripts/migrate_health_notes.py) | Moved `health_notes` out of `profile.yaml` into the wisdom store. |
-| [scripts/migrate_wisdom_schema.py](scripts/migrate_wisdom_schema.py) | Migrated `wisdom.json` to the domain/provenance schema. |
 | [scripts/import_vcard_contacts.py](scripts/import_vcard_contacts.py) | Bulk-import contacts from a vCard (.vcf) export into the local CRM. |
 | [scripts/google_contacts_authorize.py](scripts/google_contacts_authorize.py) | One-time OAuth consent for `tools/google_contacts.py`; the stored token is reused/auto-refreshed after. |
 | [scripts/mint_token.py](scripts/mint_token.py) | Prints a short-lived bearer token for the server. Standard library only. |

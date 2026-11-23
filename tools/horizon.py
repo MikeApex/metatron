@@ -2,7 +2,7 @@
 tools/horizon.py — a horizon finding is put to the user once, and only once.
 
 `[DB-0822-09]`. On 2026-09-02 the `logistics` specialist did its job exactly right: it read
-the inbox, judged a Death Cab for Cutie ticket confirmation to be worth Mike's attention, and
+the inbox, judged a concert-ticket confirmation to be worth Mike's attention, and
 attached the coordination legs (travel, transit, pre-show dining near Troxy). It emitted all
 of that as `HORIZON_ITEMS` in a 536-token package. The Synthesizer received 21,630 input
 tokens including that package and replied with 177: *"Your focus window remains clear for the
@@ -20,11 +20,11 @@ what makes guaranteed delivery safe rather than a daily false alarm.
 
 **Why the ledger is load-bearing rather than a refinement.** The same three runs:
 
-    08-29 10:31   dental · Jimmy Carr · George School socials
-    08-30 20:46   dental · Jimmy Carr
-    09-02 11:37   Jimmy Carr · Death Cab · George School London
+    08-29 10:31   dental · comedy night · Oakfield School socials
+    08-30 20:46   dental · comedy night
+    09-02 11:37   comedy night · a concert · Oakfield School
 
-Jimmy Carr appears in all three; the dental appointment in two. Delivering horizon items
+comedy night appears in all three; the dental appointment in two. Delivering horizon items
 without a record of what was already said would have told Mike about the same comedy show
 every day until 13 September — turning a silent drop into a groundhog day, which is the
 `[DB-0822-06]` carried-state failure through a new channel and strictly worse than the bug it
@@ -34,9 +34,9 @@ filter. Removing the fault means supplying the filter deliberately.
 **Identity, not similarity.** Two findings are the same finding when they share a date and a
 venue. That is a key comparison, not a semantic judgement — deliberately so, because the
 adjacent `[DB-0827-07]` was closed to keep guessing of that kind out of this codebase. Prose
-could not support it: across the three runs the same show was written *"Jimmy Carr
-Performance: September 13th at 9:30 PM at The London Palladium"* and *"Jimmy Carr: Laughs
-Funny at The London Palladium — Sunday, September 13, 2026 at 9:30 PM"*, which no title match
+could not support it: across the three runs the same show was written *"Comedy
+night: September 13th at 9:30 PM at The Grand Theatre"* and *"Comedy night: Laughs
+at The Grand Theatre — Sunday, September 13, 2026 at 9:30 PM"*, which no title match
 survives. `logistics.md` now emits the fields separately for exactly this reason.
 
 **Discharge.** An item is offered until the user engages with it or `_MAX_OFFERS` sessions have
@@ -118,7 +118,7 @@ _NEAR_DAYS = 1
 # failing at. `kind` is carried for the model's benefit and deliberately not validated — an
 # unrecognised value is not worth discarding a real finding over.
 
-# Punctuation and case vary run to run ("The London Palladium" / "the london palladium,
+# Punctuation and case vary run to run ("The Grand Theatre" / "the grand theatre,
 # London"); the leading article does too. Normalised for the key only — the stored text the
 # user sees is never rewritten.
 _NON_WORD_RE = re.compile(r"[^a-z0-9]+")
@@ -153,8 +153,8 @@ def _norm(text: str) -> str:
     """Normalise to a sorted set of content tokens.
 
     A **set**, not a string, and that is what makes the key survive real data. The same venue
-    was written "The London Palladium" by one run and "the london palladium, London" by
-    another; as strings those differ, as token sets they are both {london, palladium}. A
+    was written "The Grand Theatre" by one run and "the grand theatre, London" by
+    another; as strings those differ, as token sets they are both {grand, theatre}. A
     trailing city qualifier, a repeated word and a stray comma all vanish, while genuinely
     different venues stay different — {troxy, london} is not {london}, so a finding at Troxy
     is never merged with one that says only "London".
@@ -217,7 +217,7 @@ def record(items: list, persona: str | None = None) -> dict:
 
     A finding already in the ledger is *not* reset — that is the entire point. Its stored
     text is refreshed, because a later run's wording usually carries more detail (the 09-02
-    Death Cab entry gained its ticket provenance), but its offer count and delivery state
+    a concert entry gained its ticket provenance), but its offer count and delivery state
     carry forward untouched.
     """
     tally = {"new": 0, "known": 0, "invalid": 0}
@@ -311,7 +311,7 @@ def _due_now(item: dict, today: date | None = None) -> bool:
 
 # --- The task ledger's view of a finding (plan § 5 row 5) ----------------------------------
 # Only to-do-shaped findings consult it. An EVENT is not a task even when a task is about it:
-# booking Manny's swim class being done says nothing about the class itself, which still
+# booking Matty's swim class being done says nothing about the class itself, which still
 # happens and is still worth knowing about. A deadline or an errand IS the to-do, so one the
 # ledger already carries — open (the Tasks block shows it) or closed — is not raised twice.
 _TODO_KINDS = {"deadline", "errand", ""}

@@ -15,7 +15,7 @@ Plan: archive/plans/routine_pause_plan_2026-10-26.md.
 WHAT CAN BE PAUSED (Mike, 10-26: rituals + the check-ins that talk to the user)
 -------------------------------------------------------------------------------
 - **Rituals** — every `*_ritual.md` in the persona's config. Id = the file stem
-  (`evening_ritual`); `manny_school` is both a ritual owner and a schedule key, so the owner
+  (`evening_ritual`); a child's school-run key on one user's VM is both a ritual owner and a schedule key, so the owner
   name alone would be ambiguous. `evening` resolves to `evening_ritual` as a convenience.
 - **Check-ins** — the user's own `scheduler.yaml` jobs that are enabled, run an agent, and
   notify the user (push/both). Not the machinery Metatron runs over them: function jobs (the

@@ -58,8 +58,8 @@ You are given the names already in the record. Use them exactly as written when 
 one of those people — that is how your item reaches the right person.
 
 **When you are not sure which person is meant, say the name as the record says it and
-nothing more.** Do not decide that "Steve" is the "Steven" on the list, and do not decide
-that he isn't. Somebody will be asked. Choosing for them is the one mistake here that
+nothing more.** Do not decide that "Becky" is the "Rebecca" on the list, and do not decide
+that she isn't. Somebody will be asked. Choosing for them is the one mistake here that
 quietly corrupts a real person's record, and it has happened before.
 
 The user themselves is not a contact. Never propose their own details as a contact.

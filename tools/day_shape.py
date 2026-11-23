@@ -112,7 +112,7 @@ SECTIONS = {
                "condition?} — when a kind of activity goes; protected keeps out what does not "
                "fit, strong means only there, preferred means there first",
     "routines": "{what, days, from, to, place?, covers?} — a standing block on no calendar "
-                "(\"lunch with Iva at Canary Wharf, weekdays 12–1\"); covers names a meal",
+                "(\"lunch with Ida at the office, weekdays 12–1\"); covers names a meal",
     "meals": "{name, days, at, latest?, minutes?} or {name, days, from, to, when?} or "
              "{name, days, skip: true}",
     "calendars": "{id, name, role: mine|family|feed} — what one of their calendars is",

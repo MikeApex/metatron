@@ -5,7 +5,7 @@ scripts/accounts.py — Mike's decisions on account requests. Run ON THE VM.
 Plan: archive/plans/multi_user_accounts_plan_2026-10-26.md § 4.4.
 
     .venv/bin/python scripts/accounts.py list
-    .venv/bin/python scripts/accounts.py approve iva
+    .venv/bin/python scripts/accounts.py approve alex
     .venv/bin/python scripts/accounts.py reject <u> | disable <u> | enable <u>
     .venv/bin/python scripts/accounts.py reset-password <u>
     .venv/bin/python scripts/accounts.py purge <u>     # Mike at a terminal ONLY — see cmd_purge

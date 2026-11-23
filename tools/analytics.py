@@ -349,7 +349,7 @@ def report(persona: str, days: int = 28) -> str:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="A9 product analytics rollup")
-    ap.add_argument("--persona", default=os.environ.get("METATRON_PERSONA", "mike"))
+    ap.add_argument("--persona", default=os.environ.get("METATRON_PERSONA") or None, required=not os.environ.get("METATRON_PERSONA"))
     ap.add_argument("--backfill", action="store_true", help="roll up every day that has traces")
     ap.add_argument("--day", help="roll up one day (YYYY-MM-DD); default yesterday")
     ap.add_argument("--report", action="store_true", help="print the table")

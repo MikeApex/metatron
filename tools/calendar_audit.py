@@ -11,7 +11,7 @@ The write-time check (check_calendar_conflicts, wired into write_calendar_event
 and update_calendar_event — tools/scheduling.py) only ever sees one write at a
 time, compared against what already existed at that moment. It cannot catch:
   - duplicates already on the calendar before this build shipped (2026-08-05,
-    including the original Jonas triplication itself — the write-time check
+    including the original Priya triplication itself — the write-time check
     guards against a fourth, it never removes the first three);
   - anything written through a path that bypasses the check (a direct CalDAV
     client, a future integration that doesn't route through write_calendar_event);
@@ -210,7 +210,7 @@ if __name__ == "__main__":  # manual run: python3 -m tools.calendar_audit <perso
     import sys
     from core.persona import persona_scope
 
-    who = sys.argv[1] if len(sys.argv) > 1 else "mike"
+    who = sys.argv[1] if len(sys.argv) > 1 else sys.exit("name the persona: python -m tools.calendar_audit <persona>")
     with persona_scope(who):
         found = find_calendar_duplicates(who)
         for f in found:

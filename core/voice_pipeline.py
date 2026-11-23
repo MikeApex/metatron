@@ -227,7 +227,7 @@ def transcribe(audio: np.ndarray, persona: str | None = None,
 
 
 # A well-formed email, and a looser fallback for the case Whisper drops the "@"
-# entirely (observed live: "diamond.like.gmail.com" for "diamond.mike@gmail.com") —
+# entirely (observed live: "pearson.like.gmail.com" for "pearson.mike@gmail.com") —
 # a dotted run ending in a known free-mail domain, with no "@" required.
 _EMAIL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _BARE_DOMAIN_RE = re.compile(
@@ -235,7 +235,7 @@ _BARE_DOMAIN_RE = re.compile(
     re.IGNORECASE,
 )
 _CORRECTION_THRESHOLD = 0.72  # SequenceMatcher ratio; tuned against the two known
-                              # real cases (diamond.mic@… / diamond.like.gmail.com).
+                              # real cases (pearson.mic@… / pearson.like.gmail.com).
 
 
 def correct_known_addresses(transcript: str, persona: str) -> str:
@@ -245,7 +245,7 @@ def correct_known_addresses(transcript: str, persona: str) -> str:
 
     Scope, deliberately narrow: this fixes wrong characters in an address that
     is otherwise recognizably email-shaped — the documented failure mode
-    (diamond.mic -> diamond.mike, a dropped "@"). It does not attempt to parse
+    (pearson.mic -> pearson.mike, a dropped "@"). It does not attempt to parse
     "spelled out" dictation ("d as in dog, i, a, ...") or invent an address
     with no known match; unmatched spans are left as Whisper produced them.
     """

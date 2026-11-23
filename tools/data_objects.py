@@ -622,7 +622,7 @@ def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
     has_for = "for" in (o.get("fields") or {})
 
     def _key(d: dict) -> str:
-        # A gift for Mum and the same gift for Iva are two entries (review 2026-11-23 #7).
+        # A gift for Mum and the same gift for Ida are two entries (review 2026-11-23 #7).
         k = _identity_key(d)
         return f"{k}|for:{str(d.get('for') or '').strip().casefold()}" if k and has_for else k
     with _locked():

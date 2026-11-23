@@ -12,7 +12,7 @@ credentials tied to the GCP project), Contacts data belongs to one specific Goog
 account, so this uses OAuth 2.0 user consent rather than an API key. The one-time consent
 step is `scripts/google_contacts_authorize.py` — run once per persona, opens a browser,
 the user signs into the Google account holding the contacts (for `mike`,
-`diamond.mike.mt@gmail.com`, per `profile.yaml`'s `account_email` convention), and the
+the purpose-built account, per `profile.yaml`'s `account_email` convention), and the
 resulting refresh token is stored at `data/personas/{persona}/google_oauth_token.json`
 (gitignored, 0600 — sensitive-tier, same posture as `pending_confirmations.json`).
 `GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET` in `.env` identify the app itself

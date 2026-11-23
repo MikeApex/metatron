@@ -227,7 +227,7 @@ def _parse_ical_dt(val: str, tzid: str = "", target_tz: str = "", utc_to_local: 
 
     A TZID-qualified time is converted into `target_tz` (the persona's timezone) and
     emitted naive, so a time already in that zone comes out exactly as it always did.
-    Until 2026-10-24 the TZID was discarded and a "22:00 Europe/Budapest" read as 22:00
+    Until 2026-10-24 the TZID was discarded and a "22:00 Europe/Paris" read as 22:00
     local — harmless while every event came from this system's own writes, which all
     carry the persona's zone, and wrong the moment another person's calendar is read.
 
@@ -1757,7 +1757,7 @@ WRITE_CALENDAR_EVENT_SCHEMA = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Optional attendee names, e.g. ['Jonas']. Cross-referenced "
+                    "Optional attendee names, e.g. ['Priya']. Cross-referenced "
                     "against CRM contacts and used in duplicate/conflict matching — "
                     "include this whenever the event is a meeting with a specific "
                     "person, it materially improves duplicate detection. "
@@ -1833,7 +1833,7 @@ DELETE_CALENDAR_EVENT_SCHEMA = {
 
 # --- Invitation support -----------------------------------------------------
 #
-# Everything below exists so that "invite Iva to the concert" can be honoured.
+# Everything below exists so that "invite Ida to the concert" can be honoured.
 # Before 2026-09-07 it could not be: `attendees` on a write is a private label
 # (see _ATTENDEES_ARE_LABELS_ONLY) and no standard ATTENDEE line was ever
 # emitted, so sessions reported invitations that had never been sent.

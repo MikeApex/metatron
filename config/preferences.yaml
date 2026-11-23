@@ -35,7 +35,7 @@ proactive:
   #
   # merge_auto_accept — when true, merge_contacts folds two records together without
   # asking. Default false, and the default is the point: on 2026-08-19 the first
-  # production merge took the wrong Steven of three and corrupted a real friend's
+  # production merge took the wrong Rebecca of three and corrupted a real friend's
   # record, which is why the confirmation exists at all.
   #
   # Mike's ruling, 2026-08-26: the confirmation stays, but he can switch it off "once

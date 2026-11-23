@@ -65,20 +65,20 @@ def _title_similarity(a: str, b: str) -> float:
 
 def _significant_tokens(title: str) -> set[str]:
     """Words worth treating as a name/topic match on their own — 3+ characters,
-    not a filler word. "1:1" and "with" don't count; "Jonas" does."""
+    not a filler word. "1:1" and "with" don't count; "Priya" does."""
     words = _normalize_title(title).replace(":", " ").replace(",", " ").split()
     return {w for w in words if len(w) >= 3 and w not in _STOPWORDS}
 
 
 def _shared_significant_tokens(a: str, b: str) -> list[str]:
     """
-    Full-title similarity (_title_similarity) misses "Jonas 1:1" vs. "catch up
-    with Jonas" — same person, completely different phrasing, sequence ratio
+    Full-title similarity (_title_similarity) misses "Priya 1:1" vs. "catch up
+    with Priya" — same person, completely different phrasing, sequence ratio
     ~0.36 and word-Jaccard ~0.2, both well under threshold. But the load-bearing
     word (the name) matches exactly, which is meaningful on its own even when
     nothing else does. Checked as a separate signal rather than folded into
     _title_similarity so the evidence returned to the agent stays legible —
-    "shared word: jonas" is a clearer thing to reason about than a single
+    "shared word: priya" is a clearer thing to reason about than a single
     blended score that could mean several different things.
     """
     return sorted(_significant_tokens(a) & _significant_tokens(b))

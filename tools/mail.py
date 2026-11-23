@@ -502,8 +502,8 @@ def _strip_quoted(body: str) -> str:
             continue
         if re.match(r"^On .{0,200}\bwrote:\s*$", s):
             break
-        # Gmail wraps a long attribution onto two lines: "On Tue, 8 Sep 2026 at 10:02, Iva
-        # Diamond <…>" / "wrote:". Widened 2026-10-29 with the three shapes below, when the
+        # Gmail wraps a long attribution onto two lines: "On Tue, 8 Sep 2026 at 10:02, Ida
+        # Pearson <…>" / "wrote:". Widened 2026-10-29 with the three shapes below, when the
         # user's own inbox copies joined the sample (Mike: no quoted or forwarded passages).
         nxt = raw[i + 1].strip() if i + 1 < len(raw) else ""
         if s.startswith("On ") and re.match(r"^.{0,120}\bwrote:\s*$", nxt):

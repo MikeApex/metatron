@@ -84,7 +84,7 @@ fi
 #                        credential here would outlive her *Disconnect* by a month.
 #                        After a VM rebuild she reconnects in the app.
 #   data/personas/<p>/audio/ for every persona NOT in AUDIO_BACKUP_PERSONAS — raw
-#                        voice recordings. Mike's ruling 2026-10-27: his and Iva's are
+#                        voice recordings. Mike's ruling 2026-10-27: his and the second user's are
 #                        backed up; later accounts' recordings are not. The transcripts
 #                        are in their conversation history either way.
 AUDIO_BACKUP_PERSONAS="mike iva"

@@ -18,7 +18,7 @@ report-once, never raises into the daemon — so a clean day costs no model toke
 
 But a function job has no model. Deciding whether the day's log or conversation "references
 an event" is crude text matching here, and it *will* produce false "no evidence" hits: the
-user says "sorted the swim thing" and the title says "Manny — swim class, Aquatics Centre".
+user says "sorted the swim thing" and the title says "Matty — swim class, leisure centre".
 That is exactly why this **never returns `{"notify": True}`**, unlike travel_watch which
 does. It writes candidates; a session with a model and the context already loaded decides
 whether any is worth raising, and how. travel_watch can notify because a cancelled flight
@@ -422,7 +422,7 @@ if __name__ == "__main__":  # manual: python3 -m tools.calendar_reconcile <perso
     import sys
     from core.persona import persona_scope
 
-    who = sys.argv[1] if len(sys.argv) > 1 else "mike"
+    who = sys.argv[1] if len(sys.argv) > 1 else sys.exit("name the persona: python -m tools.calendar_reconcile <persona>")
     with persona_scope(who):
         found = find_unreferenced_events(who)
         print(f"{len(found)} unreferenced passed event(s):")

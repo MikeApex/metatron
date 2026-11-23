@@ -516,7 +516,7 @@ def write_quality_event(
             filling a structured template answers the slot rather than deleting it.
             That instruction is already correct and is already ignored, which is
             precisely why the control belongs here in Python and not in the agent
-            file. Same class as the invented `eva@example.com` that `tools/crm.py`
+            file. Same class as the invented `ada@example.com` that `tools/crm.py`
             now refuses: **a field that looks required gets filled with something
             plausible rather than left out.**
 

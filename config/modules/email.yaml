@@ -27,7 +27,7 @@ enabled: false
 host: "imap.gmail.com"
 
 auth:
-  username: "diamond.mike.mt@gmail.com"
+  username: ""          # the account address — set where the module is enabled
   # App-specific password — never the main account password.
   password: ""
 

@@ -3,7 +3,7 @@
 scripts/google_contacts_authorize.py — one-time OAuth consent for tools/google_contacts.py.
 
 Opens a browser, the user signs into the Google account holding the contacts to read
-(for `mike`, that's `diamond.mike.mt@gmail.com` — not whatever account this machine's
+(for `mike`, that's the purpose-built account in his `profile.yaml` — not whatever account this machine's
 `gcloud` is authenticated as, which is a separate identity), approves the
 `contacts.readonly` scope, and the resulting refresh token is saved to
 `data/personas/{persona}/google_oauth_token.json` (0600). Run once per persona; the

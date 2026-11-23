@@ -13,7 +13,7 @@ not any missing scheduling capability.
 
 WHAT WENT WRONG WITHOUT IT
 --------------------------
-2026-08-07, 17:22: "I thought I already told you that the Rowan transfer was handled.
+2026-08-07, 17:22: "I thought I already told you that the Quinn transfer was handled.
 That is completed." Something was re-raising the payroll transfer and nothing could close
 it. The nearest existing mechanism was `held_items` in tools/context_tracker.py, which is
 ephemeral session state — it forgets, which is the opposite of the requirement.
@@ -596,7 +596,7 @@ _ADOPT_FIELDS = ("needs", "part_of", "eligible_from", "flexible", "goal_id", "re
 
 def _goal_priority(goal: dict | None) -> str | None:
     """The priority a goal was taken on at (high/normal/low), or None. `vetted.priority` held free
-    text before 2026-11-22 ("ahead of Prudential review"); that reads as no priority."""
+    text before 2026-11-22 ("ahead of Northwind review"); that reads as no priority."""
     if not goal:
         return None
     p = str((goal.get("vetted") or {}).get("priority") or "").strip().lower()
@@ -4407,7 +4407,7 @@ if __name__ == "__main__":  # manual: python3 -m tools.obligations <persona> [--
     from core.persona import persona_scope
 
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    who = args[0] if args else "mike"
+    who = args[0] if args else sys.exit("name the persona: python -m tools.obligations <persona> …")
     with persona_scope(who):
         if "--report" in sys.argv:
             days = int(args[1]) if len(args) > 1 and args[1].isdigit() else 30

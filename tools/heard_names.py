@@ -4,17 +4,17 @@ tools/heard_names.py — names the user said, checked against the people they kn
 Plan: archive/plans/heard_names_plan_2026-10-23.md (revised after its Fable review).
 
 Dictated names arrive misheard, and the agents that save things act on them as heard: on
-2026-10-15 Relationships created a contact "Eva" for Iva, and on 2026-10-22 Logistics put
-"Eva & Benny" (Iva and Manny) in the calendar. Telling a Flash-Lite Coordinator to watch for
-mishearings fixed a place 3/3 and a name only 1/3 — "Ella" and "Benny" are plausible real
+2026-10-15 Relationships created a contact "Ada" for Ida, and on 2026-10-22 Logistics put
+"Ada & Betty" (Ida and Matty) in the calendar. Telling a Flash-Lite Coordinator to watch for
+mishearings fixed a place 3/3 and a name only 1/3 — "Ella" and "Betty" are plausible real
 names, and the model will not assume them away without evidence. This module supplies the
 evidence, as a NOTE on the Coordinator's input:
 
   1. A contact's own name is never noted (name, first_name or last_name on a live record).
      A word that is only a contact's nickname or referred_to_as gets a note saying who it
-     means — the Coordinator never sees contact records, so "Eva" on Iva's referred_to_as
-     did not stop "Eva & Benny" reaching the calendar (measured on Mike's data, 2026-10-23).
-  2. A name the user has corrected before ("it's Manny, not Benny") is noted with the
+     means — the Coordinator never sees contact records, so "Ada" on Ida's referred_to_as
+     did not stop "Ada & Betty" reaching the calendar (measured on Mike's data, 2026-10-23).
+  2. A name the user has corrected before ("it's Matty, not Betty") is noted with the
      correction. So is the name of a contact that was merged away into another.
   3. An unknown name that sounds like a known one is noted as possibly that person.
 
@@ -27,7 +27,7 @@ person still says so; and once that person is a contact, rule 1 silences the not
 **Corrections are kept out of contact lookup, deliberately.** They live in their own file,
 crm/misheard_names.json, never in contacts.json and never in name_resolutions.json — both
 of which `read_contact`/`search_contacts` consult. A correction visible to lookup would make
-`read_contact("Benny")` return Manny, which is the same trap by another route. Same storage
+`read_contact("Betty")` return Matty, which is the same trap by another route. Same storage
 rules as name_resolutions.json otherwise: 0600, one file per persona, nothing deleted (a
 replaced correction moves to `history`).
 
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # Spelling similarity, first token against first token, no prefix signal. Deliberately
 # stricter than the CRM's write-gate threshold (0.6): that one has a human approving every
 # hit, and this one runs unsupervised on every turn. At 0.6 with the prefix rule, a review
-# measured "Tomorrow"→Tom, "Been"→Ben, "Same"→Sam, "Maybe"→Manny — a hint on most turns.
+# measured "Tomorrow"→Tom, "Same"→Sam — a hint on most turns.
 NEAR_NAME_THRESHOLD = 0.80
 SOUND_KEY_MIN_RATIO = 0.60
 MAX_NOTES = 3
@@ -74,13 +74,13 @@ _NOT_NAMES = {
     # them mid-sentence in every multi-recording message.
     "mon", "tue", "wed", "thu", "fri", "sat", "sun", "jan", "feb", "mar", "apr", "jun",
     "jul", "aug", "sep", "sept", "oct", "nov", "dec",
-    # A capital after a colon is not a sentence start here (so "Reminder: Benny at 3" is
+    # A capital after a colon is not a sentence start here (so "Reminder: Betty at 3" is
     # checked), which lets these through as often as anything — none is ever a name.
     "the", "this", "that", "these", "those", "there", "then", "we", "you", "he", "she",
     "it", "they", "my", "our", "your", "his", "her", "their", "and", "but", "also",
     "please", "yes", "not", "just", "still",
 }
-# Titles and abbreviations whose period is not the end of a sentence: "Dr. Benny said".
+# Titles and abbreviations whose period is not the end of a sentence: "Dr. Betty said".
 _ABBREV_BEFORE_RE = re.compile(r"\b(?:dr|mr|mrs|ms|st|prof|e\.g|i\.e|vs)\.\s*$", re.IGNORECASE)
 # How far back the sentence-break check looks, and how many words one message may have
 # checked. Both bound the cost on a pasted document: the first version re-scanned the
@@ -91,7 +91,7 @@ _MAX_CANDIDATES = 40
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*")
 # What ends a sentence for the purpose of "this capital is just the sentence starting":
 # terminal punctuation, a line break, or the closing bracket of a batch stamp
-# ("[Fri 23 Oct, 15:41] Benny…").
+# ("[Fri 23 Oct, 15:41] Betty…").
 _SENTENCE_BREAK_RE = re.compile(r"(^|[.!?\n\]])\s*[\"'(\[]*\s*$")
 
 _STORE_LOCK = threading.Lock()
@@ -151,9 +151,9 @@ def _sound_key(word: str) -> str:
     """
     A coarse phonetic key: same key means "a transcriber could hear one as the other".
     Vowels after the first sound are dropped, and the consonants a speech model confuses
-    most are merged — the lip sounds b/p/m (the measured Benny for Manny), d/t, f/v, g/k,
-    s/z. That catches what spelling similarity scores low: Benny/Manny is 0.60 by
-    spelling, Eva/Iva 0.67. Spelling handles the rest (Ella/Bella 0.89).
+    most are merged — the lip sounds b/p/m (the measured Betty for Matty), d/t, f/v, g/k,
+    s/z. That catches what spelling similarity scores low: Betty/Matty is 0.60 by
+    spelling, Ada/Ida 0.67. Spelling handles the rest (Ella/Bella 0.89).
     """
     w = re.sub(r"[^a-z]", "", word.lower())
     if not w:
@@ -174,8 +174,8 @@ def _sounds_like(heard: str, name: str) -> bool:
         return False
     ratio = difflib.SequenceMatcher(None, h, n).ratio()
     # A matching key alone is too weak for short names: their 2-character keys collide
-    # with ordinary words (review, 2026-10-23: Sam~"Zoom", Dan~"Tony", Ben~"Piano"). The
-    # spelling floor keeps the real cases — Eva/Iva 0.67, Benny/Manny 0.60 — and drops those.
+    # with ordinary words (review, 2026-10-23: Sam~"Zoom", Dan~"Tony"). The
+    # spelling floor keeps the real cases — Ada/Ida 0.67, Betty/Matty 0.60 — and drops those.
     key = _sound_key(h)
     # And a key of one sound means nothing: "Day" and "Dad" both reduce to "t".
     if len(key) >= 2 and key == _sound_key(n) and ratio >= SOUND_KEY_MIN_RATIO:
@@ -405,7 +405,7 @@ def name_notes(text: str, persona: str | None = None) -> str:
                     if near:
                         names = " or ".join(_display(c) for c in near[:2])
                         # Wording chosen by A/B on Flash-Lite, 2026-10-23, five runs a side:
-                        # this read a misheard Eva as Iva (or asked) 5/5 against 3-4/5 for
+                        # this read a misheard Ada as Ida (or asked) 5/5 against 3-4/5 for
                         # "ask if unclear", and still kept a genuinely new Ella 5/5.
                         notes.append(
                             f'[Name note: "{word}" is not one of the user\'s contacts; it sounds '
@@ -439,7 +439,7 @@ def handle_coordinator_output(coord_output: str, persona: str | None = None,
     result lines (for the log). A template slot filled with "None"/"N/A" is not a pair.
 
     **Only a correction the user actually made.** Both names must appear in the user's own
-    message ("it's Manny, not Benny"). Without this a Flash-Lite Coordinator, reading this
+    message ("it's Matty, not Betty"). Without this a Flash-Lite Coordinator, reading this
     module's own sound-alike note, can fill the slot by reflex — the same template-filling
     that produced 93 of 174 null USER_CORRECTION events — and the store would then claim
     "the user has corrected it before" about a correction that never happened.

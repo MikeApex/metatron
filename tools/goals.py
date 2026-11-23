@@ -165,7 +165,7 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
         return f"Error: no goal with id '{goal_id}'."
     h, _i, g = hit
     size = size or str(g.get("size") or "").upper()
-    # high | normal | low since 2026-11-22 (ranking § 16): free text ("ahead of the Prudential
+    # high | normal | low since 2026-11-22 (ranking § 16): free text ("ahead of the Northwind
     # review", 11-21) was recorded and then ignored by every score. What it ranks above goes in
     # `displaces`.
     priority = str(priority or "").strip().lower()

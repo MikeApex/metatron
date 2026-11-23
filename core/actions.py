@@ -4,7 +4,7 @@ core/actions.py — did this request change anything, and did it work?
 One question, answered from the trace and nowhere else. The Synthesizer used to
 receive the Coordinator's *directives* and the specialists' *prose*, and nothing
 about which tools actually ran — so on 2026-08-10 it told Mike an email to
-Kathaleen was "sent" when `relationships` had aborted before ever calling
+Cathrine was "sent" when `relationships` had aborted before ever calling
 `send_email`. Nothing in its context could have contradicted the prose.
 [DB-0810-13]; diagnosis in
 archive/plans/db081013_action_provenance_design_2026-08-15.md.
@@ -22,7 +22,7 @@ Two design points that are load-bearing:
    grounded, and an agent that read the calendar has not changed it. Reads are
    excluded here, in one place, so no agent file has to know the difference.
 2. **Failures are louder than silence.** A `send_email` that was attempted and
-   failed is precisely the Kathaleen case, and it is more informative to the
+   failed is precisely the Cathrine case, and it is more informative to the
    Synthesizer than an empty line.
 
 Scope is the **request**, not the agent. `pop_agent()` does not restore the prior

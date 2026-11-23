@@ -1111,7 +1111,7 @@ def report(persona: str, days: int = _TRAILING_DAYS) -> str:
 
 if __name__ == "__main__":  # manual: python3 -m tools.accountability --report
     ap = argparse.ArgumentParser(description="Accountability Index (DB-0827-09)")
-    ap.add_argument("--persona", default="mike")
+    ap.add_argument("--persona", required=True)
     ap.add_argument("--days", type=int, default=_TRAILING_DAYS)
     ap.add_argument("--report", action="store_true", help="print the human-readable report")
     ap.add_argument("--json", action="store_true", help="print the raw index as JSON")

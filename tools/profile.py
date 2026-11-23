@@ -142,13 +142,13 @@ _PROMPT_EXCLUDED = _CONTACT_FIELDS
 
 
 # [DB-0815-05] profile.yaml's `name` field was found holding the literal sentence
-# "Contact name updated from Eva to Iva." — a CRM correction that landed in the
+# "Contact name updated from Ada to Ida." — a CRM correction that landed in the
 # user's own identity instead of tools/crm.py's write_contact, and rendered into
 # every head-layer system prompt via load_profile() until caught. Narrow guard,
 # not broad heuristic: needs a subject word AND a correction verb AND a
 # "from ... to ..." span all at once, or (for 'name' specifically) an
 # implausibly long value that ends like a sentence. An ordinary fact — "Allergic
-# to peanuts.", "Prefers to work from home.", "Mike Diamond" — trips none of these.
+# to peanuts.", "Prefers to work from home.", "Mike Pearson" — trips none of these.
 _CORRECTION_SUBJECT_WORDS = {"contact", "name"}
 _CORRECTION_VERB_WORDS = {"updated", "changed", "corrected", "renamed", "fixed"}
 _FROM_TO_RE = re.compile(r"\bfrom\b.+\bto\b", re.IGNORECASE)
@@ -171,7 +171,7 @@ def _third_party_correction_reason(field: str, text: str) -> str:
        ("Robert Smith Jr." is 3), so this does not catch an ordinary long name.
 
     Deliberately does not attempt to catch arbitrary third-party facts in
-    general (e.g. "Kathleen's birthday is July 10th") — that needs real entity
+    general (e.g. "Catherine's birthday is July 10th") — that needs real entity
     recognition and would risk refusing legitimate 'other' entries; this only
     catches the specific "a contact's name/info was corrected" phrasing that
     produced the recorded bug.
@@ -389,7 +389,7 @@ WRITE_PROFILE_SCHEMA = {
         "'input_language' is what the user writes/speaks to you in; 'output_language' is what "
         "you respond in. They do not have to match. "
         "This tool is for facts about the user themselves — a note that someone else's contact "
-        "record was corrected (e.g. 'Contact name updated from Eva to Iva') is refused; that "
+        "record was corrected (e.g. 'Contact name updated from Ada to Ida') is refused; that "
         "correction belongs in write_contact instead."
     ),
     "input_schema": {

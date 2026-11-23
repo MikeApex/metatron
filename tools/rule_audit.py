@@ -225,7 +225,7 @@ if __name__ == "__main__":  # manual run: python3 -m tools.rule_audit
     import sys
     from core.persona import persona_scope
 
-    who = sys.argv[1] if len(sys.argv) > 1 else "mike"
+    who = sys.argv[1] if len(sys.argv) > 1 else sys.exit("name the persona: python -m tools.rule_audit <persona>")
     with persona_scope(who):
         found = find_conflicts(who)
         for f in found:

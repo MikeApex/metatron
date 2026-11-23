@@ -22,7 +22,7 @@ _CRM_LOCK = threading.Lock()
 
 # Above this similarity to the user's own email/phone (but not an exact match, which is
 # refused outright) a captured value is flagged rather than blocked — a voice
-# transcription near-miss ("diamond.mic@gmail.com" for "diamond.mike@gmail.com") is the
+# transcription near-miss ("pearson.mic@gmail.com" for "pearson.mike@gmail.com") is the
 # recorded failure mode, but a genuinely different, similar-looking address (a family
 # member, a colleague on the same domain) is a real case a hard block would wrongly
 # refuse. difflib.SequenceMatcher, same tool tools/scheduling.py already uses for
@@ -45,19 +45,19 @@ _VERIFIABLE_DETAILS = ("email", "phone", "address")
 # [DB-0815-07] Same shape of check as _OWN_IDENTITY_SIMILARITY_THRESHOLD, applied to
 # *other* contacts' names instead of the user's own identity, so a new record whose
 # name closely resembles an existing one is surfaced before write_contact creates a
-# duplicate — the recorded case: "Eva" and "Iva Diamond" were the same family member,
+# duplicate — the recorded case: "Ada" and "Ida Pearson" were the same family member,
 # corrected by the user five separate times because nothing ever merged the records.
 # Set with tools/scheduling.py's _TITLE_SIMILARITY_THRESHOLD (0.6) as precedent rather
-# than a fresh guess: whole-string "eva"/"iva diamond" scores low (0.29, different
-# lengths), but the first-token comparison _name_similarity() also takes ("eva"/"iva"
-# = 0.67, "kathaleen"/"kathleen" = 0.94) clears 0.6 for both of the recorded
+# than a fresh guess: whole-string "ada"/"ida pearson" scores low (0.29, different
+# lengths), but the first-token comparison _name_similarity() also takes ("ada"/"ida"
+# = 0.67, "cathrine"/"catherine" = 0.94) clears 0.6 for both of the recorded
 # speech-to-text near-misses without it being tuned to that pair specifically.
 _NAME_SIMILARITY_THRESHOLD = 0.6
 
 # A short form is a PREFIX, not a typo, and edit distance cannot see the difference.
-# "Jon"/"Jonathan" scores 0.545 and "Jon"/"Jonathan Whitfield" 0.545 — both under the
+# "Jon"/"Jonathan" scores 0.545 and "Jon"/"Jonathan Hale" 0.545 — both under the
 # 0.6 bar above, so the very case that motivated this check slipped through it, while
-# "Jonathan"/"Jonathan Whitfield" (1.00) was already caught. Raising the threshold is
+# "Jonathan"/"Jonathan Hale" (1.00) was already caught. Raising the threshold is
 # the wrong lever: it would start matching genuinely different people, which is the
 # opposite and worse failure. So a prefix is scored as its own signal instead.
 #
@@ -70,7 +70,7 @@ _MIN_PREFIX_LEN = 3
 
 # RFC 2606 reserves these for documentation/testing — a real person's email is never
 # on one of them. "example.com" turning up in a contact record (the recorded case:
-# tools/crm.py accepted and persisted "eva@example.com") is not a mistyped real
+# tools/crm.py accepted and persisted "ada@example.com") is not a mistyped real
 # address, it is a model-invented placeholder that slipped past a schema with no
 # opinion on domain validity. Reserved TLDs from the RFC; the explicit domains cover
 # the "example.com/.net/.org used under a normal-looking TLD" case the TLD check alone
@@ -346,7 +346,7 @@ def _contact_matches(contact: dict, needle: str) -> bool:
 
 def _find_by_name(contacts: list[dict], name: str) -> list[dict]:
     """Case-insensitive substring match on name field, plus any contact whose
-    *old* (merged-away) name matches — so a correction ("Eva" -> "Iva Diamond")
+    *old* (merged-away) name matches — so a correction ("Ada" -> "Ida Pearson")
     does not strand lookups still made under the name that was corrected away."""
     needle = name.lower()
     matches = [c for c in contacts if needle in c.get("name", "").lower()]
@@ -489,7 +489,7 @@ def _is_placeholder_name(name: str) -> str | None:
 
 def _name_similarity(a: str, b: str) -> float:
     """Best of whole-string and first-token similarity. Whole-string alone misses
-    a name later expanded with a surname ("Iva" vs "Iva Diamond" scores 0.29);
+    a name later expanded with a surname ("Ada" vs "Ida Pearson" scores 0.29);
     first-token alone misses a multi-word name matched against a single-word one
     the other direction. Taking the max of both catches either shape without
     either comparison mode hiding the other's hit."""
@@ -500,7 +500,7 @@ def _name_similarity(a: str, b: str) -> float:
     a_first, b_first = a.split()[0], b.split()[0]
     first = difflib.SequenceMatcher(None, a_first, b_first).ratio()
     # Prefix signal — see _PREFIX_SIMILARITY. Compared on first tokens so that
-    # "Jon" reaches "Jonathan Whitfield" as well as bare "Jonathan"; edit distance
+    # "Jon" reaches "Jonathan Hale" as well as bare "Jonathan"; edit distance
     # scores both at 0.545 and would surface neither.
     short, long = sorted((a_first, b_first), key=len)
     prefix = (_PREFIX_SIMILARITY
@@ -520,7 +520,7 @@ def _disambiguation_entry(contact: dict) -> dict:
     returned, so a sparse contact yields a short entry rather than a wall of empty keys.
 
     [DB-0822-03] `spouse_name` and `last_contact` were added on 2026-08-22. Three
-    contacts named some spelling of "Steven" were told apart, in the record, by
+    contacts named some spelling of "Rebecca" were told apart, in the record, by
     exactly those two fields — one had a spouse and a dinner logged three weeks
     earlier, the other two were gym acquaintances with neither. The entry the user
     would have been shown carried neither field, so the one detail that made the
@@ -856,7 +856,7 @@ def _merge_contact_info(stored: dict | None, incoming: dict) -> dict:
 
     [DB-1029-02] Until 2026-10-29 an update replaced the whole dict, so a write carrying only
     an email silently dropped the stored phone, address and social handles. Live 2026-09-07
-    Mike corrected Iva's address to her personal one and then asked for both to be kept;
+    Mike corrected Ida's address to her personal one and then asked for both to be kept;
     the work address was already gone, and the reply said both were preserved.
 
     - `social` merges per platform.
@@ -983,7 +983,7 @@ def write_contact(
     ('@username', '@handle', ...); or the name 'John Doe'/'Jane Doe'. Each check is
     scoped to known placeholders only — a real address with a real city, a real
     UK/NANP number outside those exact ranges, and a real surname 'Doe' all still
-    save. [DB-0815-06]: a fabricated address ('eva@example.com') was previously
+    save. [DB-0815-06]: a fabricated address ('ada@example.com') was previously
     accepted and persisted.
 
     When creating a new contact (contact_id empty), also checks `name` against
@@ -1182,8 +1182,8 @@ def write_contact(
                     # THE UPDATE GATE (2026-08-26). The creation gate below rested on
                     # "an update by contact_id is a deliberate act on a record the
                     # caller already identified". Live on 2026-08-22 that premise
-                    # failed exactly as the creation case had: asked to "add Stephen
-                    # Ashworth", the model decided Stephen WAS the existing Steven,
+                    # failed exactly as the creation case had: asked to "add Rebekah
+                    # Ashworth", the model decided Rebekah WAS the existing Rebecca,
                     # called this function with his id, and renamed a real friend's
                     # record. Twice, in consecutive turns, with no prompt shown —
                     # because the id was never the user's, it was the model's own
@@ -1345,14 +1345,14 @@ def write_contact(
         # THE GATE. Until 2026-08-19 this was evidence the calling agent could weigh,
         # and the record was created either way. Live on 2026-08-19 the agent weighed
         # identical evidence two ways four minutes apart — turn 1 it surfaced the
-        # existing Steven and offered to merge, turn 2 it announced "Stephen with a
+        # existing Rebecca and offered to merge, turn 2 it announced "Rebekah with a
         # 'ph' is added as a separate contact" and made the duplicate this whole item
         # exists to prevent.
         #
         # Neither of the other two actors can decide it, and both were measured rather
         # than assumed:
         #
-        #   The SCORE cannot. Stephen/Steven is 0.77 and is the same person;
+        #   The SCORE cannot. Rebekah/Rebecca is 0.71 and is the same person;
         #   Dave Bennett/Dan Bennett is 0.87 and is two people; Anna/Hannah is 0.80
         #   and is two people. No threshold separates them, so "raise the bar",
         #   "auto-merge above X" and "only ask when confident" are all dead ends.
@@ -1927,8 +1927,8 @@ def merge_contacts(keep_id: str, merge_id: str, confirm_token: str = "") -> str:
     design as the near-match create gate on `write_contact` (`6d6d46c`) and for
     the same reason, one step further along.
 
-    Live on 2026-08-19: "Steven from the gym and Stephen from the gym are the same
-    person. Merge them, keeping Steven." **There were three Stevens.** The keep_id
+    Live on 2026-08-19: "Rebecca from the gym and Rebekah from the gym are the same
+    person. Merge them, keeping Rebecca." **There were three Rebeccas.** The keep_id
     chosen was the user's actual friend — a different person, with a spouse and a
     dinner logged three weeks earlier — and *both* gym records were folded into him
     across two calls, with no question asked. His record now says he was met at the
@@ -1940,7 +1940,7 @@ def merge_contacts(keep_id: str, merge_id: str, confirm_token: str = "") -> str:
     considered choice from a coin flip. The description below is therefore built
     from both records' `_disambiguation_entry()` — spouse, employer, how they were
     met, when they were last spoken to — so what the user approves is two named
-    people, not two opaque ids. If the wrong Steven is in it, it is visible.
+    people, not two opaque ids. If the wrong Rebecca is in it, it is visible.
 
     A merge is also **destructive in a way the archive does not fully undo**: the
     keep record is edited in place, so fields it inherits cannot be told apart from
@@ -1975,8 +1975,8 @@ def merge_contacts(keep_id: str, merge_id: str, confirm_token: str = "") -> str:
         return "Error: keep_id and merge_id must name two different records."
 
     # Fingerprinted exactly as the replay through confirm.execute() will rebuild
-    # them — the two ids and nothing else, so an approval for "fold Stephen into
-    # Steven-from-the-gym" cannot be spent on a different pair.
+    # them — the two ids and nothing else, so an approval for "fold Rebekah into
+    # Rebecca-from-the-gym" cannot be spent on a different pair.
     _gate_args = {"keep_id": keep_id, "merge_id": merge_id}
 
     _approved = False
@@ -2128,7 +2128,7 @@ def unmerge_contacts(merge_id: str) -> str:
     **This only works for merges performed on or after 2026-08-22.** Reversing a
     merge needs the pre-merge state of the *surviving* record, and nothing captured
     that until `merge_contacts` started writing a snapshot. Every merge made before
-    then — including the 2026-08-19 Steven merges that motivated this — has no
+    then — including the 2026-08-19 Rebecca merges that motivated this — has no
     snapshot and cannot be unmerged here; this refuses and says so rather than
     half-reversing. Those have to be repaired by hand from the archived loser
     record, which does still exist and is complete.

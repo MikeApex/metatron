@@ -2,7 +2,7 @@
 tools/turn_referent.py — what the previous turn actually did, for a turn that points at it.
 
 [DB-0826-01] A short referring turn — "undo that merge", "approved", "now set it back to
-Iva", "cancel my previous request" — resolves against the wrong thing. Five live instances
+Ida", "cancel my previous request" — resolves against the wrong thing. Five live instances
 between 2026-08-10 and 2026-08-29.
 
 THE CAUSE, measured 2026-09-03 and not what the item assumed. The Coordinator is never
@@ -11,7 +11,7 @@ given the conversation. Both live call sites in core/orchestrator.py invoke
 receives the last ten turns. Everything the Coordinator knows about the recent past arrives
 through `load_recent_context()` — ambient facts, open threads, five days of day-logs — none
 of which contains a conversational turn. So "undo that merge" was matched against the only
-merge-shaped thing in scope, which on 2026-08-26 was a Prudential Apex *branch* merge in the
+merge-shaped thing in scope, which on 2026-08-26 was a Northwind *branch* merge in the
 day logs. coordinator.md:129 tells the model to notice "a pronoun without a clear referent";
 it was being asked to do that in a context holding no referents at all. The rule was
 unfollowable, not ignored — and `tests/run_coord_model_probe.py` could not see this, because
@@ -21,7 +21,7 @@ production. Probe, `gemini-3.5-flash-lite`, 4 cases x 3: 3/12 resolved without h
 
 WHY A BLOCK AND NOT ONLY THE TRANSCRIPT. Passing history is the larger half of the fix and
 is done separately, in the orchestrator. It is not sufficient. On 2026-08-29 the assistant's
-own text said the email to Iva was sent; it was pending, and the user then declined it. A
+own text said the email to Ida was sent; it was pending, and the user then declined it. A
 transcript replays that claim as fact — it is the record of what was *said*. This block is
 the record of what *happened*: the tools that actually ran, on which objects, and whether
 the action completed, failed, is still waiting on the user, or was refused. Where the two

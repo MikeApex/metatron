@@ -348,7 +348,7 @@ if __name__ == "__main__":  # manual run: python3 -m tools.travel_watch <persona
     import sys
     from core.persona import persona_scope
 
-    who = sys.argv[1] if len(sys.argv) > 1 else "mike"
+    who = sys.argv[1] if len(sys.argv) > 1 else sys.exit("name the persona: python -m tools.travel_watch <persona>")
     with persona_scope(who):
         detected = find_travel_events(who)
         print(f"{len(detected)} travel event(s) detected:")

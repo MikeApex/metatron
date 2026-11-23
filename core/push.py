@@ -56,9 +56,9 @@ _FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 _FCM_SEND = None
 
 
-# Subscriptions registered before they carried an owner were all Mike's — he was the only
-# user. Reading them as his is the migration; nothing else needs to run.
-_LEGACY_OWNER = "mike"
+# A subscription with no owner is sent nothing. Until 2026-11-23 one was read as Mike's (the only
+# user before accounts); the VM's file then held 2 subscriptions, both owned, so the default had
+# nothing left to migrate — and a default owner is a route for one user's pushes to reach another.
 
 
 def _load_subscriptions() -> list[dict]:
@@ -69,8 +69,6 @@ def _load_subscriptions() -> list[dict]:
             subs = json.load(f)
     except Exception:
         return []
-    for sub in subs:
-        sub.setdefault("persona", _LEGACY_OWNER)
     return subs
 
 
