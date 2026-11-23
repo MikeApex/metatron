@@ -1020,7 +1020,63 @@ def _report_invalid_schedules(persona: str) -> list[tuple[str, str]]:
     return invalid
 
 
-def _register_schedules(persona: str) -> None:
+# Only POLLING cadences go on the clock: an interval under 6 h that divides the day evenly
+# (5, 30, 60, 180 … — every default job and the 30-minute check-in poll). Reminders the agent
+# writes start at 6 h (tools/schedule.py MIN_INTERVAL_MINUTES) and keep the old timing, counted
+# from registration: aligned to midnight, "every 24 h" would land at 00:00 every night, inside
+# quiet hours, which skip a recurring job — so it would never arrive (Fable review, 11-23).
+_ALIGN_BELOW_MINUTES = 360
+
+
+def aligns_to_clock(minutes: int) -> bool:
+    return 0 < int(minutes) < _ALIGN_BELOW_MINUTES and 1440 % int(minutes) == 0
+
+
+def aligned_next_run(after: datetime, minutes: int) -> datetime:
+    """The first slot strictly after `after` on an N-minute grid counted from local midnight.
+
+    Every 60 → :00 each hour; every 30 → :00 and :30; every 180 → 00:00, 03:00, … A restart no
+    longer resets an interval job's clock (Mike, 2026-11-23: deploys several times an hour meant
+    the hourly intake sweep — which counted from each restart — did not run between them). Used
+    only for intervals `aligns_to_clock` accepts, which divide the day, so the grid never breaks
+    at midnight.
+    """
+    minutes = max(1, int(minutes))
+    midnight = after.replace(hour=0, minute=0, second=0, microsecond=0)
+    elapsed = (after - midnight).total_seconds() / 60
+    slot = midnight + timedelta(minutes=(int(elapsed // minutes) + 1) * minutes)
+    nxt_midnight = midnight + timedelta(days=1)
+    return nxt_midnight if slot > nxt_midnight else slot
+
+
+def realign_interval_jobs(jobs=None) -> int:
+    """Put each clock-aligned job that has just run back on its grid.
+
+    `schedule` times an interval job's next run from when the last one FINISHED, so left alone an
+    aligned job drifts by its own run time every run (an intake sweep that takes 4 s would slip
+    ~1.5 min a day). Called after `run_pending()`. A run that overran its slot goes to the next
+    free one — never a catch-up burst. Returns how many jobs were moved.
+    """
+    moved = 0
+    for job in (schedule.jobs if jobs is None else jobs):
+        minutes = getattr(job, "align_minutes", None)
+        if not minutes or job.last_run is None:
+            continue
+        want = aligned_next_run(job.last_run, minutes)
+        if job.next_run != want:
+            job.next_run = want
+            moved += 1
+    return moved
+
+
+def aligned_slots() -> dict:
+    """{job name: (minutes, next run)} for the clock-aligned jobs now registered — carried across
+    a `schedule.clear()` so a re-registration cannot drop a slot that has just come due."""
+    return {job.job_name: (job.align_minutes, job.next_run) for job in schedule.jobs
+            if getattr(job, "align_minutes", None) and getattr(job, "job_name", None)}
+
+
+def _register_schedules(persona: str, carry: dict | None = None) -> None:
     cfg = _load_config(persona)
     persona_cfg = dict(cfg.get("schedules", {}))
 
@@ -1096,8 +1152,27 @@ def _register_schedules(persona: str) -> None:
             job_fn = make_job()
 
         if "interval_minutes" in job:
-            schedule.every(job["interval_minutes"]).minutes.do(job_fn)
-            print(f"  [scheduler] {job_name}: every {job['interval_minutes']} min")
+            minutes = int(job["interval_minutes"])
+            registered = schedule.every(minutes).minutes.do(job_fn)
+            if aligns_to_clock(minutes):
+                # On the clock, not from the restart (Mike, 2026-11-23): every deploy restarts
+                # this daemon, and `schedule` counts an interval from registration — so deploying
+                # more often than hourly meant the hourly intake sweep never ran at all.
+                registered.align_minutes = minutes
+                registered.job_name = job_name
+                # A re-registration mid-run (schedules changed, daylight saving) keeps a job's
+                # pending slot — even one just come due — instead of dropping it (Fable review).
+                # Never LATER than the next slot from now: after the autumn clock change a carried
+                # 02:00 lies an hour ahead of the repeated 01:00, and would pause every aligned
+                # job for that hour (Fable verify). Normally the carried slot is the earlier one.
+                kept = (carry or {}).get(job_name)
+                fresh = aligned_next_run(datetime.now(), minutes)
+                registered.next_run = (min(kept[1], fresh) if kept and kept[0] == minutes
+                                       else fresh)
+                print(f"  [scheduler] {job_name}: every {minutes} min, on the clock "
+                      f"(next {registered.next_run:%H:%M})")
+            else:
+                print(f"  [scheduler] {job_name}: every {minutes} min")
 
         elif "time" in job and "day" in job:
             # Weekly — specific day + time
@@ -1278,15 +1353,17 @@ def main() -> None:
         if offset != current_offset:
             print(f"\n[scheduler] clock offset changed {current_offset} -> {offset} "
                   f"(daylight saving); re-registering schedules", flush=True)
+            carry = aligned_slots()
             schedule.clear()
-            _register_schedules(persona=persona)
+            _register_schedules(persona=persona, carry=carry)
             current_offset = offset
 
         new_mtime = _agent_schedules_mtime(persona)
         if new_mtime != agent_mtime:
             print("\n[scheduler] agent schedules changed; re-registering", flush=True)
+            carry = aligned_slots()
             schedule.clear()
-            _register_schedules(persona=persona)
+            _register_schedules(persona=persona, carry=carry)
             agent_mtime = new_mtime
 
         if ((datetime.now() - last_invalid_report).total_seconds()
@@ -1297,6 +1374,7 @@ def main() -> None:
         _fire_due_one_offs(persona)
 
         schedule.run_pending()
+        realign_interval_jobs()
         time.sleep(30)
 
 

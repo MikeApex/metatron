@@ -60,3 +60,23 @@ The Fable reviewer was given the same limits.
 
 **Deployed 11-23 13:27 by Mike from another chat** (VM at `388a91c`, which includes `e45c7cd` and `23ddb28`; `dateparser`/`sentencepiece`/`tzlocal` import on the VM; server and scheduler active). The first post-deploy intake sweep had not yet run when this window closed; its check is in `SESSION.md`. **M2 prep prompt:** `archive/handoffs/2026-11-23-whatsapp-m2-labelling-prep-prompt.md` (Opus 5.5) — Claude never sees a message text; Mike labels in his own terminal and pastes only the numbers.
 
+**Afterwards, same window — the post-deploy check, and interval jobs put on the clock.**
+
+**Intake check: PASS.** The first sweep on the new `ingest()` path ran at 15:01:13 ("2 new — 2 unclear"), with no WhatsApp-housekeeping or task-evidence warning.
+
+**Why it took 90 minutes.** Mike deployed again from another chat at 14:01. Each deploy restarts the scheduler, and `schedule` counted an interval job from registration, so an hourly job ran an hour after every restart. **Deploying more often than hourly meant the intake sweep did not run at all in between** (mail sat up to ~1¾ h on 11-23).
+
+**Mike: "Let's make that clock adjustment."** Built in `core/scheduler.py` (Red, Mike approving each prompt):
+- polling cadences — under 6 h and dividing the day: 5, 30, 60, 180, and the 30-minute check-in poll — run on a grid from local midnight;
+- after each run the job is put back on its slot, because the library times the next run from when the last one *finished*.
+
+**Fable review, then verify:**
+1. *Rank 1, medium:* aligning reminders the agent writes (≥ 6 h, no maximum) would have pinned "every 24 h" to 00:00, inside quiet hours, which skip a recurring job — **it would never arrive**. Reminders were excluded and keep their old timing.
+2. *Low:* a re-registration (schedules changed, daylight saving) just after a slot dropped it. Each aligned job's pending slot now carries across `schedule.clear()`, and a removed job stays removed.
+3. *Low, accepted:* two runs of a 5-minute job ~30 s apart after a slow job. `nudge_tick` marks items handled, so nothing is sent twice.
+4. *Verify, new:* the carried naive slot would pause every aligned job for the repeated hour when the clocks go back. Fixed by taking the earlier of the carried slot and the next slot from now.
+
+`tests/test_scheduler_aligned_intervals.py` 21/21; the four scheduler suites and `qa_sweep` 12/12 pass; the daemon was run locally and every interval job came up on the clock.
+
+**Left as is, by design:** reminders of 6 h or more still count from each restart. **Not deployed** — rides Mike's next routine deploy.
+

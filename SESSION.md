@@ -112,10 +112,10 @@ the channel is OFF for every user.** What the VM does with a message (§ 0), Mik
 and the endpoint contract Phase 2 builds to (§ 2.2):
 [whatsapp_phase1_build_plan_2026-11-23.md](archive/plans/whatsapp_phase1_build_plan_2026-11-23.md);
 log § 11-23 eighth. **DEPLOYED 11-23 13:27** (by another chat; VM at `388a91c`, which includes
-`e45c7cd`; deps installed, both units active). **Owed, first thing next session:** the first post-deploy
-email intake sweep through the new `ingest()` path — VM: `cd ~/multi-model-mcp && journalctl -u
-metatron-scheduler@mike --since "13:27" --no-pager | grep -i intake` — pass: an `intake:` line, no
-`whatsapp housekeeping failed` / `task evidence check failed`. **M2 DROPPED as the gate (Mike, 11-23,
+`e45c7cd`; deps installed, both units active). **Post-deploy intake sweep checked: PASS** (VM 15:01, "2 new — 2 unclear", no warnings).
+**Interval jobs now keep to the clock** (`core/scheduler.py`, Fable-reviewed and verified): polling
+cadences under 6 h run on a grid from midnight, so a deploy no longer delays them — reminders keep
+their old timing; **deploys with the next routine one**. **M2 DROPPED as the gate (Mike, 11-23,
 before any score):** a sample without the thread can't say what needs a reply, and he won't base it on
 old history — **real use is the baseline**, tuned from what he sees (plan § 4; log § 11-23 tenth).
 Button 8 and `scripts/whatsapp_m2_label.py` are kept for re-measuring (`067b0bc`); the export is
