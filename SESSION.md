@@ -13,7 +13,7 @@ on the VM 11-18 (ids + Bulgarian/taxes/Prudential). **Next: Iva's onboarding wal
 (`archive/handoffs/2026-11-23-iva-onboarding-walkthrough-prompt.md`, Opus; supersedes 10-29); M3 restarts on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
 reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
-**WhatsApp:** P3 reader built 11-23 (`acc2a24`); next Phase 1, VM side (§ Current state);
+**WhatsApp:** P3 reader built 11-23 (`acc2a24`); next Phase 1, VM side, `archive/handoffs/2026-11-23-whatsapp-phase-1-vm-side-prompt.md` (§ Current state);
 day-planner live checks `[DB-1029-01]` (due 10-31; the check script is already on the VM — no deploy needed); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
 boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
@@ -120,8 +120,9 @@ probe line, read after the first live increment). **Owed before Phase 2 wires th
 Fable review of `src/main/…/whatsapp/` (~0.2M). **Mike's phone runs only the `waprobe` build** —
 installing `assembleDebug` over it revokes All-files access; **`npx cap sync` before
 `assembleWaprobe`** (`check_apk_sync.sh` checks only the debug APK); clean-build Iva's APK
-(`./gradlew clean assembleDebug`). **Next:** Phase 1, VM side
-([plan](archive/plans/whatsapp_input_plan_2026-10-26.md) § 4 "P3 BUILT"; log § 11-23 sixth).
+(`./gradlew clean assembleDebug`). **Next:** Phase 1, VM side —
+`archive/handoffs/2026-11-23-whatsapp-phase-1-vm-side-prompt.md` (Opus 5.5, clean-room, ~3–5M,
+Mike ~30 min; step 0 is the omitted-messages tap after 02:00; plan § 4 "P3 BUILT").
 Clean room still binds: open no transcripts; WhatsApp log entries only 10-30-02 and fragments
 titled "clean-room"; never put the other phrase in a clean-room fragment's first heading (the
 write-time briefing fails closed).
