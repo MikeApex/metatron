@@ -83,6 +83,25 @@ flags:
   # information, then waits for the weekly list; at most 3 such prompts a day (ranking.yaml
   # `behind`, `raise`). Off: Part A's slipped-task asks, once a day, every day (Mike's M3).
   behind_v2: false
+  # RANKING, PART B, PHASE 3 (2026-11-23; same plan, §§ 4.11–4.13, 11 row 15, 11c).
+  # `back_burner`: trivia nobody has mentioned for 21 days is parked (closed as moot, row kept,
+  # revived by a fresh mention), after one mention in the weekly conversation the week before.
+  # OFF = the dry run: each day the pass writes what it would park to the trace
+  # (scripts/ranking_report.py --back-burner) and closes nothing, notices nothing.
+  back_burner: false
+  # With `back_burner` on: true = the weekly conversation carries the notices and the guarded
+  # lines, but still nothing is parked; false = parking is live. Flip after the dry-run review.
+  back_burner_dry_run: true
+  # `weekly_priorities`: the weekly review also looks back — what Metatron moved, a clash held,
+  # what is slipping or about to be parked, one keep-in-touch or upkeep clock, the regret question,
+  # one check on how things feel — from material code assembles; and a user with no weekly review
+  # is offered one, once, at a day and time they pick. Off: the weekly review is the week ahead only.
+  weekly_priorities: false
+  # `ranking_signals`: the daily tick appends what the ledger shows to ranking_signals.jsonl
+  # (completion, momentum, missed obligations, intrusions, questions asked, overrides) and
+  # record_signal keeps what the user says (regret, how things feel, overload, nagging,
+  # satisfaction). Recording only — nothing a user sees. Off: nothing is written.
+  ranking_signals: false
 
 replaces_jobs: [companion_checkin]
 

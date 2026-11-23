@@ -8,6 +8,8 @@ regret of delay, side by side (archive/plans/ranking_values_plan_2026-11-23.md �
     .venv/bin/python scripts/ranking_report.py --compare --persona mike --live
     .venv/bin/python scripts/ranking_report.py --protected --persona mike [--day …]
     .venv/bin/python scripts/ranking_report.py --behind --persona mike [--day …]
+    .venv/bin/python scripts/ranking_report.py --back-burner --persona mike [--day …]
+    .venv/bin/python scripts/ranking_report.py --signals --persona mike [--month 2026-12]
 
 Phase 2 (plan § 11b): `--protected` lists each task placed in protected time that day and what
 `protected_v2` would have done — asked (its cost of delay beat the intrusion cost) or kept it out —
@@ -15,6 +17,13 @@ with the window's class, k and both costs; once the flag acts, the questions act
 their decisions. `--behind` prints what `behind_v2` read at the first build after waking: behind
 or not and why, the quick wins and the hard task it would have led with, and the raises it would
 have made beside Part A's slipped-task asks. Both read `trace` in ranking_state.json (14 days).
+
+Phase 3 (plan § 11c): `--back-burner` prints the day's back-burner reading — what would be parked
+(trivia nobody has mentioned for 21 days), what is close (14+ days, to be said in the weekly
+conversation first) and what is guarded (a person, an obligation, health, a goal, more than trivia:
+asked about, never parked) — and whether the pass ran as the dry run, notices only, or live. It is
+the dry-run walkthrough's list. `--signals` prints one month of ranking_signals.jsonl for the
+monthly review (§ 7.2): the ledger's daily rows summed, and the user's own words, by kind.
 
 By default it reads the first build of the day at or after waking, which every day plan build
 keeps (data/personas/{p}/day_plan/ranking_state.json, 14 days). `--live` computes both orders now,
@@ -153,17 +162,121 @@ def trace(persona: str, day: date | None, what: str) -> str:
         return "\n".join(out)
 
 
+def back_burner(persona: str, day: date | None) -> str:
+    """Phase 3's back-burner reading for one day, as text (the dry-run walkthrough's list)."""
+    import tools.obligations as O
+    from tools import ranking as RK
+    with persona_scope(persona):
+        day = day or O._today()
+        tr = ((RK.load_state(persona).get("trace") or {}).get(day.isoformat())) or {}
+        bb = tr.get("back_burner")
+        out = [f"Ranking phase 3 — back burner — {persona}, {day.isoformat()}", ""]
+        if not bb:
+            return "\n".join(out + ["  (no back-burner reading kept for this day — the pass runs on "
+                                    "the first tick after midnight)"])
+        titles = {t["id"]: str(t.get("what") or "?") for t in (O._norm(x) for x in O._load(persona))}
+
+        def row(r: dict) -> str:
+            return (f"  {titles.get(r['task_id'], r['task_id'])[:52]:<54} silent {r['silent']:>3} d  "
+                    f"delay {_num(r.get('cod'))}"
+                    + (f"  said {r['noticed']}" if r.get("noticed") else "")
+                    + (f"  [{r['why']}]" if r.get("why") else ""))
+        out.append(f"mode: {bb.get('mode')}  (dry run = nothing parked or said; notices only = said "
+                   f"in the weekly conversation, nothing parked; live = parked a week after it is said)")
+        for key, head in (("would_archive", "WOULD BE PARKED (21+ days, trivia):"),
+                          ("would_notice", "CLOSE — said in the weekly conversation first (14–20 days):"),
+                          ("guarded", "GUARDED — asked about once in the weekly conversation, never parked:")):
+            rows = bb.get(key) or []
+            out += ["", head] + ([row(r) for r in rows] or ["  (none)"])
+        return "\n".join(out)
+
+
+def signals(persona: str, month: str | None) -> str:
+    """One month of ranking_signals.jsonl for the monthly review (plan § 7.2, B32), as text."""
+    import tools.obligations as O
+    from tools import ranking_review as RR
+    with persona_scope(persona):
+        month = month or O._today().strftime("%Y-%m")
+        rows = [r for r in RR.read_signals(persona) if str(r.get("day") or "").startswith(month)]
+        out = [f"Ranking signals — {persona}, {month} ({len(rows)} rows)", ""]
+        if not rows:
+            return "\n".join(out + ["  (nothing recorded this month — is ranking_signals on?)"])
+        led = [r for r in rows if r.get("source") == "ledger"]
+        days = sorted({r["day"] for r in led})
+        out.append(f"LEDGER — {len(days)} day(s), {days[0] if days else '—'} to {days[-1] if days else '—'}")
+        states: dict = {}
+        tot = {"opened": 0, "parked": 0, "goal_steps_done": 0, "missed_max": 0, "intrusions": 0,
+               "prompts": 0, "raises": 0, "weekly_items": 0, "notices": 0,
+               "grade_corrections": 0, "replans": 0}
+        within = clocks = 0
+        decisions: dict = {}
+        for r in led:
+            k = r.get("kind")
+            if k == "completion":
+                for st, n in (r.get("states") or {}).items():
+                    states[st] = states.get(st, 0) + int(n)
+                tot["opened"] += int(r.get("opened") or 0)
+                tot["parked"] += int(r.get("parked") or 0)
+            elif k == "momentum":
+                tot["goal_steps_done"] += int(r.get("goal_steps_done") or 0)
+                within += int(r.get("clocks_within") or 0)
+                clocks += int(r.get("clocks") or 0)
+            elif k == "missed_obligations":
+                tot["missed_max"] = max(tot["missed_max"], int(r.get("n") or 0))
+            elif k == "intrusions":
+                tot["intrusions"] += int(r.get("n") or 0)
+                for d, n in (r.get("decisions") or {}).items():
+                    decisions[d] = decisions.get(d, 0) + int(n)
+            elif k == "questions":
+                for f in ("prompts", "raises", "weekly_items", "notices"):
+                    tot[f] += int(r.get(f) or 0)
+            elif k == "overrides":
+                tot["grade_corrections"] += int(r.get("grade_corrections") or 0)
+                tot["replans"] += int(r.get("replans") or 0)
+        out += [f"  completion: {', '.join(f'{k} {v}' for k, v in sorted(states.items())) or 'nothing'}"
+                f"; opened {tot['opened']}; parked {tot['parked']}",
+                f"  momentum: goal steps done {tot['goal_steps_done']}; clocks inside their cadence "
+                f"{within} of {clocks} day-readings",
+                f"  missed obligations (worst day): {tot['missed_max']}",
+                f"  protected time taken: {tot['intrusions']}; questions "
+                f"{', '.join(f'{k} {v}' for k, v in sorted(decisions.items())) or 'none'}",
+                f"  questions this plan asked: prompts {tot['prompts']}, raises {tot['raises']}, "
+                f"weekly items {tot['weekly_items']}, notices {tot['notices']}",
+                f"  overrides (recorded, not scored): grade corrections {tot['grade_corrections']}, "
+                f"replans {tot['replans']}"]
+        said = [r for r in rows if r.get("source") == "user"]
+        out += ["", f"IN THEIR WORDS — {len(said)}"]
+        for kind in RR.SIGNAL_KINDS:
+            mine = [r for r in said if r.get("kind") == kind]
+            if mine:
+                out.append(f"  {kind}:")
+                out += [f"    {r.get('day')} {'(asked) ' if r.get('asked') else ''}\"{r.get('text')}\""
+                        for r in mine]
+        other = [r for r in rows if r.get("source") not in ("ledger", "user")]
+        if other:
+            out += ["", f"OTHER ROWS (read, not written here — e.g. goal network satisfaction): {len(other)}"]
+            kinds: dict = {}
+            for r in other:
+                kinds[str(r.get("kind"))] = kinds.get(str(r.get("kind")), 0) + 1
+            out.append("  " + ", ".join(f"{k} {v}" for k, v in sorted(kinds.items())))
+        return "\n".join(out)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--compare", action="store_true", help="print both top tens side by side")
     ap.add_argument("--protected", action="store_true", help="phase 2: protected time, shadow")
     ap.add_argument("--behind", action="store_true", help="phase 2: behind and raises, shadow")
+    ap.add_argument("--back-burner", dest="back_burner", action="store_true",
+                    help="phase 3: what would be parked, what is close, what is guarded")
+    ap.add_argument("--signals", action="store_true", help="phase 3: one month of signals")
+    ap.add_argument("--month", help="YYYY-MM for --signals (default: this month)")
     ap.add_argument("--persona", required=True)
     ap.add_argument("--day", help="YYYY-MM-DD (default: today)")
     ap.add_argument("--live", action="store_true", help="compute now instead of the kept build")
     a = ap.parse_args()
-    if not (a.compare or a.protected or a.behind):
-        ap.error("one of --compare, --protected, --behind")
+    if not (a.compare or a.protected or a.behind or a.back_burner or a.signals):
+        ap.error("one of --compare, --protected, --behind, --back-burner, --signals")
     from core import consent
     with persona_scope(a.persona):
         if not consent.is_granted("base_configuration", a.persona):
@@ -175,6 +288,10 @@ def main() -> int:
     for what in ("protected", "behind"):
         if getattr(a, what):
             print(trace(a.persona, day, what))
+    if a.back_burner:
+        print(back_burner(a.persona, day))
+    if a.signals:
+        print(signals(a.persona, a.month))
     return 0
 
 

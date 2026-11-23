@@ -212,3 +212,46 @@ lookups:
   # Refuse any money amount or health reading in a question (plan § 4.7: "a health/financial
   # figure from the user's records" — the guard cannot tell theirs from a public one).
   refuse_figures: true
+
+# --- the back burner (plan § 4.11, B26–B27; § 11 row 15) — PHASE 3, flag back_burner ---------------
+
+# A one-off task that is trivia (worst grade minor, not vital by Part A), whose cost of delay has
+# stayed below `cod` and that nobody has mentioned for `days`, is parked: closed as moot with reason
+# back_burner, its row and history kept, revived by open_task on a fresh mention. Off (the shipped
+# state) is the DRY RUN: the daily pass writes what it would park to the trace
+# (scripts/ranking_report.py --back-burner) and closes nothing.
+back_burner:
+  # Mike, 2026-11-23 (§ 11 row 15): 21 days — research § 8 (Halder et al. 2026: abandonment flat
+  # after day 10; auto-archive at 21, range 14–30).
+  days: 21
+  # From this many silent days the task is put in the weekly conversation once, the week before it
+  # is parked (research § 8: "offer the task in the weekly review at ~14 days"). A task that names
+  # a person, an obligation, health, a goal or more than trivia is put there instead of ever
+  # being parked (B27).
+  notice_days: 14
+  # The notice is said at least this many days before the task is parked — Mike's "mentioned once
+  # in the weekly conversation the week before" (§ 11 row 15), so "next week" is literally true.
+  notice_lead_days: 7
+  # Heuristic placeholder: below half a minor's whole weight (grades.minor 10). An undated minor
+  # task costs 0; a minor one inside a week of its date costs ~5 and more.
+  cod: 5
+
+# --- the weekly priorities conversation (plan § 4.12, B28–B29) — PHASE 3, flag weekly_priorities ---
+
+weekly:
+  # "What Metatron moved and why, at most three lines" (§ 4.12 item 1), over the last 7 days.
+  moved_max: 3
+  moved_days: 7
+  # What is slipping or about to be parked, guarded items first (§ 4.12 item 3). Past this many
+  # the block gives a count — the conversation never reads out a list (B31).
+  slipping_max: 5
+  # Of those, at most this many QUESTIONS a week (keep, date or drop?) — the rest wait for another
+  # week (Fable diff review #7: a first look-back of five questions is the "managed" failure;
+  # research § 7: repeats and load are where acceptance collapses). Heuristic.
+  questions_max: 2
+  # A keep-in-touch or upkeep clock is offered when it is this far through its wished cadence
+  # (1.0 = due today). Heuristic.
+  clock_min_ratio: 0.8
+  # How many times the one-off offer of a weekly conversation may be shown without being said
+  # before it stops being shown (heuristic; § 4.12 "offered once").
+  offer_max_shows: 3

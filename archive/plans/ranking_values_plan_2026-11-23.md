@@ -769,3 +769,162 @@ page, then rules on figures, then sets `lookups.enabled: true`.
 **Revert.** `protected_v2` / `behind_v2` off restore phase 1 exactly (they are also inert while
 `ranking_v2` is off). `lookups.enabled: false` stops every lookup. Passions and `enjoyed` are
 records: off the flags they move nothing.
+
+## 11c. Phase 3 built (2026-11-23) — the back burner in dry run, the weekly look back, signals
+
+Built by Opus 5.5 from `archive/handoffs/2026-11-23-ranking-part-b-phase-3-build-prompt.md`; diff
+reviewed by Fable (11 findings, reconciled below). Tests: `tests/test_ranking_v2.py` 45 → 58, all
+passing (the config check's one clean-HEAD failure corrected, below); Part A's
+`tests/test_task_ranking.py` 21/21 with every new flag off; the ledger, planner, horizon,
+scheduler, routine and medication suites unchanged — the clean-HEAD failures remain (round-2 F8,
+`task_ledger_consult`'s past date, `test_multi_user_isolation`'s push check). QA sweep 12/12.
+**Not deployed.**
+
+**Precondition, checked.** Phase 2 (`e134948`) and the lookup switch-on (`129f3fb`) are on the VM.
+None of the three phase 2 walkthroughs has run (all due by ~12-07), and `ranking_v2` is off. So no
+walkthrough has named values to change.
+
+**Mike's ruling at the start (2026-11-23): option 1.** The plan's § 4.12 and the build prompt
+assumed `write_schedule` could make "a weekly conversation at a time the user picks", and that its
+turn would get the scheduled-session conduct. Neither held:
+1. `write_schedule` wrote only an interval or a one-off. A one-week interval counts from every
+   scheduler restart, so with deploys more often than weekly it would never fire. That is the same
+   trap the hourly sweep hit.
+2. An agent-written job's turn has no session kind, so no conduct and no material.
+
+The existing week-ahead weekly review (09-05: rides a brief via `weekly_review_on`, because a
+separate session costs attention) was not in § 3's survey. **The priorities conversation now rides
+that weekly review.** A user without one is offered one, once, made by `write_schedule`'s new
+weekday + time form with `session: weekly_review`, which `session_kind` recognises.
+
+**Built.**
+1. **The back burner** (§ 4.11, row 15; `tools/ranking_review.py`). A daily pass on the first tick
+   of each day (`day_plan.refresh_tick`). What it acts on:
+   - an open one-off that is **trivia**: worst grade minor, and not vital by Part A;
+   - with no date still ahead, and a cost of delay below `back_burner.cod` (5);
+   - silent for 21 days.
+
+   Such a task is parked: closed as moot, `back_burner: {at, silent_days}`, the row and history
+   kept. At 14 days it is said in the weekly conversation; it is parked no sooner than 7 days
+   after that notice was said. What it never touches:
+   - a plan step, a prep, a medication task, something another open task waits on, a deferred or
+     blocked task, or an item on `ranking_state.weekly`.
+
+   What becomes one weekly question instead of being parked (the trace's `why`):
+   - a person (`bears` close/others, or a contact named in it);
+   - legal or financial ≥ major;
+   - any health cost;
+   - a goal;
+   - more than trivia;
+   - an unreadable contacts store (fail-closed).
+
+   **Flag `back_burner` off (shipped) = the dry run:** traced, nothing said, nothing closed. On
+   with `back_burner_dry_run: true` the notices are said but nothing is parked. Off the dry run,
+   parking is live. Revival: `open_task` on the same commitment reopens it. A mere resemblance is
+   put back to the model ("update_task reopen, or new_instance=true").
+2. **The weekly look back** (§ 4.12). It is in the package only when `carries_weekly_review`
+   (the orchestrator's `_horizon_block`), behind `weekly_priorities` (off). Code chooses all of it:
+   - MOVED: code's own moves only — parked, moved with its plan or event, protected time granted;
+   - one CLASH held;
+   - SLIPPING: at most 2 questions a week, guarded first, then the "keep, reschedule or drop?"
+     items, then the small things about to be parked, named;
+   - ONE CLOCK.
+
+   The conduct, in its one home `synthesizer_scheduled_sessions.md` § Weekly review: the look back
+   first, then the week ahead; never a list. A keep is the new `update_task` `keep` (offered while
+   `back_burner` is on), a date is `reschedule`, "let it go" is `dismissed`. Answers to the regret
+   and feel questions go to `record_signal`.
+3. **Signals** (§ 4.13). Code appends six ledger rows a day to `data/personas/{p}/ranking_signals.jsonl`
+   (append-only, 0600, deleted with the persona): completion, momentum, missed obligations,
+   intrusions, questions asked, and overrides, which are recorded and not scored. A missed day is
+   caught up, at most a week back, and never written twice. **`record_signal(kind, text, asked?)`**
+   is refused unless a user turn is bound. It is an action in `core/actions.py`, granted to the
+   Synthesizer in both routing files (Red), and has one `synthesizer.md` sentence (Red), on
+   unprompted remarks. Behind `ranking_signals` (off). `ranking_report.py --signals [--month]`
+   prints the month; rows this plan did not write (goal network phase 3's satisfaction) are read
+   and counted, never duplicated.
+4. **Red, made in this session:** one `synthesizer.md` bullet (offer the weekly conversation once;
+   create it with `write_schedule`, mindful of the six-job cap; `record_signal` for unprompted
+   remarks), and the `record_signal` grant in `routing_cloud.yaml` and `routing.yaml`.
+5. `write_schedule` gained `day` + `time` (a weekly job) and `session` ("weekly_review" only). It
+   refuses a weekly time inside quiet hours, where the gate would skip it every week.
+
+**What "no mention" means (the prompt asked).** A task was mentioned when any of these holds:
+- it was opened;
+- the **user's own words** named it (`obligations.note_mentioned`, every user turn — a new
+  `mentioned` day on the row);
+- a history event other than code's own bookkeeping was recorded on it (`judged`,
+  `costs_recorded`, `linked_to_event`, `adopted_into_plan` and the cascade closes do not count);
+- one of its user-facing fields changed: what, due, minutes, note, eligible_from, after, before.
+
+**Metatron's own words do not count.** A trivia task Metatron raises and the user lets pass is
+the evidence that it is back-burner material, and counting them would let the weekly notice reset
+the clock it announces. `note_raised`'s stamps are pruned daily and cover only today's items, so
+they could not serve anyway.
+
+**Deviations from the prompt and plan, each with its reason.**
+1. **The vehicle** — the weekly review, not a new session (Mike, option 1, above).
+2. **Only trivia is ever parked.** B26 says "trivia". An undated major task costs 0 by the shape
+   maths and would otherwise park, so the floor grade must be minor. Anything heavier becomes a
+   guarded question, and an unjudged task (which reads vital after 60 minutes) is guarded too.
+3. **One-off deadlines only.** A habit or interval records completions and is the user's own
+   standing choice; a waiting item has its own check-back.
+4. **The first reading back-dates the clock** to the last touch (or the day after the date), so
+   the dry run's first week has something to show. Parking still needs a notice said 7 days
+   before.
+5. **The notice lead is 7 days** (`notice_lead_days`), Mike's "the week before". The first build
+   used 3, and Fable #10 caught the line saying "next week".
+6. **`keep` is a new `update_task` action** (Fable #1). Nothing else recorded "keep that one".
+7. **Fixed in passing:** the phase 2 config test failed on clean HEAD after `129f3fb` turned
+   lookups on in the file. The code's fallback stays **off** on purpose, since a broken file must
+   not start a per-query charge. The test now says so.
+
+**Fable diff review, 2026-11-23 — reconciled.** Findings 1–5, 7, 8 and 10 were reproduced by the
+reviewer; each fix below has a test.
+
+| # | What a user would see | Resolution |
+|---|---|---|
+| 1 | They answer "no, keep that one" and it is parked anyway | **Fixed.** `update_task` `keep` records it as a mention; the conduct names it; test "review (phase 3) #1/#2" |
+| 2 | They name it the same day as the notice, and it is parked three weeks later with no second notice | **Fixed.** A notice said on or before the last touch is cleared, so a later parking needs a fresh notice; same test |
+| 3 | Unrelated words in the long weekly reply count as the notice, and a task goes unannounced | **Fixed.** A notice counts only when one sentence names the task (two of its words) and says it is going ("park", "back burner", "let it go"…). A guarded or keep-drop item needs a question or keep/drop word. Test "#3" |
+| 4 | "A birthday card for Mum" brings back last year's card for the office | **Fixed.** Revival only on the same commitment, one-offs only, never for a sourced item. A resemblance returns the "update_task reopen, or new_instance=true" message. Test "#4/#5" |
+| 5 | The look back calls the user's own reschedule "what Metatron moved", and says "parked" about a task since reopened | **Fixed.** MOVED takes only code's reasons. "Parked" means still parked (`obligations._is_parked`: moot and closed the day it was parked), wherever it is read |
+| 6 | The same "small things will be parked" line every week, never parked | **Fixed** in conduct: the line names each one, and the material says so. **Accepted:** the stemmer does not unify "descaling"/"descale". It is shared by every ledger match, so changing it is out of scope. A miss there fails toward not parking, except that a user's inflected mention may not reset the clock, which the notice and `keep` still catch |
+| 7 | A first look back of five "keep, date or drop?" questions; overflow called "small things" | **Fixed.** At most 2 questions a week (`weekly.questions_max`); the rest are a count by kind ("to ask about another week" / "small things, next week"). Test "#7/#10". **For the dry-run review:** how many guarded items a real week has |
+| 8 | The offer is lost to any reply saying "week"; the first three turns use it up | **Fixed.** Said only when a sentence says "weekly" (or "every week") and asks or offers; shown at most once a day, three days in all. Test "#8/#9" |
+| 9 | A weekly review set inside quiet hours never fires, and nobody says so | **Fixed.** `write_schedule` refuses it, naming the window |
+| 10 | In notices-only mode the user is told something will be parked when it will not | **Fixed.** In that mode the line asks whether they still want it; "next week" is said only when parking is live |
+| 11a | A task naming someone not in contacts, judged `bears: self`, can park after one notice | **Accepted.** The judge's `bears` is the defence, the notice is still said, and `keep` answers it |
+| 11b | A guarded question, later unguarded, licenses parking | **Fixed.** A guarded question is recorded as `asked`, never as `noticed`; parking needs a notice |
+| 11c | `note_mentioned` writes `mentioned` with every flag off; `write_schedule` takes `session` with them off | **Accepted.** The dry run needs real mentions from deploy day; the field is read by nothing else; the weekly session is offered only with `weekly_priorities` on |
+| 11d | A re-judge starts every clock over | **Fixed.** The touch digest omits judge-written fields; a user's grade correction is a `costs_set` event, which counts. Test "#11" |
+| 11e | A failed or missed day leaves a permanent hole in the signals | **Fixed.** Caught up, at most a week back; same test |
+| 11f | `record_signal` cannot tell a paraphrase from the user's words | **Accepted.** No turn text is bound to check against; the tool and conduct say "their words" |
+| 11g | One Home Per Rule Class: the offer, regret/feel and unprompted-remark rules sat in two or three places each | **Fixed.** The block carries material and the call's parameters only; the regret/feel recording is in the conduct file; the unprompted-remark rule is in `synthesizer.md` and the tool's own description |
+
+**The two items § 11b left open.**
+1. *A model reshuffle can undo the behind lead* (Fable #4) — **still open.** The behind
+   walkthrough has not run and `behind_v2` is off, so there is no evidence either way. It stays
+   with the behind walkthrough's step 2.
+2. *A record the judge wrote under the old "keen gardener … major" wording may count a passion
+   twice* (Fable #12) — **measured, bounded, still open.** On the VM's task store (2026-11-23,
+   counts only): 31 open tasks, 23 with a cost record (all inferred), **0 naming a passion**, 3
+   goal-linked. The profile is not on the readable `data/` path. A double count can arise only if
+   a stated passion is tied to one of those three tasks' goals. It closes in the phase 2 live
+   check's passion step: re-run the count after Mike states a passion.
+
+**Run cost.**
+- The back burner, the material and the ledger signals are code: zero model tokens.
+- The weekly look back adds ~300–500 input tokens to a weekly-review turn the user already has
+  (≈ $0.0002 on the Synthesizer's tier); for a user who takes up the offer, one Synthesizer turn a
+  week (~$0.02–0.05, ≈ $0.005/day).
+- `record_signal` is one tool round when the user remarks unprompted: a few a month.
+- Storage: `ranking_signals.jsonl` ≈ 1.5 KB a day per persona, kept forever (~0.5 MB a year). It
+  is deleted with the persona and owned by no job; nothing bills by wall-clock time.
+- **Unseen:** a wrong guard parks silently. The dry-run review and the weekly notice are the guard.
+
+**Revert.**
+- `back_burner: false` returns to the dry run.
+- A parked task comes back by being mentioned, or by `update_task reopen`.
+- `weekly_priorities: false` makes the weekly review the week ahead only.
+- `ranking_signals: false` stops all writing.

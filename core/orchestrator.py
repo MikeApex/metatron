@@ -362,10 +362,10 @@ def session_kind(user_input: str, persona: str | None = None) -> str | None:
     try:
         import yaml
         path = persona_config_dir(persona) / "scheduler.yaml"
-        if not path.exists():
-            return None
-        with open(path) as f:
-            cfg = yaml.safe_load(f) or {}
+        cfg = {}
+        if path.exists():
+            with open(path) as f:
+                cfg = yaml.safe_load(f) or {}
     except (OSError, ValueError, yaml.YAMLError):
         # A missing or malformed schedule must not take the session down. Returning
         # None fails toward the quieter prompt — the ritual is omitted, not recited.
@@ -374,7 +374,21 @@ def session_kind(user_input: str, persona: str | None = None) -> str | None:
     norm = lambda s: " ".join(str(s).split()).casefold()
     turn = norm(user_input)
     best: tuple[str, int] | None = None
-    for key, entry in ((cfg.get("schedules") or {}).items()):
+    entries = list((cfg.get("schedules") or {}).items())
+    # A weekly review the user asked for in chat (ranking Part B phase 3, Mike 2026-11-23: the
+    # priorities conversation rides the weekly review) is an agent-written job in
+    # data/personas/{p}/schedules.yaml carrying `session: weekly_review` — the ONE agent-written
+    # shape that is a scheduled session. Other agent-written jobs stay unrecognised, as before.
+    try:
+        agent_path = persona_data_dir(persona) / "schedules.yaml"
+        if agent_path.exists():
+            with open(agent_path) as f:
+                agent_jobs = yaml.safe_load(f) or {}
+            entries += [("weekly_review", e) for e in agent_jobs.values()
+                        if isinstance(e, dict) and e.get("session") == "weekly_review"]
+    except (OSError, ValueError, yaml.YAMLError):
+        pass
+    for key, entry in entries:
         prompt = norm((entry or {}).get("prompt") or "")
         if not prompt:
             continue
@@ -1519,6 +1533,9 @@ def register_tools() -> tuple[list[dict], dict]:
     from tools.day_plan import answer_ask, ANSWER_ASK_SCHEMA
     # Ranking Part B phase 2 (§ 10 R7): one public fact before asking, through the code guard.
     from tools.lookup_guard import lookup_public_fact, LOOKUP_PUBLIC_FACT_SCHEMA
+    # Ranking Part B phase 3 (§ 4.13, R8): what the user says about how it is going, kept in their
+    # words for the monthly review. Granted to the synthesizer in both routing files.
+    from tools.ranking_review import record_signal, RECORD_SIGNAL_SCHEMA
     # The whole day on request (archive/plans/synth_now_next_plan_2026-10-30.md § 3.3).
     from tools.day_plan import read_day_plan, READ_DAY_PLAN_SCHEMA
     # The project planner (goal–task network plan § 10 R8): plan_project only queues; read_plan is
@@ -1590,7 +1607,7 @@ def register_tools() -> tuple[list[dict], dict]:
         WRITE_WISHES_SCHEMA, READ_WISHES_SCHEMA, GENERATE_EMERGENCY_CARD_SCHEMA,
         OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
         SET_DAY_SHAPE_SCHEMA, REQUEST_REPLAN_SCHEMA, ANSWER_EVENT_SCHEMA, READ_DAY_PLAN_SCHEMA,
-        ANSWER_ASK_SCHEMA, LOOKUP_PUBLIC_FACT_SCHEMA,
+        ANSWER_ASK_SCHEMA, LOOKUP_PUBLIC_FACT_SCHEMA, RECORD_SIGNAL_SCHEMA,
         PLAN_PROJECT_SCHEMA, READ_PLAN_SCHEMA,
         PAUSE_INTERVIEW_SCHEMA, FINISH_INTERVIEW_SCHEMA,
         PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
@@ -1697,6 +1714,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "answer_event": answer_event,
         "answer_ask": answer_ask,
         "lookup_public_fact": lookup_public_fact,
+        "record_signal": record_signal,
         "read_day_plan": read_day_plan,
         "plan_project": plan_project,
         "read_plan": read_plan,
@@ -6659,7 +6677,7 @@ def _record_reported_doses(outputs: dict, persona: str | None, user_turn: bool) 
 
 
 def _horizon_block(persona: str | None = None, session: str | None = None,
-                   uncapped: bool = False) -> str:
+                   uncapped: bool = False, user_turn: bool = False) -> str:
     """This turn's horizon block, for the Synthesizer bundle. "" when nothing is waiting.
 
     `session` is the scheduled-session key from `session_kind()`, or None for a user-typed
@@ -6691,8 +6709,18 @@ def _horizon_block(persona: str | None = None, session: str | None = None,
             # `uncapped`: the day-plan block that would carry new findings under M2 came back
             # empty this turn (no plan, or it failed) — so this block delivers them as before.
             blocks = [context_block(persona, uncapped=uncapped)]
-            if carries_weekly_review(session, persona):
+            weekly = carries_weekly_review(session, persona)
+            if weekly:
                 blocks.append(week_block(persona))
+            # Ranking Part B phase 3 (plan § 4.12; Mike 2026-11-23, option 1): the weekly
+            # priorities conversation rides the weekly review — the week behind, from material
+            # code chooses — and a user with no weekly review is offered one, once, on their own
+            # turn. Behind `weekly_priorities`; "" when off.
+            try:
+                from tools.ranking_review import weekly_block
+                blocks.append(weekly_block(persona, session, weekly=weekly, user_turn=user_turn))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"[ranking] weekly block failed: {exc}")
         return "\n\n".join(b for b in blocks if b)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[horizon] block failed: {exc}")
@@ -7678,6 +7706,20 @@ def _close_turn_bookkeeping(visible: str, user_input: str, is_proactive: bool,
         plan_said(visible)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[project_plan] said-stamp not recorded: {exc}")
+    # Ranking Part B phase 3 (plan § 4.11): what the back burner reads as a mention is the USER's
+    # own words naming a task — never Metatron's (a trivia task raised and let pass is the
+    # evidence). And the weekly conversation's items count as said only once a reply says them.
+    if not is_proactive:
+        try:
+            from tools.obligations import note_mentioned
+            note_mentioned(user_input)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[tasks] mention stamp not recorded: {exc}")
+    try:
+        from tools.ranking_review import note_said as weekly_said
+        weekly_said(visible)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[ranking] weekly said-stamp not recorded: {exc}")
 
 
 def _bind_turn_kind(kind: str | None, persona: str | None) -> None:
@@ -7932,7 +7974,8 @@ def run_pipeline_session(user_input: str,
         # Never on a day-plan nudge: a finding served there is charged an offer for a reply that
         # is told to be about one thing (goal-network phase 1 live data, 2026-11-21).
         horizon_text = "" if nudge else _horizon_block(persona, session=kind,
-                                                       uncapped=not plan_text)
+                                                       uncapped=not plan_text,
+                                                       user_turn=not is_proactive)
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
@@ -8225,7 +8268,8 @@ def _run_pipeline_session_stream_inner(
     # plan block, which carries new findings under M2 unless it came back empty. Never on a
     # day-plan nudge (see the non-streaming twin).
     horizon_text = "" if nudge else _horizon_block(persona, session=kind,
-                                                   uncapped=not plan_text)
+                                                   uncapped=not plan_text,
+                                                   user_turn=not is_proactive)
     synthesizer_input = (
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"

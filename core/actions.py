@@ -78,6 +78,11 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     # Ranking Part B phase 2 (2026-11-23): the user's yes/no/another day to a protected-time
     # question — it lets a task into their time, or defers it.
     "answer_ask",
+    # Ranking Part B phase 3 (2026-11-23): the user's own words about how it is going (regret,
+    # how things feel, overload, nagging, satisfaction), appended to their signals file — a
+    # persisted record of what they said, so an action on the same reading as
+    # record_wisdom_response. Nothing downstream should tell the user it was "done".
+    "record_signal",
     # Routine pause (2026-10-26): what runs in the user's check-ins changes until resumed.
     "pause_routine", "resume_routine",
     # The in-app interview (2026-10-27): pausing or finishing it changes where her next

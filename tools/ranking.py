@@ -77,6 +77,10 @@ _DEFAULTS: dict = {
     "raise": {"skipped_days": 2, "max_without_news": 2, "prompts_per_day": 3},
     "enjoyed_gap_minutes": 15,
     "lookups": {"enabled": False, "per_day": 5, "refuse_figures": True},
+    # Phase 3.
+    "back_burner": {"days": 21, "notice_days": 14, "notice_lead_days": 7, "cod": 5},
+    "weekly": {"moved_max": 3, "moved_days": 7, "slipping_max": 5, "questions_max": 2,
+               "clock_min_ratio": 0.8, "offer_max_shows": 3},
 }
 
 GRADES = ("minor", "major", "severe")

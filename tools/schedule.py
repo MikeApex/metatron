@@ -47,6 +47,7 @@ only timed push this system has, and nothing here touches it).
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -102,6 +103,9 @@ def write_schedule(
     user_facing: bool = True,
     reason: str = "",
     created_by: str = "agent",
+    day: str = "",
+    time: str = "",
+    session: str = "",
 ) -> str:
     """
     Create or replace a scheduled job.
@@ -120,6 +124,14 @@ def write_schedule(
                           live-reminder cap.
         reason:           Why this exists. Shown in list_schedules.
         created_by:       "agent" or "user".
+        day, time:        For a weekly job at a fixed time: a full weekday name and HH:MM
+                          (ranking Part B phase 3). The scheduler already registers this shape
+                          (`schedule.every().<day>.at(time)`); an interval of a week would count
+                          from every daemon restart and, with deploys more often than weekly,
+                          never fire.
+        session:          "weekly_review" marks the job as the user's weekly review, so the turn
+                          it opens is a scheduled session (core/orchestrator.py `session_kind`).
+                          Weekly jobs only; the only value accepted.
 
     Returns:
         Confirmation, or an explanatory refusal.
@@ -133,9 +145,38 @@ def write_schedule(
     if notification not in VALID_NOTIFICATIONS:
         return f"Error: notification must be one of {sorted(VALID_NOTIFICATIONS)}."
 
-    if bool(interval_minutes) == bool(at):
-        return ("Error: give exactly one of interval_minutes (repeating) or "
-                "at (one-off ISO datetime).")
+    day = str(day or "").strip().lower()
+    time = str(time or "").strip()
+    weekly = bool(day or time)
+    if sum((bool(interval_minutes), bool(at), weekly)) != 1:
+        return ("Error: give exactly one of interval_minutes (repeating), at (one-off ISO "
+                "datetime), or day + time (weekly at a fixed time).")
+    if weekly:
+        from core.scheduler import DAY_NAMES
+        if day not in DAY_NAMES:
+            return (f"Error: day must be a full weekday name (monday…sunday), got {day!r}.")
+        if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", time):
+            return f"Error: time must be HH:MM (24-hour), got {time!r}."
+        # A weekly job inside quiet hours is skipped by the scheduler's gate every week — it
+        # would never fire, and nothing would say so (Fable diff review #9). Refused here, with
+        # the window named, so the user can pick another time.
+        try:
+            from datetime import time as _dtime
+            from core.scheduler import _load_config, time_in_quiet_hours
+            qcfg = _load_config()
+            hh, mm = (int(x) for x in time.split(":"))
+            if time_in_quiet_hours(qcfg, _dtime(hh, mm)):
+                q = qcfg.get("quiet_hours") or {}
+                return (f"Error: {time} is inside the user's quiet hours ({q.get('start', '')}–"
+                        f"{q.get('end', '')}), when no scheduled session runs — it would never "
+                        f"fire. Ask them for a time outside that window.")
+        except Exception:  # noqa: BLE001 — unreadable quiet hours: the gate decides at fire time
+            pass
+    session = str(session or "").strip().lower()
+    if session and session != "weekly_review":
+        return "Error: session may only be \"weekly_review\"."
+    if session and not weekly:
+        return "Error: a weekly_review session needs day and time."
 
     entry: dict = {
         "enabled": True,
@@ -148,7 +189,13 @@ def write_schedule(
         "reason": str(reason).strip() or "(no reason recorded)",
     }
 
-    if at:
+    if weekly:
+        entry["day"] = day
+        entry["time"] = time
+        entry["one_off"] = False
+        if session:
+            entry["session"] = session
+    elif at:
         try:
             when = datetime.fromisoformat(at)
         except ValueError:
@@ -246,13 +293,14 @@ def write_schedule(
         except Exception:
             pass
 
-    when_str =(f"once at {entry['at']}" if entry["one_off"]
+    when_str = (f"once at {entry['at']}" if entry["one_off"]
+                else f"every {entry['day']} at {entry['time']}" if entry.get("day")
                 else f"every {entry['interval_minutes']} minutes")
     verb = "Replaced" if replacing else "Scheduled"
     # Keyed on the arguments, not on the prompt's wording: a recurring job is the shape that
     # nagged; a one-off `at=` reminder is the only timed push there is and is never questioned.
     ledger_note = ""
-    if not entry["one_off"]:
+    if not entry["one_off"] and not entry.get("session"):
         ledger_note = (" Note: if this tracks whether something gets done — watering, a bill, "
                        "a habit — it belongs in the task ledger instead (open_task, kind habit "
                        "or interval), where each completion is recorded and it stops asking once "
@@ -306,6 +354,7 @@ def list_schedules() -> str:
     ]
     for key, v in sorted(data.items()):
         when = (f"once at {v['at']}" if v.get("one_off")
+                else f"every {v['day']} at {v.get('time')}" if v.get("day")
                 else f"every {v.get('interval_minutes')} min")
         state = "enabled" if v.get("enabled") else "disabled"
         facing = "user-facing" if v.get("user_facing") else "internal"
@@ -379,6 +428,18 @@ WRITE_SCHEDULE_SCHEMA = {
             "at": {
                 "type": "string",
                 "description": "One-off job: ISO datetime, e.g. '2026-08-04T14:00:00'. Fires once, then deletes itself. Omit for recurring.",
+            },
+            "day": {
+                "type": "string",
+                "description": "Weekly job at a fixed time: a full weekday name, e.g. 'sunday'. Give with time; omit interval_minutes and at.",
+            },
+            "time": {
+                "type": "string",
+                "description": "Weekly job: HH:MM, 24-hour, e.g. '18:30'.",
+            },
+            "session": {
+                "type": "string",
+                "description": "Only 'weekly_review', and only for the user's weekly review conversation they asked for (a weekly job). Omit otherwise.",
             },
             "notification": {
                 "type": "string",

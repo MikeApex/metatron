@@ -195,6 +195,10 @@ def _close(a: float, b: float, tol: float = 0.01) -> bool:
 def _():
     raw = yaml.safe_load((ROOT / "config" / "modules" / "ranking.yaml").read_text())
     merged = RK._merge(RK._DEFAULTS, raw)
+    # One deliberate difference: the billed lookup is ON in the file (Mike, 129f3fb) and OFF in
+    # the fallback — a broken file must not start a per-query charge (plan § 11b, Fable #1).
+    assert raw["lookups"]["enabled"] is True and RK._DEFAULTS["lookups"]["enabled"] is False
+    merged["lookups"]["enabled"] = False
     assert merged == RK._DEFAULTS, {k: (raw.get(k), RK._DEFAULTS.get(k)) for k in raw
                                     if raw.get(k) != RK._DEFAULTS.get(k)}
     assert RK._DEFAULTS["shapes"]["neglect_k"] == 1.5          # Mike: kin stays convex
@@ -1336,6 +1340,426 @@ def _():
     raw = yaml.safe_load((ROOT / "config" / "modules" / "day_plan.yaml").read_text())
     assert raw["flags"]["protected_v2"] is False and raw["flags"]["behind_v2"] is False
     assert D.ANSWER_ASK_SCHEMA["input_schema"]["required"] == ["ask_id", "answer", "evidence"]
+
+
+# --- phase 3: the back burner, the weekly conversation, signals (plan §§ 4.11–4.13, § 11c) --------
+
+import tools.ranking_review as RR  # noqa: E402
+import tools.schedule as SCH  # noqa: E402
+from tools.turn_context import turn_scope  # noqa: E402
+
+_P3 = {"back_burner": True, "back_burner_dry_run": False, "weekly_priorities": True,
+       "ranking_signals": True}
+
+
+def _p3(name: str, flags: dict | None = None) -> Path:
+    d = _fresh(name, flags)
+    RR.persona_data_dir = lambda persona=None, _d=d: _d
+    SCH.persona_data_dir = lambda persona=None, _d=d: _d
+    return d
+
+
+def _age(days: int, *tids: str) -> None:
+    """Make tasks look `days` old and untouched since: created then, every history event then."""
+    then = (datetime.combine(TODAY, time(9, 0)) - timedelta(days=days)).isoformat(timespec="seconds")
+
+    def apply(doc):
+        for t in doc["tasks"]:
+            if t["id"] in tids:
+                t["created_at"] = then
+                t["start"] = then[:10]
+                for h in t.get("history") or []:
+                    h["at"] = then
+    O._with_store(None, apply)
+
+
+def _at(day: date, hh: int = 7) -> None:
+    _CLOCK["now"] = datetime.combine(day, time(hh, 0))
+
+
+def _bb(day: date | None = None) -> dict:
+    st = RK.load_state(_PERSONA)
+    return ((st.get("trace") or {}).get((day or TODAY).isoformat()) or {}).get("back_burner") or {}
+
+
+def _ids(rows) -> set:
+    return {r["task_id"] for r in rows or []}
+
+
+@check("phase 3, plan test 12: a 21-day silent trivia task is parked a week after the weekly "
+       "conversation says so (7 days' lead); a person-task, a dated cliff and a legal major never are; a fresh "
+       "mention reopens the parked one instead of filing it twice")
+def _():
+    d = _p3("bb12", _P3)
+    (d / "crm").mkdir(exist_ok=True)
+    (d / "crm" / "contacts.json").write_text(json.dumps([
+        {"id": "c1", "first_name": "Grace", "relationship_type": "friend"}]))
+    trivia = _id(O.open_task("Fix the wobbly shelf bracket", costs={"psychological": "minor"}, stakes="missable",
+                             costs_source="stated"))
+    person = _id(O.open_task("Return Grace's cake tin", costs={"social": "minor"}, stakes="missable",
+                             costs_source="stated"))
+    cliff = _id(O.open_task("Donate to the library appeal", costs={"psychological": "minor"}, stakes="missable",
+                            shape="cliff", real_due=_d(5), costs_source="stated"))
+    legal = _id(O.open_task("Renew the parking permit", costs={"legal": "major"},
+                            costs_source="stated"))
+    _age(30, trivia, person, cliff, legal)
+    RR.daily(_PERSONA, TODAY)
+    bb = _bb()
+    assert trivia in _ids(bb["would_archive"]) and not bb.get("park"), bb
+    assert {person: "person", legal: "obligation"} == {
+        r["task_id"]: r["why"] for r in bb["guarded"]}, bb["guarded"]
+    assert cliff not in _ids(bb["would_archive"]) | _ids(bb["guarded"]) | _ids(bb["would_notice"])
+    assert _task(trivia)["status"] == "open", "nothing is parked before it has been said"
+    # The weekly conversation carries the notice and the guarded lines; the reply says them.
+    block = RR.weekly_block(_PERSONA, "weekly_review", weekly=True)
+    assert RR._WEEKLY_MARKER in block and "shelf bracket" in block and "back burner next week" in block
+    assert block.index("cake tin") < block.index("shelf bracket"), "guarded first"
+    assert "parking permit" in block and "money or legal" in block
+    RR.note_said("The wobbly shelf bracket hasn't come up in a month — I'll park it next week "
+                 "unless you want it kept. And Grace's cake tin: keep, date it, or drop?")
+    # Six days on: not yet — the notice is said the week before.
+    _at(TODAY + timedelta(days=6))
+    RR.daily(_PERSONA, TODAY + timedelta(days=6))
+    assert _task(trivia)["status"] == "open"
+    _at(TODAY + timedelta(days=7))
+    RR.daily(_PERSONA, TODAY + timedelta(days=7))
+    t = _task(trivia)
+    assert t["status"] == "moot" and t["back_burner"]["silent_days"] >= 21, t
+    assert any(h.get("event") == "back_burner" for h in t["history"])
+    for tid in (person, cliff, legal):
+        assert _task(tid)["status"] == "open", tid
+    # Kept, and visible on request; a fresh mention revives it.
+    assert "parked" in O.list_tasks(include_closed=True) or "back burner" in O.list_tasks(
+        include_closed=True)
+    near = O.open_task("Fix the shelf bracket")
+    assert "looks like" in near and trivia in near and "update_task reopen" in near, near
+    out = O.open_task("Fix the wobbly shelf bracket")
+    assert "reopened from the back burner" in out and trivia in out, out
+    t = _task(trivia)
+    assert t["status"] == "open" and "back_burner" not in t
+    assert t["history"][-1]["event"] == "reopened"
+    assert sum(1 for x in O._load(None) if "shelf" in x["what"].lower()) == 1
+
+
+@check("phase 3: the dry run closes nothing and says nothing — the would-park list is in the "
+       "trace and the report; notices-only says it but still parks nothing")
+def _():
+    _p3("bb_dry", {**_P3, "back_burner": False})
+    trivia = _id(O.open_task("Sort the spare buttons tin", costs={"psychological": "minor"}, stakes="missable",
+                             costs_source="stated"))
+    _age(40, trivia)
+    RR.daily(_PERSONA, TODAY)
+    bb = _bb()
+    assert bb["mode"] == "dry run" and trivia in _ids(bb["would_archive"]), bb
+    assert "buttons" not in RR.weekly_block(_PERSONA, "weekly_review", weekly=True)
+    import scripts.ranking_report as REP
+    assert "Sort the spare buttons tin" in REP.back_burner(_PERSONA, TODAY)
+    # Notices only: said in the weekly conversation, still never parked.
+    C._OVERRIDE = {"flags": {**_FLAGS, **_P3, "back_burner_dry_run": True}}
+    assert "buttons" in RR.weekly_block(_PERSONA, "weekly_review", weekly=True)
+    RR.note_said("The spare buttons tin can go on the back burner next week.")
+    for n in (7, 10):
+        _at(TODAY + timedelta(days=n))
+        RR.daily(_PERSONA, TODAY + timedelta(days=n))
+    assert _task(trivia)["status"] == "open"
+    assert _bb(TODAY + timedelta(days=10))["mode"] == "notices only"
+
+
+@check("phase 3: what counts as a mention — the user's own words reset the clock; Metatron "
+       "naming the task in a reply does not")
+def _():
+    _p3("bb_mention", _P3)
+    a = _id(O.open_task("Descale the kettle", costs={"psychological": "minor"}, stakes="missable",
+                        costs_source="stated"))
+    b = _id(O.open_task("Label the freezer boxes", costs={"psychological": "minor"}, stakes="missable",
+                        costs_source="stated"))
+    _age(25, a, b)
+    O.note_raised("Shall we descale the kettle and label the freezer boxes today?")
+    assert O.note_mentioned("I'll descale the kettle tonight") == 1
+    RR.daily(_PERSONA, TODAY)
+    bb = _bb()
+    assert b in _ids(bb["would_archive"]), bb
+    assert a not in _ids(bb["would_archive"]) | _ids(bb["would_notice"]), bb
+    # An edit to the task is a mention too (code's own judging is not).
+    _at(TODAY + timedelta(days=1))
+    O.update_task(b, "note", note="the blue ones")
+    RR.daily(_PERSONA, TODAY + timedelta(days=1))
+    assert b not in _ids(_bb(TODAY + timedelta(days=1)).get("would_archive")), _bb(TODAY + timedelta(days=1))
+
+
+@check("phase 3: the weekly list reaches the weekly package — 'keep, reschedule or drop?' items, "
+       "through the orchestrator's horizon block on a weekly_review turn, and nowhere else")
+def _():
+    _p3("weekly_pkg", _P3)
+    tid = _id(O.open_task("Repaint the gate", due=_d(-4), costs={"psychological": "minor"}, stakes="missable",
+                          costs_source="stated"))
+    with D._locked(_PERSONA):
+        st = RK.load_state(_PERSONA)
+        RK.to_weekly(st, [tid], TODAY)
+        RK.save_state(st, _PERSONA)
+    import core.orchestrator as ORC
+    ORC.persona_data_dir = lambda persona=None, _d=_TMP / "weekly_pkg": _d
+    ORC.persona_config_dir = lambda persona=None, _d=_TMP / "weekly_pkg": _d / "config"
+    text = ORC._horizon_block(_PERSONA, session="weekly_review", user_turn=True)
+    assert RR._WEEKLY_MARKER in text and "Repaint the gate" in text
+    assert "keep, reschedule or drop?" in text
+    assert RR._WEEKLY_MARKER not in ORC._horizon_block(_PERSONA, session="morning_brief",
+                                                        user_turn=True)
+    RR.note_said("Repaint the gate — keep it, give it a Saturday, or drop it?")
+    assert (RK.load_state(_PERSONA)["weekly"][tid]).get("said") == TODAY.isoformat()
+    assert "Repaint the gate" not in RR.weekly_block(_PERSONA, "weekly_review", weekly=True)
+    C._OVERRIDE = {"flags": {**_FLAGS, **_P3, "weekly_priorities": False}}
+    assert RR.weekly_block(_PERSONA, "weekly_review", weekly=True) == ""
+
+
+@check("phase 3: a user with no weekly review is offered one once, on their own turn; write_schedule "
+       "makes it weekly at their day and time, and the turn it opens is the weekly review")
+def _():
+    d = _p3("weekly_offer", _P3)
+    import core.orchestrator as ORC
+    ORC.persona_data_dir = lambda persona=None, _d=d: _d
+    ORC.persona_config_dir = lambda persona=None, _d=d: _d / "config"
+    RR.persona_data_dir = lambda persona=None, _d=d: _d
+    import core.persona as CP
+    saved = CP.persona_config_dir
+    CP.persona_config_dir = lambda persona=None, _d=d: _d / "config"
+    try:
+        assert RR.weekly_block(_PERSONA, None, user_turn=False) == "", "never on a wake"
+        offer = RR.weekly_block(_PERSONA, None, user_turn=True)
+        assert "WEEKLY CONVERSATION" in offer and "write_schedule" in offer
+        RR.note_said("Would a short weekly look at what to keep or drop help? Pick a day and time.")
+        assert RR.weekly_block(_PERSONA, None, user_turn=True) == "", "offered once"
+        assert "day + time" in SCH.write_schedule("weekly_review", "x", interval_minutes=600,
+                                                  day="sunday", time="18:00")
+        assert "weekday" in SCH.write_schedule("weekly_review", "x", day="sun", time="18:00")
+        assert "needs day and time" in SCH.write_schedule("w", "x", interval_minutes=600,
+                                                          session="weekly_review")
+        prompt = "Time for our weekly look at the week together."
+        out = SCH.write_schedule("weekly_review", prompt, day="Sunday", time="18:30",
+                                 session="weekly_review", reason="their weekly conversation")
+        assert "every sunday at 18:30" in out and "task ledger" not in out, out
+        job = yaml.safe_load((d / "schedules.yaml").read_text())["weekly_review"]
+        assert (job["day"], job["time"], job["session"], job["one_off"]) == (
+            "sunday", "18:30", "weekly_review", False)
+        import core.scheduler as SD
+        assert SD.schedule_key_error(job) is None
+        assert ORC.session_kind(prompt, _PERSONA) == "weekly_review"
+        assert ORC.carries_weekly_review("weekly_review", _PERSONA)
+        assert RR.has_weekly_review(_PERSONA)
+        assert "every sunday at 18:30" in SCH.list_schedules()
+    finally:
+        CP.persona_config_dir = saved
+
+
+@check("phase 3: signal rows are appended once a day and never rewritten; record_signal keeps the "
+       "user's words on their own turn only")
+def _():
+    d = _p3("signals", _P3)
+    t = _id(O.open_task("Pay the council tax", due=_d(-3), costs={"financial": "major"},
+                        costs_source="stated"))
+    _age(10, t)
+    RR.daily(_PERSONA, TODAY)
+    path = d / "ranking_signals.jsonl"
+    first = path.read_text()
+    rows = [json.loads(x) for x in first.splitlines()]
+    kinds = {r["kind"] for r in rows}
+    assert kinds == {"completion", "momentum", "missed_obligations", "intrusions", "questions",
+                     "overrides"}, kinds
+    assert all(r["day"] == (TODAY - timedelta(days=1)).isoformat() for r in rows)
+    missed = next(r for r in rows if r["kind"] == "missed_obligations")
+    assert missed["n"] == 1 and missed["task_ids"] == [t]
+    assert oct(path.stat().st_mode & 0o777) == "0o600"
+    RR.daily(_PERSONA, TODAY)
+    assert path.read_text() == first, "the same day is never written twice"
+    with turn_scope(user_turn=False):
+        assert RR.record_signal("regret", "I wish I'd rung my brother").startswith("error")
+    assert RR.record_signal("regret", "I wish I'd rung my brother").startswith("error"), \
+        "no turn bound: refused"
+    with turn_scope(user_turn=True):
+        assert RR.record_signal("mood", "fine").startswith("error")
+        assert RR.record_signal("regret", "I wish I'd rung my brother", asked=True).startswith(
+            "recorded")
+    _at(TODAY + timedelta(days=1))
+    RR.daily(_PERSONA, TODAY + timedelta(days=1))
+    now = path.read_text()
+    assert now.startswith(first) and len(now.splitlines()) == len(rows) + 1 + 6, \
+        "appended, never rewritten"
+    said = [json.loads(x) for x in now.splitlines() if '"source": "user"' in x]
+    assert said and said[0]["text"] == "I wish I'd rung my brother" and said[0]["asked"] is True
+    import scripts.ranking_report as REP
+    rep = REP.signals(_PERSONA, TODAY.strftime("%Y-%m"))
+    assert "I wish I'd rung my brother" in rep or (TODAY - timedelta(days=1)).month != TODAY.month
+    C._OVERRIDE = {"flags": {**_FLAGS, **_P3, "ranking_signals": False}}
+    with turn_scope(user_turn=True):
+        assert RR.record_signal("regret", "x").startswith("not recorded")
+
+
+@check("schemas (phase 3): record_signal is classified as an action, registered and granted to the "
+       "Synthesizer in both routing files; every phase 3 flag ships off, the dry run on")
+def _():
+    from core import actions
+    assert "record_signal" in actions.ACTION_TOOLS
+    raw = yaml.safe_load((ROOT / "config" / "modules" / "day_plan.yaml").read_text())
+    f = raw["flags"]
+    assert (f["back_burner"], f["back_burner_dry_run"], f["weekly_priorities"],
+            f["ranking_signals"]) == (False, True, False, False)
+    for name in ("routing_cloud.yaml", "routing.yaml"):
+        r = yaml.safe_load((ROOT / "config" / "modules" / name).read_text())
+        syn = next(v for k, v in (r.get("agents") or r).items() if k == "synthesizer")
+        assert "record_signal" in syn["allowed_tools"], name
+    assert RR.RECORD_SIGNAL_SCHEMA["input_schema"]["required"] == ["kind", "text"]
+
+
+@check("review (phase 3) #1/#2: a 'keep' answer, or the user naming the task the same day as the "
+       "notice, stops it being parked — and it is said again before any later parking")
+def _():
+    _p3("bb_keep", _P3)
+    a = _id(O.open_task("Oil the squeaky hinge", costs={"psychological": "minor"},
+                        stakes="missable", costs_source="stated"))
+    b = _id(O.open_task("Recycle the old phone chargers", costs={"psychological": "minor"},
+                        stakes="missable", costs_source="stated"))
+    _age(30, a, b)
+    RR.daily(_PERSONA, TODAY)
+    RR.weekly_block(_PERSONA, "weekly_review", weekly=True)
+    RR.note_said("Oil the squeaky hinge and recycle the old phone chargers: both go on the back "
+                 "burner next week unless you want one kept.")
+    seen = RK.load_state(_PERSONA)["back_burner"]["seen"]
+    assert seen[a]["noticed"] == seen[b]["noticed"] == TODAY.isoformat()
+    # "No, keep that one" — recorded as a keep; and the other named by the user the same day.
+    assert "kept as it is" in O.update_task(a, "keep", evidence="no, keep that one")
+    O.note_mentioned("I'll recycle the old phone chargers this weekend")
+    for n in (7, 21):
+        _at(TODAY + timedelta(days=n))
+        RR.daily(_PERSONA, TODAY + timedelta(days=n))
+    assert _task(a)["status"] == "open" and _task(b)["status"] == "open"
+    # At day 21 both are due a FRESH notice — back in the weekly block, never parked unannounced.
+    block = RR.weekly_block(_PERSONA, "weekly_review", weekly=True)
+    assert "squeaky hinge" in block and "phone chargers" in block, block
+
+
+@check("review (phase 3) #3: unrelated words in a long weekly reply do not count as the notice; "
+       "the notice needs the task named and a parking word in one sentence")
+def _():
+    _p3("bb_words", _P3)
+    t = _id(O.open_task("Renew the library card", costs={"psychological": "minor"},
+                        stakes="missable", costs_source="stated"))
+    _age(30, t)
+    RR.daily(_PERSONA, TODAY)
+    RR.weekly_block(_PERSONA, "weekly_review", weekly=True)
+    RR.note_said("Thursday the library books are due back, and Saturday is the party — you "
+                 "still need a card. Renew the library card is on file.")
+    assert "noticed" not in RK.load_state(_PERSONA)["back_burner"]["seen"][t]
+    RR.note_said("Renewing the library card can go on the back burner next week, unless you "
+                 "want it kept.")
+    assert RK.load_state(_PERSONA)["back_burner"]["seen"][t]["noticed"] == TODAY.isoformat()
+
+
+@check("review (phase 3) #4/#5: only the same commitment is revived — a resemblance is put back "
+       "to the model; a parked task reopened another way no longer reads as parked")
+def _():
+    _p3("bb_revive", _P3)
+    old = _id(O.open_task("Buy a birthday card for the office", costs={"social": "minor"},
+                          stakes="missable", costs_source="stated"))
+    _age(30, old)
+    RR._park(_PERSONA, [(old, 30)], TODAY)
+    assert O._is_parked(_task(old))
+    out = O.open_task("Buy a birthday card for Mum", due=_d(4))
+    assert "looks like" in out and "new_instance=true" in out and "Nothing was written" in out
+    new = _id(O.open_task("Buy a birthday card for Mum", due=_d(4), new_instance=True))
+    assert new != old and _task(old)["status"] == "moot"
+    # Reopened by update_task (not by a mention): never "parked" again in what Metatron says.
+    O.update_task(old, "reopen", evidence="actually I still need that")
+    t = _task(old)
+    assert t["status"] == "open" and not O._is_parked(t)
+    m = RR.weekly_material(_PERSONA, TODAY, RK.load_state(_PERSONA))
+    assert not any("parked" in x for x in m["moved"]), m["moved"]
+    # The user's own reschedule is not "what Metatron moved".
+    O.update_task(new, "reschedule", new_due=_d(6), evidence="I'll get it Saturday instead")
+    m = RR.weekly_material(_PERSONA, TODAY, RK.load_state(_PERSONA))
+    assert not any("Saturday instead" in x for x in m["moved"]), m["moved"]
+
+
+@check("review (phase 3) #7/#10: at most two questions a week, the rest a count by kind; in "
+       "notices-only mode nothing is announced as being parked")
+def _():
+    _p3("bb_cap", _P3)
+    ids = [_id(O.open_task(w, costs={"psychological": "major"}, costs_source="stated"))
+           for w in ("Learn to juggle", "Frame the holiday photos", "Restring the guitar",
+                     "Plant tulip bulbs")]
+    small = _id(O.open_task("Tidy the cable box", costs={"psychological": "minor"},
+                            stakes="missable", costs_source="stated"))
+    _age(30, *ids, small)
+    RR.daily(_PERSONA, TODAY)
+    block = RR.weekly_block(_PERSONA, "weekly_review", weekly=True)
+    assert block.count("keep it, give it a date, or drop it?") == 2, block
+    assert "2 more to ask about another week" in block and "cable box" in block
+    assert "back burner next week" in block
+    C._OVERRIDE = {"flags": {**_FLAGS, **_P3, "back_burner_dry_run": True}}
+    with D._locked(_PERSONA):
+        st = RK.load_state(_PERSONA)
+        st["weekly_offered"] = []
+        RK.save_state(st, _PERSONA)
+    block = RR.weekly_block(_PERSONA, "weekly_review", weekly=True)
+    assert "cable box" in block and "next week" not in block.split("cable box")[1].split(";")[0]
+
+
+@check("review (phase 3) #8/#9: 'next week' in a reply does not spend the offer, the offer shows "
+       "at most once a day; a weekly time inside quiet hours is refused")
+def _():
+    d = _p3("offer2", _P3)
+    import core.persona as CP
+    import core.scheduler as SD
+    saved, saved_cfg = CP.persona_config_dir, SD._load_config
+    CP.persona_config_dir = lambda persona=None, _d=d: _d / "config"
+    SD._load_config = lambda persona=None: {"quiet_hours": {"start": "22:00", "end": "07:00"}}
+    try:
+        assert "WEEKLY CONVERSATION" in RR.weekly_block(_PERSONA, None, user_turn=True)
+        RR.note_said("You've got the dentist next week, nothing else pressing.")
+        assert not RK.load_state(_PERSONA)["weekly_offer"].get("said")
+        assert RR.weekly_block(_PERSONA, None, user_turn=True) == "", "once a day"
+        _at(TODAY + timedelta(days=1))
+        assert "WEEKLY CONVERSATION" in RR.weekly_block(_PERSONA, None, user_turn=True)
+        out = SCH.write_schedule("weekly_review", "Time for our weekly look at the week together.",
+                                 day="sunday", time="22:30", session="weekly_review")
+        assert out.startswith("Error") and "quiet hours" in out, out
+        assert not (d / "schedules.yaml").exists()
+    finally:
+        CP.persona_config_dir, SD._load_config = saved, saved_cfg
+
+
+@check("review (phase 3) #11: a re-judge does not start the clock again; signals catch up a "
+       "missed day; a scheduled turn's text never counts as the user's mention")
+def _():
+    d = _p3("bb_misc", _P3)
+    t = _id(O.open_task("Wax the old skis", costs={"psychological": "minor"}, stakes="missable",
+                        costs_source="inferred"))
+    _age(30, t)
+    RR.daily(_PERSONA, TODAY)
+    assert t in _ids(_bb()["would_archive"])
+
+    def judge(doc):
+        for x in doc["tasks"]:
+            if x["id"] == t:
+                x["costs"] = {"psychological": "minor", "social": "minor"}
+                x["stakes"] = "missable"
+                x.setdefault("history", []).append({"event": "costs_recorded",
+                                                    "at": O._stamp(), "by": "task_judge"})
+    O._with_store(None, judge)
+    _at(TODAY + timedelta(days=1))
+    RR.daily(_PERSONA, TODAY + timedelta(days=1))
+    assert t in _ids(_bb(TODAY + timedelta(days=1))["would_archive"])
+    # Signals: a day skipped is written on the next run, once.
+    _at(TODAY + timedelta(days=3))
+    RR.daily(_PERSONA, TODAY + timedelta(days=3))
+    days = sorted({json.loads(x)["day"] for x in (d / "ranking_signals.jsonl").read_text().splitlines()})
+    assert days == [(TODAY + timedelta(days=n)).isoformat() for n in (-1, 0, 1, 2)], days
+    # The turn close: a scheduled turn's prompt is not the user's word.
+    import core.orchestrator as ORC
+    before = _task(t).get("mentioned")
+    ORC._close_turn_bookkeeping("Morning.", "Wax the old skis — check on it", True, None)
+    assert _task(t).get("mentioned") == before
+    ORC._close_turn_bookkeeping("Sure.", "I'll wax the old skis on Friday", False, None)
+    assert _task(t).get("mentioned") == (TODAY + timedelta(days=3)).isoformat()
 
 
 if __name__ == "__main__":

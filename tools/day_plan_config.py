@@ -37,6 +37,9 @@ _DEFAULTS: dict = {
         "task_judge": False,
         "cost_record": False, "ranking_v2": False,
         "protected_v2": False, "behind_v2": False,
+        # Phase 3. A missing or broken file means the dry run: nothing parked, nothing noticed.
+        "back_burner": False, "back_burner_dry_run": True, "weekly_priorities": False,
+        "ranking_signals": False,
     },
     "replaces_jobs": ["companion_checkin"],
     "score": {

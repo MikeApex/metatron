@@ -1369,6 +1369,53 @@ def _recent_close_match(tasks: list[dict], what: str, today: date) -> dict | Non
     return None
 
 
+def _is_parked(t: dict) -> bool:
+    """Parked by the back burner and still parked: moot, closed the day it was parked. A parked
+    task reopened by any path (reopen, reschedule, done after all) and later closed another way
+    keeps a stale `back_burner` marker; the closing day tells them apart (Fable diff review #5)."""
+    bb = t.get("back_burner") or {}
+    return (t.get("status") == "moot" and bool(bb.get("at"))
+            and str(t.get("closed_at") or "")[:10] == str(bb.get("at")))
+
+
+def _parked_match(tasks: list[dict], what: str, kind: str) -> tuple[dict | None, dict | None]:
+    """(the parked task `what` is the same commitment as, a parked task it only resembles). A
+    one-off only. The same commitment is revived (B26); a resemblance — two words shared — is put
+    back to the model to decide, never revived on its own (Fable diff review #4: "a birthday card
+    for Mum" must not bring back last year's card for the office)."""
+    if kind not in _ONE_OFF:
+        return None, None
+    new = _task_tokens(what)
+    near = None
+    for t in tasks:
+        if not _is_parked(t) or _is_step(t) or t.get("kind") not in _ONE_OFF:
+            continue
+        if _same_commitment(t.get("what", ""), what):
+            return t, None
+        if near is None and _tokens_match(new, _task_tokens(t["what"])):
+            near = t
+    return None, near
+
+
+def _revive(t: dict, due: str | None, note: str | None, today: date) -> str:
+    """Reopen a parked task on a fresh mention: open again, its history kept and the parking
+    recorded in it, mentioned today (so its 21 days start over)."""
+    was = t.pop("back_burner", None) or {}
+    t["status"] = "open"
+    t.pop("closed_at", None)
+    t.pop("evidence", None)
+    t["mentioned"] = today.isoformat()
+    if due and _d(due):
+        t["due"] = _d(due).isoformat()
+    if note:
+        t["note"] = str(note).strip()
+    t.setdefault("history", []).append({"event": "reopened", "at": _stamp(), "was": "moot",
+                                        "reason": "mentioned again (back burner)",
+                                        "parked_on": was.get("at")})
+    return (f"task {t['id']} reopened from the back burner (parked {was.get('at') or '?'}): "
+            f"{_summarise(t)}. Not filed twice — update_task on {t['id']} for anything else.")
+
+
 def _source_duplicate(tasks: list[dict], source_id: str, today: date) -> dict | None:
     for t in tasks:
         if not source_id or t.get("source_id") != source_id:
@@ -1911,6 +1958,18 @@ def open_task(what: str, kind: str = "deadline", due: str | None = None,
                         f"Nothing was written. If the user is correcting or adding to that "
                         f"task, use update_task on {near['id']}; if this is genuinely a "
                         f"separate task, call again with new_instance=true.")
+        if not new_instance and not source_id:
+            # A task parked on the back burner (ranking plan § 4.11, B26) is revived by a fresh
+            # mention — reopened, its row and history kept — never filed a second time.
+            parked, like = _parked_match(tasks, what, kind)
+            if parked:
+                return _revive(parked, dates.get("due"), note, today)
+            if like:
+                return (f"this looks like {like['id']} ({_summarise(like)}), parked on the back "
+                        f"burner {(like.get('back_burner') or {}).get('at')}. Nothing was "
+                        f"written. If the user means that one, update_task reopen on "
+                        f"{like['id']}; if this is genuinely a separate task, call again with "
+                        f"new_instance=true.")
         if kind in _ONE_OFF and not new_instance:
             prior = _recent_close_match(tasks, what, today)
             if prior:
@@ -2115,6 +2174,37 @@ def _ledger_fields() -> bool:
         return flag("ledger_fields")
     except Exception:  # noqa: BLE001
         return False
+
+
+def _back_burner() -> bool:
+    """Ranking Part B phase 3: `keep` is offered while the back burner can say "park it"."""
+    try:
+        from tools.day_plan_config import flag
+        return flag("back_burner")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _keep(task_id: str, evidence: str | None) -> str:
+    """update_task(action="keep"): the user wants a task kept as it is — the answer to "shall it
+    go on the back burner?" (ranking plan § 4.11). Recorded as a mention, so its 21 days start
+    over, and the notice already said no longer counts (Fable diff review #1)."""
+    ev = (evidence or "").strip()
+    if not ev:
+        return "error: keep needs evidence — the user's words. Nothing was written."
+    tid = _split_id(task_id)
+
+    def apply(doc: dict) -> str:
+        t = _find(doc["tasks"], tid)
+        if t is None:
+            return f"error: no task with id {task_id!r}"
+        if (t.get("status") or "open") != "open":
+            return f"{tid} is not open — reopen it instead if the user wants it back"
+        t["mentioned"] = _today().isoformat()
+        t.setdefault("history", []).append({"event": "kept", "at": _stamp(),
+                                            "evidence": ev[:200]})
+        return f"{tid} kept as it is: {_summarise(t)}"
+    return _with_store(None, apply)
 
 
 def _cost_record() -> bool:
@@ -2584,12 +2674,15 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
     actions = ("done", "done_with_followup", "skipped", "dismissed", "reopen", "reschedule",
                "note", "set_minutes", "set_medication") + (
                _PLAN_ACTIONS if _ledger_fields() else ()) + (
-               ("set_costs",) if _cost_record() else ())
+               ("set_costs",) if _cost_record() else ()) + (
+               ("keep",) if _back_burner() else ())
     if action not in actions:
         return f"error: `action` must be one of {', '.join(actions)}, not {action!r}"
     if action == "set_costs":
         return _set_costs(task_id, costs=costs, bears=bears, shape=shape, real_due=real_due,
                           costs_source=costs_source, costs_why=costs_why, passion=passion)
+    if action == "keep":
+        return _keep(task_id, evidence)
     if action == "set_medication":
         return _set_medication(task_id, medication, done_words, evidence)
     if action == "done_with_followup":
@@ -2997,6 +3090,10 @@ def _recently_closed(tasks: list[dict], today: date) -> list[str]:
         elif status == "moot" and any(h.get("event") == "closed_by_prerequisite"
                                       for h in t.get("history") or []):
             tail = "stopped — an earlier step it needs was dropped"
+        elif _is_parked(t):
+            tail = (f"parked {(t.get('back_burner') or {}).get('at') or ''} — nobody mentioned it "
+                    f"for {(t.get('back_burner') or {}).get('silent_days')} days; mentioning it "
+                    f"again (open_task) brings it back")
         elif status == "moot":
             tail = "no longer relevant — its date passed"
         else:
@@ -3425,6 +3522,40 @@ def completion_hints(user_text: str, prev_assistant: str | None = None,
                          f"raised. If so, record it with update_task(action=\"done\") and their "
                          f"words; if it is unclear, ask once.")
     return "\n".join(lines)
+
+
+def note_mentioned(user_text: str, persona: str | None = None, as_of: date | None = None) -> int:
+    """Stamp `mentioned` (a day) on each open task the USER's own words name — what the back
+    burner reads as a mention (ranking plan § 4.11; tools/ranking_review.py). User turns only:
+    Metatron raising a task the user lets pass is not interest in it. Words, never ids. Best
+    effort; returns how many were stamped."""
+    text = (user_text or "").strip()
+    if not text:
+        return 0
+    utoks = _task_tokens(text)
+    if not utoks:
+        return 0
+    today = (as_of or _today()).isoformat()
+    stamped = {"n": 0}
+
+    def apply(doc: dict) -> int:
+        for t in doc["tasks"]:
+            if (t.get("status") or "open") != "open" or t.get("mentioned") == today:
+                continue
+            if _tokens_match(utoks, _task_tokens(t.get("what", "")), single_ok=True):
+                t["mentioned"] = today
+                stamped["n"] += 1
+        return stamped["n"]
+
+    try:
+        with _store_lock(persona):
+            doc = _load_doc(persona)
+            apply(doc)
+            if stamped["n"] or doc.get("_dirty"):
+                _save_doc(doc, persona)
+    except Exception as exc:  # noqa: BLE001 — bookkeeping never breaks a delivered reply
+        logger.warning("[tasks] mention stamp not recorded: %s", exc)
+    return stamped["n"]
 
 
 def note_raised(reply_text: str, persona: str | None = None, as_of: date | None = None) -> int:
@@ -4138,7 +4269,8 @@ def consult_index(persona: str | None = None, as_of: date | None = None) -> list
             closed = _stamp_day(t.get("closed_at"))
             if not closed or (today - closed).days > _CONSULT_WINDOW_DAYS:
                 continue
-            phrase = ("no longer relevant" if status == "moot"
+            phrase = ("parked on the back burner" if _is_parked(t)
+                      else "no longer relevant" if status == "moot"
                       else f"{status} {closed.isoformat()}")
         elif status == "open" and t.get("_blocked"):
             # A hidden step is not something a copy elsewhere can be about (R7): matching one
@@ -5537,6 +5669,12 @@ def task_schemas() -> tuple[dict, dict, dict]:
             "real_due, costs_why, costs_source); the fields given replace those on file.")
         upd["input_schema"]["properties"]["action"]["enum"] = (
             list(upd["input_schema"]["properties"]["action"]["enum"]) + ["set_costs"])
+    if _back_burner():
+        upd["description"] += (
+            " keep — the user wants the task kept as it is (their answer to whether it can go "
+            "on the back burner); evidence their words.")
+        upd["input_schema"]["properties"]["action"]["enum"] = (
+            list(upd["input_schema"]["properties"]["action"]["enum"]) + ["keep"])
     return open_s, upd, LIST_TASKS_SCHEMA
 
 

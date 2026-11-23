@@ -4277,6 +4277,15 @@ def refresh_tick() -> str:
                 notes.append(f"{n} vetted goal(s) queued for a plan")
         except Exception as exc:  # noqa: BLE001
             notes.append(f"plan sweep failed: {type(exc).__name__}")
+        # Ranking Part B phase 3 (plan §§ 4.11, 4.13): the back burner's daily reading — traced
+        # always, parked only when live — and yesterday's signal rows. Code only.
+        try:
+            from tools.ranking_review import daily as _review_daily
+            note = _review_daily(persona, today)
+            if note:
+                notes.append(note)
+        except Exception as exc:  # noqa: BLE001 — never costs the day its plan
+            notes.append(f"ranking review failed: {type(exc).__name__}")
     # Before `current()`, so a prep opened now is placed in this same tick (synth plan § 9).
     try:
         note = _prep_sweep(persona, _load_state(persona))
