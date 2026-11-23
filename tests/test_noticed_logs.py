@@ -473,6 +473,20 @@ def _():
             DO._caller = real
 
 
+@check("17k. the writer switch: YAML's bare on (True) is on, off (False) is off — never silently off")
+def _():
+    import tools.data_objects as DO
+    import tools.noticed_logs as NL
+    for raw, want in ((True, "derived_written"), ("on", "derived_written"), (False, "derived_off"),
+                      ("shadow", "derived_shadow")):
+        with _sandbox(cfg={"derived_entries": raw}) as (user, _s):
+            DO.create_object("Migraines", identity="occurrence")
+            c = {"kind": "entry", "target": "migraines", "disposition": "save",
+                 "proposal": {"text": "a migraine"}, "say": "m", "quote": "m"}
+            got = NL.derived(P, "r", c, [], frozenset())
+            assert got == want, (raw, got)
+
+
 @check("17d. a new entry in a dev-backlog list also files a FEATURE_REQUEST; a merge does not")
 def _():
     import tools.data_objects as DO

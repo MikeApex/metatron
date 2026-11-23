@@ -886,7 +886,7 @@ def derived(persona: str, rid: str, c: dict, writes: list, touched, user_text: s
     `said` is when the user said it — now, on the live path; a backfill passes the turn's time."""
     try:
         cfg = _cfg()
-        mode = str(cfg.get("derived_entries", "shadow")).lower()
+        mode = _cap()._derived_mode()               # one reading of the switch, bool-safe
         if not cfg.get("enabled") or mode not in ("shadow", "on"):
             return "derived_off"
         from tools import data_objects as DO
@@ -968,7 +968,7 @@ def report_lines(persona: str) -> list[str]:
     path = _derived_path(persona)
     recs = [ln for ln in path.read_text().splitlines() if ln.strip()] if path.exists() else []
     lines.append(f"  derived entries: {len(recs)} proposals recorded "
-                 f"({_cfg().get('derived_entries', 'shadow')})")
+                 f"({_cap()._derived_mode()})")
     return lines
 
 

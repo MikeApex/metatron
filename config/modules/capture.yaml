@@ -73,7 +73,7 @@ noticed_card_ttl_hours: 2
 # M4: 80% on the 30 shadow proposals as first labelled; every miss was fixed in code (meal times,
 # Gift ideas, test messages, someone else's meal), and the writer as built scored 28/28 on his
 # labels — archive/plans/data_objects_phase2_build_plan_2026-11-22.md § 11.
-derived_entries: on
+derived_entries: "on"     # quoted: bare on is YAML for true
 
 # Fixed minimums (Mike, 2026-11-18). Precision, recall and matcher accuracy gate `enabled`.
 minimums:

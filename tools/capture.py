@@ -442,7 +442,11 @@ def catalogue(kinds: tuple[str, ...]) -> str:
 
 
 def _derived_mode() -> str:
-    m = str(config().get("derived_entries", "shadow")).strip().lower()
+    """shadow | on | off. YAML reads a bare `on` as True and `off` as False — both mean what
+    they say here, so a quoting slip cannot silently switch the writer off (2026-11-23)."""
+    raw = config().get("derived_entries", "shadow")
+    m = {True: "on", False: "off"}.get(raw, str(raw).strip().lower()) if isinstance(raw, bool) \
+        else str(raw).strip().lower()
     return m if m in ("shadow", "on") else "off"
 
 
