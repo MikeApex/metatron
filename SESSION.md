@@ -1,6 +1,6 @@
 # Session Primer — Personal AI Life Manager
 
-*Updated: 2026-11-22 (log § 11-22 first, goal network phase 2 + ranking Part A; § 11-22 second, the user's own logs phase 1). **VM at `5793187` (Mike, 11-22).** **Capture fidelity SWITCHED ON in `f878ead` — DEPLOYED 11-21 with `52a1c8b`: ordinary turns in shadow, first interviews show the note; precision 87% vs a 90% floor, accepted by Mike (plan § 10). After deploy and a day of use, VM: `cd ~/multi-model-mcp && .venv/bin/python -m tools.capture --report --persona mike` — pass: "extractor ran on N of N", `held_out_*` only; Iva's first interview, same with her persona. Before the Synthesizer goes `on`: an "already held" check for the new kinds. Before Iva signs up: the backlog sync fetches mike's quality events only. **The user's own logs — phase 1 LIVE 11-22** (`custom_logs_and_places_plan_2026-11-21.md`; log § 11-22 second): "start a log of …", add, read back, change one (old value kept), archive; `read_data_object` is the one read door (`read_archive` gone); corrections are the Synthesizer's alone (the Diarist lost `amend_data_object`, and code refuses it unasked log writes); every record writer stores what "last year"/"here" meant (`tools/record_rules.py`); a log entry placed only "here" gets one "where?". mike seeded; four TEST logs archived. **Next: phase 2** (noticed logs, of 5) — `archive/handoffs/2026-11-22-data-objects-phase-2-build-prompt.md` (Opus, high). Places key checked 11-21: set, in the live server, a real lookup returned OK. The 08-28 location ruling is amended (plan R24, R33). **Goal–task network phases 1–2 and ranking Part A are LIVE** (plan §§ 14–16; log § 11-22 first): a goal stated in chat is checked in one question and planned out of sight (the taxes: 9 steps, sign-in done); every task is weighed — by its opener, else `task_judge` (16 judged on deploy) — unjudged past 60 min reads vital; plan steps are never missable; deadlines climb (`ramp_days` 14). Live checks 1–4 passed 11-22. **Deployed 11-22 with the logs follow-ups:** `e6a661c` (a waiting step no longer blocks "I did X"), `deed121` (a goal link takes the goal's priority), `d1aaa01` (Drop on a step others wait on names what it stops and asks "Drop anyway" — the "on purpose?" check, after three live turns showed Synth never asks it afterwards); Update… and Drop anyway reach the phone on the next APK rebuild. **Owed by 11-24:** see Drop anyway once in the browser; note whether tomorrow's brief asks the blue-box test question; then remove the test tasks (backlog). Revert: flags `project_planner`/`task_judge`/`prep_tasks`/`horizon_cap` off, `ramp_days: 0`. **Next: Ranking Part B** — interview Mike, then plan: `archive/handoffs/2026-11-22-ranking-part-b-interview-prompt.md` (Opus, high). Rulings 6–8 (probe a task's shape at mention; urgency and importance as two axes) wait for its phase 1; no back-burner review exists yet. **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
+*Updated: 2026-11-22 (log § 11-22 first, goal network phase 2 + ranking Part A; § 11-22 second, the user's own logs phase 1). **VM at `5793187` (Mike, 11-22).** **Capture fidelity SWITCHED ON in `f878ead` — DEPLOYED 11-21 with `52a1c8b`: ordinary turns in shadow, first interviews show the note; precision 87% vs a 90% floor, accepted by Mike (plan § 10). After deploy and a day of use, VM: `cd ~/multi-model-mcp && .venv/bin/python -m tools.capture --report --persona mike` — pass: "extractor ran on N of N", `held_out_*` only; Iva's first interview, same with her persona. Before the Synthesizer goes `on`: an "already held" check for the new kinds. Before Iva signs up: the backlog sync fetches mike's quality events only. **The user's own logs — phase 1 LIVE 11-22** (`custom_logs_and_places_plan_2026-11-21.md`; log § 11-22 second): "start a log of …", add, read back, change one (old value kept), archive; `read_data_object` is the one read door (`read_archive` gone); corrections are the Synthesizer's alone (the Diarist lost `amend_data_object`, and code refuses it unasked log writes); every record writer stores what "last year"/"here" meant (`tools/record_rules.py`); a log entry placed only "here" gets one "where?". mike seeded; four TEST logs archived. **Next: phase 2** (noticed logs, of 5) — `archive/handoffs/2026-11-22-data-objects-phase-2-build-prompt.md` (Opus, high). Places key checked 11-21: set, in the live server, a real lookup returned OK. The 08-28 location ruling is amended (plan R24, R33). **Goal–task network phases 1–2 and ranking Part A are LIVE** (plan §§ 14–16; log § 11-22 first): a goal stated in chat is checked in one question and planned out of sight (the taxes: 9 steps, sign-in done); every task is weighed — by its opener, else `task_judge` (16 judged on deploy) — unjudged past 60 min reads vital; plan steps are never missable; deadlines climb (`ramp_days` 14). Live checks 1–4 passed 11-22. **Deployed 11-22 with the logs follow-ups:** `e6a661c` (a waiting step no longer blocks "I did X"), `deed121` (a goal link takes the goal's priority), `d1aaa01` (Drop on a step others wait on names what it stops and asks "Drop anyway" — the "on purpose?" check, after three live turns showed Synth never asks it afterwards); Update… and Drop anyway are on Mike's phone since 11-23 (the waprobe build bundles the current page). **Owed by 11-24:** see Drop anyway once in the browser; note whether tomorrow's brief asks the blue-box test question; then remove the test tasks (backlog). Revert: flags `project_planner`/`task_judge`/`prep_tasks`/`horizon_cap` off, `ramp_days: 0`. **Next: Ranking Part B** — interview Mike, then plan: `archive/handoffs/2026-11-22-ranking-part-b-interview-prompt.md` (Opus, high). Rulings 6–8 (probe a task's shape at mention; urgency and importance as two axes) wait for its phase 1; no back-burner review exists yet. **The 11-05 review's High and Medium findings are fixed and DEPLOYED** (VM at
 `968a8a0`; plan with Mike's Phase 1 calls at its end: `archive/plans/codebase_review_fixes_plan_2026-11-11.md`;
 log § 11-11). 5 of 7 Highs closed. **Held by Mike, recorded only in that plan:** #5 (a nudge due near
 a fixed session is dropped — **fixed in `98f158f` + travel nudges in `52a1c8b`, live**), #9 (Build cannot land — fix before the next `/build` run), #10, #33.
@@ -14,7 +14,7 @@ on the VM 11-18 (ids + Bulgarian/taxes/Prudential). **Still next, unchanged:** I
 first); M3 restarts on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
 reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
-**WhatsApp:** serve the increment-contents probe APK, Mike taps 5, then the reader extension (§ Current state);
+**WhatsApp:** the reader extension (P3), `archive/handoffs/2026-11-23-whatsapp-reader-extension-p3-prompt.md` (§ Current state);
 day-planner live checks `[DB-1029-01]` (due 10-31; the check script is already on the VM — no deploy needed); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
 boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
@@ -108,21 +108,21 @@ check-ins exactly. **R2 amended 2026-10-30:** Synth sees now/next/free/Important
 day (`547c446`). Reshuffle thinking is 0. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md)
 (§ 18 round 2); Stage B: `archive/PROJECT_LOG.md` § 2026-10-27; Stage C and step 2: § 2026-10-29.
 
-**WHATSAPP INPUT — Phase 0 nearly closed; the code is UNCOMMITTED for Mike's review.** The
-clean-room reader (`android/…/metatron/whatsapp/`, 19 tests) decrypts Mike's real backup on the
-phone. Survival PASSED, LM ruled no local model, increments ruled read them clean-room (log §§
-11-22 third/fourth, 11-23 first; plan § 4). Full backups every 6 days; nightly increments are
-undated and their payload is refused `not_a_message_database`. **The increment-contents probe is
-BUILT 11-23** (log § 11-23 second): button 5 names the refusal branch and lists what is inside;
-`src/main/` untouched. **APK** `android/app/build/outputs/apk/waprobe/app-waprobe.apk`, sha256
-`e204b170582780d7…` — **not yet installed**. **Mike's phone runs the throwaway `waprobe` build**
-(`assembleDebug`/Iva's APK carries none of it). The write-time briefing skips reference-reading
-fragments — **never put that phrase in a non-reference fragment's first heading** (fails closed).
-`/private/tmp` reference copy left to the next restart; rule 4 still binds.
-**Next:** `archive/handoffs/2026-11-23-whatsapp-increment-contents-walkthrough-prompt.md` (Opus,
-clean-room, ~20 min of Mike): serve that APK, Mike taps 5, read the shapes; Mike reviews and
-commits the WhatsApp code (agreed 11-23) →
-the reader extension (P3) (narrowed 0a′ only if unrecognisable) → Phase 1
+**WHATSAPP INPUT — Phase 0 closed; the code is COMMITTED (`8af5ab6`, Mike-reviewed 11-23).** The
+clean-room reader (`android/…/metatron/whatsapp/`, 19 tests) decrypts Mike's real full backup on
+the phone. Survival PASSED, no local model, increments read clean-room (plan § 4). **Increments are
+readable without a reference — no 0a′** (log § 11-23 third; plan § 4 "Found 11-23, second
+round"): a ZIP of per-table JSON row deltas in the full backup's id space plus one generic
+wire-format `messages.bin` (79/79 key_ids match the full backup; sender and text candidates
+located); they carry changed messages, so they apply in N order keyed by `key_id`. The field map
+is inferred from shapes — P3 confirms it by counts first. **Uncommitted: the probe round**
+(`src/waprobe/` `ProbeShapes` + tests, 50 pass; throwaway). **Mike's phone runs the `waprobe`
+build** (`assembleDebug`/Iva's APK carries none of it); **`npx cap sync` before
+`assembleWaprobe`** — `check_apk_sync.sh` checks only the debug APK. The write-time briefing skips
+reference-reading fragments — **never put that phrase in a non-reference fragment's first
+heading** (fails closed). `/private/tmp` reference copy left to the next restart; rule 4 binds.
+**Next:** `archive/handoffs/2026-11-23-whatsapp-reader-extension-p3-prompt.md` (Opus 5.5,
+clean-room, ~0.5–1M, Mike ~15 min) → Phase 1
 ([plan](archive/plans/whatsapp_input_plan_2026-10-26.md) § 4).
 Clean room: open no transcripts; WhatsApp log entries only 10-30-02 and fragments titled
 "clean-room"; every WhatsApp session titles its fragment "clean-room" or "reference-reading".

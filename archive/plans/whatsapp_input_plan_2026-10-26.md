@@ -371,6 +371,54 @@ by ~2–4M tokens** (§ 6).
 > narrowed Phase 0a′ only if the contents are a format we cannot recognise.** Why not (b): a
 > ~6-day gap against 72-hour keys loses group senders and edits for half of every week, and even
 > with keys kept ~8 days, answered questions would re-surface for up to 6 days.
+>
+> **Found 11-23 (increment-contents probe, shapes only, clean-room):** read
+> `msgstore-increment-4-2026-11-23.1.db.crypt15` (53 KB, written 11-22). The full backup at 02:00
+> on 11-23 had rotated the set, so there was no undated file; 11-17 → 11-23 is a fifth 6-day
+> interval in a row. Tag verified, MD5 trailer present, zlib payload; **the inflated output is
+> a ZIP** (`50 4b 03 04`), refused in `Sink.finish()`. **33 entries, none SQLite — an increment
+> is a delta, not a database:** `header.json`, `sequences.json`, **`messages.bin`** (64 KB
+> binary, first bytes `bf f6 03 08 02 12 e9 04`, no format we can name) and 29 per-table change
+> files `<table>_modified_N.json` / `<table>_deleted_N.json` — among them `chat`, `jid`,
+> `jid_map`, `lid_display_name`, receipts, group participants, devices, labels, `call_log`.
+> **Unanswered:** whether ids overlap the full backup and whether only newer rows are held; the
+> message rows (sender, `from_me`) are in `messages.bin`, the one entry we cannot yet read, so
+> the JSON alone closes none of (b)'s gaps.
+>
+> **NEXT ROUND RULED — Mike, 2026-11-23: one more clean-room probe before any reference-reading**
+> (*"As rec then."*). Button 5 reports the JSON entries' keys and record counts (never values),
+> the shape of `header.json`/`sequences.json` (how an increment points at its full backup), and
+> tests `messages.bin` for a generic record structure using only general binary-format
+> knowledge. If it yields, P3 reads increments from the start; if not, the narrowed 0a′ is the
+> case (separate session, fragment titled "reference-reading"). Rejected: skipping to a
+> full-backup-only P3 — sound as a seam, but daily use would carry (b)'s gaps until the
+> increment work landed anyway; and going straight to 0a′ — surer, but it reads a reference
+> before the cheap clean-room step is spent.
+>
+> **Found 11-23, second round (shapes only, clean-room) — it yielded; no 0a′ needed.** Same
+> increment (`increment-4`, set rotated 11-23), compared with the 11-23 02:00 full backup, which
+> post-dates it. **The JSON entries are row deltas:** each `<table>_modified_N.json` is
+> `{"<table>": [full rows keyed by _id]}` in the full backup's own id space (jid 102/102, chat
+> 22/22, receipt_user 13/13, call_log 5/5 already there; `frequent`/`props` 0/15 and 0/12 —
+> rows replaced under new ids), each `_deleted_N.json` is `{"deleted_ids": [...]}`
+> (`deletedMessages_1.json`: 3 message row ids, 56,987..57,030). `sequences.json` is 46
+> `{name, value}` counters, 45 named for full-backup tables. `header.json`: `creation_date`
+> (11-22 02:00), and `added_messages` {`messages_count_on_backup` 52,031, `messages_updated` 83,
+> `messages_deleted` 3, `chunks` [{0, 83}]}. **`messages.bin` is one varint-length-prefixed record
+> in the generic protobuf wire format**, decodable without a schema. Field paths, by evidence:
+> `2` ×21 chat blocks — `2.1` a jid (21/21 known); `2.20.1` ×323 participant jids (all known);
+> `2.6` 0..64 (the range of `chat.unseen_message_count`). `2.2` ×79 messages — `2.2.1.1` a key
+> {`.1` jid 79/79, `.2` 0/1, `.3` **79/79 equal a full-backup `message.key_id`**}; `2.2.1.3` time in
+> **seconds**; `2.2.1.5` ×51 a jid (the group-sender candidate); `2.2.1.2.1` ×47 text 5..211 and
+> `2.2.1.2.6.1` ×11 text 16..274 (the text candidates); `2.2.1.2.3`/`.8` media-shaped (URL-length
+> text, 10-char type, 32-byte hashes, dimensions); `2.2.1.41` ×60 {key, a 2-char text, ms time}
+> (reaction-shaped); `2.2.2` 54,856..57,035 (row-id-shaped). `15` ×352 {jid, jid} pairs (all
+> known — `jid_map`-shaped). Message times run 10-20 → 11-22: **an increment carries messages
+> changed, not only new** — so increments apply in order, as updates keyed by `key_id`, on top of
+> the last full backup. Increments number per set, not per night (inc-3 11-20, inc-4 11-22: no
+> 11-21 file). **Each mapping above is an inference from shapes; the reader-extension session
+> confirms it by counts first** (each increment message matched to the full backup by `key_id`,
+> agreement counted per candidate field — no values) before the reader is written against it.
 
 **Phase 1 — VM side** (~1–2 sessions; **after the second-user build has landed**). V1–V9; offline tests on synthetic messages in the
 `tests/test_intake_pipeline.py` pattern (fake adapter, monkeypatched persona directory). **Then
