@@ -1406,6 +1406,9 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording â
 unintended email to be sent" â€” is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** User corrected films list entries: 'A Real Pain' and 'Fiddler on the Roof' were incorrectly recorded as already watched rather than on the watchlist ('to watch', with Fiddler to watch with Manny); duplicate entry 'Pain' consolidated; and 'Death Cab for Cutie at Troxy' was misfiled as a film rather than a concert.  
+  `2026-11-23T10:26:04.910336Z`
+
 - **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7861 + reply 327, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
   `2026-11-23T07:31:33.129036Z`
 
