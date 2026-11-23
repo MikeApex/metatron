@@ -54,3 +54,11 @@ and `ranking_v2` stays off. Then three mornings of
 preferred on ≥ 2 of 3 mornings, with no real obligation below the cut. Phase 2's prompt is
 `archive/handoffs/2026-11-23-ranking-part-b-phase-2-build-prompt.md` (Opus, high).
 
+**After the close-out (same session):** Mike deployed. On the VM at 14:06, `task_judge` recorded
+costs for 21 of the 21 tasks offered, in one call, so `cost_record` is live and the shadow reads
+real records. **Mike then deferred the three-morning comparison to the backlog so other builds can
+go ahead** (`396698d`). It gates only the `ranking_v2` flip, not phase 2. The phase 2 prompt's
+precondition was loosened to match: build on whatever `ranking.yaml` holds, since every value is
+config. Mornings are kept 14 days, so the comparison can be read in one sitting with `--day`, by
+about 2026-12-07.
+
