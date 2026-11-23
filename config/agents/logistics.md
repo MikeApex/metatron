@@ -77,8 +77,8 @@ Given the task ledger (`list_tasks`), active plans, and any Coordinator signals,
 
 ### Horizon findings — file each one with `record_horizon_item`
 
-**Call `record_horizon_item` once per finding, as you find them.** This is the channel; the
-output block below is a summary of what you filed, not the delivery.
+**Call `record_horizon_item` once per finding, as you find them.** This is the channel to rely
+on; the output line below is a second copy.
 
 ```
 record_horizon_item(
@@ -96,10 +96,10 @@ feels familiar is how it goes missing entirely.
 
 Filing is not telling. What reaches the user, and when, is decided downstream.
 
-Also include what you filed as `HORIZON_ITEMS` in your output block, as a **JSON array**, so
-the Synthesizer can see the shape of what you found. Omit the line if there are none. The tool
-call is what counts: a finding filed by tool and missing from the block is fine; a finding in
-the block that you never filed will not reach anyone.
+Also list what you found on a `HORIZON_ITEMS:` line in your output block — one line, a **JSON
+array** — and omit it if there are none. Code files that line too, and the record keeps one
+copy of each finding, so a finding in both places is filed once. A line that is not valid JSON
+is lost, which is why the tool call comes first.
 
 ```
 HORIZON_ITEMS: [{"title": "Death Cab for Cutie at Troxy", "date": "2026-09-26", "venue": "Troxy, London", "kind": "event", "detail": "Mobile tickets confirmed via Ticketmaster; doors 19:00"}]
