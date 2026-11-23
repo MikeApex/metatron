@@ -419,6 +419,23 @@ by ~2–4M tokens** (§ 6).
 > 11-21 file). **Each mapping above is an inference from shapes; the reader-extension session
 > confirms it by counts first** (each increment message matched to the full backup by `key_id`,
 > agreement counted per candidate field — no values) before the reader is written against it.
+>
+> **P3 BUILT, 11-23 (clean-room; `acc2a24`, Mike: "As rec").** The field map was confirmed by
+> counts over 9 increments / 612 messages (format description § 12, each field beside its count),
+> and the phone now reads the live set and combines it with the full backup
+> (`IncrementReader`, `IncrementSet`, `BackupCombiner`, `FullBackupMessages`; 33 reader tests). On
+> the phone, 9 of 9 increments decode, and each rotated set's combine matched the newest full
+> backup on every message it held. **DELETIONS RULED — Mike, 11-23: counted, never applied**
+> (*"Ignore, but count"*): all 14 listed ids were still in the newest full backup, 12 re-sent in the
+> same increment; a re-sent copy without text still removes the text. Rejected: remove-then-re-add
+> (12/14, the 2 others missing until the next full backup). **Known gap:** increments leave out
+> some messages entirely — 55 in the two sets, 52 textless, 26 the user's own — which arrive only
+> with the next full backup (~6 days). **Before Phase 1 builds V6 on reply markers:** count those
+> messages' `message_type` (one probe line, read on a tap after the first live increment exists),
+> because a textless reply missing for up to 6 days would re-raise an answered question.
+> **Before Phase 2 wires the reader into the app:** a Fable review of `src/main/…/whatsapp/`
+> (~0.2M) — nothing runs it outside the probe until then. The WorkManager job, posting and the
+> cursor endpoint remain Phase 1 / Phase 2.
 
 **Phase 1 — VM side** (~1–2 sessions; **after the second-user build has landed**). V1–V9; offline tests on synthetic messages in the
 `tests/test_intake_pipeline.py` pattern (fake adapter, monkeypatched persona directory). **Then

@@ -13,7 +13,7 @@ on the VM 11-18 (ids + Bulgarian/taxes/Prudential). **Next: Iva's onboarding wal
 (`archive/handoffs/2026-11-23-iva-onboarding-walkthrough-prompt.md`, Opus; supersedes 10-29); M3 restarts on her approval day; `/backlog deep`, then
 `archive/handoffs/2026-10-30-backlog-attack-signout-calendar-text-forward-trail-prompt.md`;
 reply latency (with `[DB-1029-09]`); Sign out; security `[DB-1029-20]`;
-**WhatsApp:** the reader extension (P3), `archive/handoffs/2026-11-23-whatsapp-reader-extension-p3-prompt.md` (§ Current state);
+**WhatsApp:** P3 reader built 11-23 (`acc2a24`); next Phase 1, VM side (§ Current state);
 day-planner live checks `[DB-1029-01]` (due 10-31; the check script is already on the VM — no deploy needed); nine fixes' closes-on checks (11-12). **The
 meals habit still doesn't exist** — Mike re-asks as "open a daily habit…". **Still owed:** the
 boys' school hours/bedtimes → `children_home`; the "over and out" live check; Mike's calendar live
@@ -107,24 +107,24 @@ check-ins exactly. **R2 amended 2026-10-30:** Synth sees now/next/free/Important
 day (`547c446`). Reshuffle thinking is 0. Plan: [day_planner_plan_2026-10-24.md](archive/plans/day_planner_plan_2026-10-24.md)
 (§ 18 round 2); Stage B: `archive/PROJECT_LOG.md` § 2026-10-27; Stage C and step 2: § 2026-10-29.
 
-**WHATSAPP INPUT — Phase 0 closed; the code is COMMITTED (`8af5ab6`, Mike-reviewed 11-23).** The
-clean-room reader (`android/…/metatron/whatsapp/`, 19 tests) decrypts Mike's real full backup on
-the phone. Survival PASSED, no local model, increments read clean-room (plan § 4). **Increments are
-readable without a reference — no 0a′** (log § 11-23 third; plan § 4 "Found 11-23, second
-round"): a ZIP of per-table JSON row deltas in the full backup's id space plus one generic
-wire-format `messages.bin` (79/79 key_ids match the full backup; sender and text candidates
-located); they carry changed messages, so they apply in N order keyed by `key_id`. The field map
-is inferred from shapes — P3 confirms it by counts first. **Uncommitted: the probe round**
-(`src/waprobe/` `ProbeShapes` + tests, 50 pass; throwaway). **Mike's phone runs the `waprobe`
-build** (`assembleDebug`/Iva's APK carries none of it); **`npx cap sync` before
-`assembleWaprobe`** — `check_apk_sync.sh` checks only the debug APK. The write-time briefing skips
-reference-reading fragments — **never put that phrase in a non-reference fragment's first
-heading** (fails closed). `/private/tmp` reference copy left to the next restart; rule 4 binds.
-**Next:** `archive/handoffs/2026-11-23-whatsapp-reader-extension-p3-prompt.md` (Opus 5.5,
-clean-room, ~0.5–1M, Mike ~15 min) → Phase 1
-([plan](archive/plans/whatsapp_input_plan_2026-10-26.md) § 4).
-Clean room: open no transcripts; WhatsApp log entries only 10-30-02 and fragments titled
-"clean-room"; every WhatsApp session titles its fragment "clean-room" or "reference-reading".
+**WHATSAPP INPUT — P3 reader BUILT and COMMITTED (`acc2a24`, Mike: "As rec", 11-23).** The
+phone reads the nightly increments and combines them with the full backup
+(`android/…/metatron/whatsapp/`: `IncrementReader`, `IncrementSet`, `BackupCombiner`,
+`FullBackupMessages`; 33 reader tests). The field map was confirmed by counts on Mike's data, each
+field beside its count in [format description](archive/plans/whatsapp_backup_format_2026-10-26.md)
+§ 12; on the phone 9 of 9 increments decode and each set's combine matched the newest backup on
+every message it held. **Deletions are counted, never applied** (Mike, 11-23). **Known gap:**
+increments leave some messages out entirely (55 in two sets, 52 textless) — they arrive with the
+next full backup, ~6 days. **Owed before Phase 1's V6:** count those messages' `message_type` (one
+probe line, read after the first live increment). **Owed before Phase 2 wires the reader in:** a
+Fable review of `src/main/…/whatsapp/` (~0.2M). **Mike's phone runs only the `waprobe` build** —
+installing `assembleDebug` over it revokes All-files access; **`npx cap sync` before
+`assembleWaprobe`** (`check_apk_sync.sh` checks only the debug APK); clean-build Iva's APK
+(`./gradlew clean assembleDebug`). **Next:** Phase 1, VM side
+([plan](archive/plans/whatsapp_input_plan_2026-10-26.md) § 4 "P3 BUILT"; log § 11-23 sixth).
+Clean room still binds: open no transcripts; WhatsApp log entries only 10-30-02 and fragments
+titled "clean-room"; never put the other phrase in a clean-room fragment's first heading (the
+write-time briefing fails closed).
 
 **A9 — built and deployed 2026-08-18; `@waiting` on real use, review `2026-10-01`.** Spec, the
 five provisional parts and the date: [ROADMAP.md](ROADMAP.md) § A9a, the single home.

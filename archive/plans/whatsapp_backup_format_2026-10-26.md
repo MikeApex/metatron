@@ -284,6 +284,16 @@ increments. **All 14 are still present in the newest full backup** (8 with text,
 version of a message overwrites the earlier one (a re-sent copy without text removes the text), and
 no message is removed. Recorded in the plan § 4.
 
+**Messages increments leave out — observed 11-23 (button 7, the new reader).** Combining each
+rotated set's base with its increments reproduced every message the combine held exactly (547 and
+362, text equal on all but the one `1.26` message), but the newest full backup held **55 more in the
+same window (40 and 15)**, in real one-to-one and group chats, all timed after the base was written;
+52 of 55 carry no text, 26 are the user's own. Their total matches the headers' `messages_updated`
+minus the messages decoded (40 exactly; 16 against 15). No key_id of theirs appears anywhere in
+`messages.bin`, so **an increment does not carry them at all**: they arrive with the next full backup,
+up to ~6 days later. What they are (`message_type`) is not yet counted — read it before Phase 1 builds
+on reply markers.
+
 **Edits.** None observed: no text candidate ever differed from either backup. "Later version wins,
 keyed by (canonical chat, from_me, key_id)" is the rule; it is tested on synthetic data only.
 
