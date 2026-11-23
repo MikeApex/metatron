@@ -389,7 +389,11 @@ def _():
     assert f"{O._SYNTH_MAX_ROUNDS}-round tool limit" in detail and "probe_tool" in detail, detail
 
 
-@check("#10.1b round-4 text beside a call, then the cap: event written, NO final round")
+# Stage 4 Step 0 changed 1b: the final round now runs after a last round that spoke beside its
+# calls (that text may be only a preamble), told to reply with nothing if the user is already
+# answered. 1b's final round therefore runs (calls = cap + 1); it returns empty here, and the
+# output is still exactly the answer, which is what 1b protects.
+@check("#10.1b round-4 answer beside a call, then the cap: event written, empty final round dropped")
 def _():
     _reset()
     _as_agent("synthesizer")
@@ -397,16 +401,101 @@ def _():
         rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
                   + [lambda: [_Chunk([_text("Friday is booked; Saturday I could not check."),
                                       _call("probe_tool")])]]
-                  + [lambda: [_Chunk([_text("SHOULD NOT RUN")])]])
+                  + [lambda: [_Chunk([_text("   ")])]])
         client = _FakeClient(rounds)
         with _Events() as ev:
             out, hist = _run(client)
     finally:
         _TR._set_current_agent(None)
     assert ev.kinds() == ["CHAIN_LIMIT_REACHED"]
-    assert client.models.calls == O._SYNTH_MAX_ROUNDS, client.models.calls
-    assert out == "Friday is booked; Saturday I could not check.", out
+    assert client.models.calls == O._SYNTH_MAX_ROUNDS + 1, client.models.calls
+    assert out == "Friday is booked; Saturday I could not check.", repr(out)
     assert hist[-1]["content"] == out
+
+
+def _capture_contents(client):
+    seen = []
+    real = client.models.generate_content_stream
+    client.models.generate_content_stream = lambda model, contents, config: (
+        seen.append(list(contents)) or real(model, contents, config))
+    return seen
+
+
+def _last_user_text(contents):
+    c = contents[-1]
+    return "".join(getattr(p, "text", "") or "" for p in (c.parts or []))
+
+
+@check("Step0.1 preamble beside calls at the cap: final round runs, follows after a blank line")
+def _():
+    _reset()
+    _as_agent("synthesizer")
+    try:
+        rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
+                  + [lambda: [_Chunk([_text("Let me check Saturday."), _call("probe_tool")])]]
+                  + [lambda: [_Chunk([_text("Saturday is still unchecked.")])]])
+        client = _FakeClient(rounds)
+        seen = _capture_contents(client)
+        with _Events():
+            out, hist = _run(client)
+    finally:
+        _TR._set_current_agent(None)
+    assert client.models.calls == O._SYNTH_MAX_ROUNDS + 1, client.models.calls
+    assert out == "Let me check Saturday.\n\nSaturday is still unchecked.", repr(out)
+    assert hist[-1]["content"] == out
+    final_prompt = _last_user_text(seen[-1])
+    assert final_prompt == O._FINAL_REPLY_PROMPT + O._FINAL_REPLY_IF_ANSWERED, final_prompt
+
+
+@check("Step0.1 answer beside calls at the cap, empty final reply: output is just the answer")
+def _():
+    _reset()
+    _as_agent("synthesizer")
+    try:
+        rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
+                  + [lambda: [_Chunk([_text("All three are booked."), _call("probe_tool")])]]
+                  + [lambda: []])
+        client = _FakeClient(rounds)
+        with _Events():
+            out, hist = _run(client)
+    finally:
+        _TR._set_current_agent(None)
+    assert out == "All three are booked.", repr(out)
+    assert hist[-1]["content"] == out
+
+
+@check("Step0.1 a silent last round's final round carries the plain prompt (no answered clause)")
+def _():
+    _reset()
+    client = _FakeClient(_calls_only(O._SYNTH_MAX_ROUNDS) + [lambda: [_Chunk([_text("Done.")])]])
+    seen = _capture_contents(client)
+    out, _ = _run(client)
+    assert out == "Done."
+    assert _last_user_text(seen[-1]) == O._FINAL_REPLY_PROMPT
+
+
+@check("Step0.2 whitespace-only text beside calls counts as no text: plain final round, no blank-line prefix")
+def _():
+    _reset()
+    rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
+              + [lambda: [_Chunk([_text("  \n"), _call("probe_tool")])]]
+              + [lambda: [_Chunk([_text("Here it is.")])]])
+    client = _FakeClient(rounds)
+    seen = _capture_contents(client)
+    out, _ = _run(client)
+    assert _last_user_text(seen[-1]) == O._FINAL_REPLY_PROMPT
+    assert out == "  \nHere it is.", repr(out)    # the whitespace was already streamed; no "\n\n"
+
+
+@check("Step0.2 whitespace-only text and an empty final reply: the fixed line, never a blank reply")
+def _():
+    _reset()
+    rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
+              + [lambda: [_Chunk([_text("   "), _call("probe_tool")])]]
+              + [lambda: []])
+    out, hist = _run(_FakeClient(rounds))
+    assert out == "   " + O._NO_REPLY_LINE, repr(out)
+    assert hist[-1]["content"] == O._NO_REPLY_LINE
 
 
 @check("#10.1c round-1 text, rounds 2-4 silent, then the cap: final round runs after a blank line")

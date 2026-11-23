@@ -133,23 +133,32 @@ def run_subagent(agent_name: str, message: str, complexity: str = "",
         # dispatch_tool) and the quality-event tag (tools/logger._no_user_words) still apply,
         # and its own trace is proactive. Only the no-words state travels: a user turn's
         # background run stays unbound, as before (the decline guard reads an unbound thread).
+        #
+        # Stage 4 Step 0: the no-words state is inferred ONLY from a bound PARENT TURN that says
+        # so — never from the trace's `is_proactive` alone. A weekly single-agent job binds no
+        # turn and is proactive, and its background hand-off must not have its writes refused;
+        # that matches the blocking path and _no_words_write_refusal in core/orchestrator.py.
+        # A proactive trace still makes the child's own trace proactive, so its quality events
+        # are tagged `scheduled` (tools/logger._no_user_words falls back to the trace).
         from tools import turn_context as _turn
         _parent_turn = _turn.current()
         _no_words = _parent_turn is not None and not _parent_turn.get("user_turn")
+        _proactive = _no_words
         if _parent_turn is None:
             from core.trace import get_trace
             _t = get_trace()
-            _no_words = bool(_t is not None and _t.is_proactive)
+            _proactive = bool(_t is not None and _t.is_proactive)
 
         # Captured on this thread: the background thread starts with no depth of its own.
-        def _run(child_depth: int = depth + 1, no_words: bool = _no_words) -> None:
+        def _run(child_depth: int = depth + 1, no_words: bool = _no_words,
+                 proactive: bool = _proactive) -> None:
             set_subagent_depth(child_depth)
             if no_words:
                 _turn.adopt({"user_turn": False, "started_at": time.time(), "spoken": []})
             try:
                 run_session(agent_name, user_input=message, persona=persona,
                             complexity=complexity_hint,
-                            **({"proactive": True} if no_words else {}))
+                            **({"proactive": True} if proactive else {}))
             except Exception as e:
                 logger.warning(f"[fire_and_forget] {agent_name} failed: {e}")
             finally:

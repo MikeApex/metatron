@@ -199,6 +199,52 @@ def test_review4_user_turn_fire_and_forget_unchanged():
     assert seen["turn"] is None and seen["proactive"] is None
 
 
+def test_step0_weekly_job_fire_and_forget_writes_but_tags_scheduled():
+    """Stage 4 Step 0: a weekly single-agent job binds no turn and runs on a proactive trace.
+    Its background hand-off is NOT a no-words turn — its writes go through, like the blocking
+    path — while its quality events still carry `scheduled` via its own proactive trace."""
+    import threading
+    import tools.logger as logger_mod
+    from tools.subagent import run_subagent
+    done = threading.Event()
+    seen: dict = {}
+
+    def _fake_run_session(agent_name, user_input="", persona=None, complexity=None, **kw):
+        try:
+            seen["proactive"] = kw.get("proactive")
+            seen["turn"] = _turn.current()
+            # run_session would start the child's own trace, proactive when asked.
+            _tr.start_request_trace("hand-off", None, is_proactive=bool(kw.get("proactive")))
+            handled: list = []
+            rec = _tr.AgentRecord(agent=agent_name, provider="", model="")
+            seen["write"] = orch.dispatch_tool("write_log", {"content": "x"},
+                                               {"write_log": lambda **k: handled.append(k)
+                                                or "written"},
+                                               _agent_rec=rec)
+            seen["handled"] = handled
+            logger_mod.write_quality_event("ROUTING_MISS", agent_name, "missed something")
+        finally:
+            _tr.set_trace(None)
+            done.set()
+        return "ok"
+
+    assert _turn.current() is None
+    _tr.start_request_trace("weekly physical review", None, is_proactive=True)
+    try:
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(logger_mod, "_logs_dir", return_value=Path(tmp)), \
+                mock.patch.object(orch, "run_session", _fake_run_session):
+            run_subagent("physical_health", "scan", fire_and_forget=True)
+            assert done.wait(5)
+            events = (Path(tmp) / "quality_events.json").read_text().splitlines()
+    finally:
+        _tr.set_trace(None)
+    assert seen["turn"] is None                       # no no-words turn was invented
+    assert seen["write"] == "written" and seen["handled"], seen["write"]
+    assert seen["proactive"] is True                  # tagging still follows the trace
+    assert len(events) == 1 and '"scheduled": true' in events[0], events
+
+
 def test_case8_guard_covers_physical_health_whole_set():
     for name in sorted(orch._NO_WORDS_REFUSED_WRITES):
         result, handled, _ = _guard_call("physical_health", name, False)
