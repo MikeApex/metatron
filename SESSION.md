@@ -123,8 +123,8 @@ the export is deleted. 30 days held 0 Cyrillic messages. **Next:** a Fable revie
 `src/main/…/whatsapp/` (~0.2M), then **Phase 2** (nothing reaches the VM before the phone posts),
 then **M4** for `mike`: seed the `whatsapp` consent (`scripts/accounts.py seed-consent mike --scopes
 whatsapp --evidence "Mike W10, 2026-10-26"`), the stanza on, `scripts/fetch_whatsapp_translation_model.py`
-then `--check` on the VM. **Open for Mike:** a "this should have come up" action, now the only
-measure of misses — proposed for Phase 2 (~0.3–0.5M), not ruled. **Mike's phone runs only the
+then `--check` on the VM. **Phase 2 also builds a "this should have come up" action** — now the only
+measure of misses (Mike: "Build it in", 11-23; ~0.3–0.5M). **Mike's phone runs only the
 `waprobe` build** — how to build and serve it: `docs/INFRASTRUCTURE.md` § APK. Clean room still
 binds: open no transcripts; WhatsApp log entries only 10-30-02 and fragments titled "clean-room";
 never put the other phrase in a clean-room fragment's first heading (the write-time briefing fails

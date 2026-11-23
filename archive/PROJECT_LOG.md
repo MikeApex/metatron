@@ -78,7 +78,7 @@ file is the only narrative record, alongside the verbatim transcripts.*
 2. **Phase 2** (the phone posts; nothing reaches the VM before it).
 3. M4.
 
-**Open for Mike:** a "this should have come up" action, now the only measure of misses, proposed for Phase 2 (~0.3–0.5M tokens). Not ruled.
+**Ruled at close (Mike):** a "this should have come up" action, now the only measure of misses, is built into Phase 2 (~0.3–0.5M tokens): *"Build it in."* `tests/test_whatsapp_m2_label.py` re-run by Mike in his own terminal: pass.
 
 ### 2026-11-23, ninth (ranking Part B phase 1 built — the regret-of-delay ranking runs beside the old one in shadow, and every task starts recording what a delay would cost) — `05f3110` — **committed, NOT deployed**
 
