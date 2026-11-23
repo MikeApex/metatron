@@ -509,6 +509,16 @@ measure the extractor on Mike's labelled sample (M2) before any alert goes live.
 > type 7 is never received (6,063 from-me rows, 221 in no chat). Detail: review file § 5, last
 > note. Which from-me types are replies: Phase 2 plan, decision 5.
 
+> **PHASE 2 BUILT, 11-23 (clean-room; nothing deployed, nothing on a phone).** All of the Phase 2
+> plan in one session (sessions A and B together): the reader additions, the nightly read, job and
+> dry run, the share list, the live feed, "should have come up", the consent gate, the on-device
+> self-test, and the VM's named gate, run report, stale line and missed endpoint. A Fable diff
+> review found 10 (no leak; the gate does not fail open; five lost or duplicated messages, two High —
+> both on the night a chat gains a link), all fixed and verified:
+> `whatsapp_phase2_diff_review_2026-11-23_fable-5-2.md`. **Next (M5):** the walkthrough —
+> `archive/handoffs/2026-11-23-whatsapp-phase-2-walkthrough-prompt.md` — deploy, seed `mike`'s
+> consent only, sideload `debug`, read the dry run; then the rest of M4.
+
 **Phase 2 — Phone** (~2 sessions). P1–P5, plus the review's "During" items (review § 3).
 
 **Phase 3 — Alerts and security** (~1 session). P6 if W5; the WhatsApp cards (V7); **B1b WhatsApp rows** in

@@ -2060,8 +2060,10 @@ async def _whatsapp_call(request: Request, fn, *args):
     persona_key = request_persona(request)
     try:
         return await asyncio.to_thread(_task_call, persona_key, fn, *args)
-    except W.ChannelOff:
-        raise HTTPException(status_code=403, detail="channel_off")
+    except W.ChannelOff as e:
+        # Exactly `consented_off` or `no_consent` (Phase 2 plan § 4.0): the phone unlocks its
+        # pre-switch-on steps only on the first, and treats anything else as no consent.
+        raise HTTPException(status_code=403, detail=e.gate)
     except W.EventError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2087,6 +2089,23 @@ async def device_whatsapp_share_list(request: Request) -> dict:
     from tools import intake_whatsapp as W
     body = await _read_capped(request)
     return await _whatsapp_call(request, lambda: W.set_share_list(None, body))
+
+
+@app.post("/device/whatsapp/run")
+async def device_whatsapp_run(request: Request) -> dict:
+    """The phone's nightly run report — counts and a code only, the latest kept (Phase 2 § 4.1).
+    Drives the one "not reaching Metatron" context line when the phone's job dies or is refused."""
+    from tools import intake_whatsapp as W
+    body = await _read_capped(request)
+    return await _whatsapp_call(request, lambda: W.record_run(None, body))
+
+
+@app.post("/device/whatsapp/missed")
+async def device_whatsapp_missed(request: Request) -> dict:
+    """'This should have come up': up to five message keys, never text (Phase 2 § 4.3)."""
+    from tools import intake_whatsapp as W
+    body = await _read_capped(request)
+    return await _whatsapp_call(request, lambda: W.record_missed(None, body))
 
 
 class DevicePairRequest(BaseModel):
@@ -2127,6 +2146,15 @@ async def whatsapp_device_revoke(req: DeviceRevokeRequest, request: Request) -> 
     ok = await asyncio.to_thread(auth.revoke_device, persona_key, req.device_id)
     if not ok:
         raise HTTPException(status_code=404, detail="No such device, or already revoked.")
+    # Any successful revoke → the phone's run report and its onset state go too, so a deliberate
+    # "Turn off" after a re-pair raises no "not reaching Metatron" line (Phase 2 § 4.2, F8); a
+    # live other device re-posts its report at its next run. The revoke stands either way; a
+    # failure here costs one raise of that line, never a refused revoke.
+    from tools import intake_whatsapp as W
+    try:
+        await asyncio.to_thread(_task_call, persona_key, W.device_revoked, None)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[whatsapp] run report not removed after revoke: {type(e).__name__}")
     return {"status": "ok"}
 
 

@@ -3,6 +3,9 @@ package com.mike.metatron;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import com.mike.metatron.whatsapp.DeviceApi;
+import com.mike.metatron.whatsapp.DeviceClient;
+
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -25,7 +28,7 @@ import java.nio.charset.StandardCharsets;
  * running. The ping carries a message id and nothing else; the text is fetched from the VM
  * here, over the signed-in channel, so it never travels through Google.
  */
-final class PushStore {
+public final class PushStore {
     private static final String PREFS = "metatron_push";
     private static final int TIMEOUT_MS = 8000;
 
@@ -45,8 +48,24 @@ final class PushStore {
                 .remove("registered").apply();
     }
 
-    static boolean signedIn(Context c) {
+    public static boolean signedIn(Context c) {
         return !str(c, "server").isEmpty() && !str(c, "token").isEmpty();
+    }
+
+    /** The server address the page handed over ("" when signed out). Not a secret. */
+    public static String server(Context c) {
+        return str(c, "server");
+    }
+
+    /**
+     * The WhatsApp link's only use of the sign-in token (plan § 3.8): pairing this phone and
+     * revoking it — one POST to an https:// server, never anything else. The token stays in this
+     * class; the caller gets the status and the reply. Blocking — never on the main thread.
+     */
+    public static DeviceApi.Result sessionPost(Context c, String path, String jsonBody) {
+        if (!signedIn(c)) return new DeviceApi.Result(401, "", "signed_out");
+        return DeviceClient.send(str(c, "server"), str(c, "token"), "POST", path,
+                jsonBody, TIMEOUT_MS);
     }
 
     static void setFcmToken(Context c, String t) {

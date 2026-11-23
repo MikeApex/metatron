@@ -1,20 +1,15 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<!-- WhatsApp Phase 0 probe — merged into the `waprobe` build type ONLY.
-     `./gradlew assembleDebug` never sees this file, so the listener and the All-files
-     permission cannot reach anyone else's phone. Throwaway: delete src/waprobe/ and the
-     build type once Phase 0 is read out (plan § 4). -->
+<!-- WhatsApp probe screen — merged into the `waprobe` build type ONLY: waprobe = debug + this
+     screen and its listener (Phase 2 plan § 3.12). Mike's re-measuring build; nobody else's
+     phone gets it. The All-files and storage permissions and WhatsApp's package visibility
+     moved to the main manifest with Phase 2 (decision 1: one APK for every user, switched on
+     by consent), so moving between `debug` and `waprobe` keeps All-files access. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Reading Android/media/com.whatsapp/… from another app (plan P3). Special-access:
-         granted in Settings, never at install. READ_EXTERNAL_STORAGE covers Android ≤ 12. -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-
-    <!-- Package visibility (Android 11+): whether AICore is installed, for checkpoint LM;
-         WhatsApp's version, because the backup format can change with any update. -->
+    <!-- Package visibility (Android 11+): whether AICore is installed, for checkpoint LM.
+         WhatsApp's own entry is in the main manifest now. -->
     <queries>
         <package android:name="com.google.android.aicore" />
-        <package android:name="com.whatsapp" />
     </queries>
 
     <application>

@@ -60,6 +60,8 @@ CFG = {
     "limits": {"max_per_sweep": 50, "seen_retention_days": 90, "max_queue_age_days": 7},
 }
 
+_REAL_CONSENT_GRANTED = W._consent_granted          # before any check stubs it
+
 ANNA = "447700900111@s.whatsapp.net"
 JOANNA = "447700900222@s.whatsapp.net"
 GROUP = "120363000000000009@g.us"
@@ -312,7 +314,11 @@ def _():
         intake.ingest = real
     assert out["held_back"] == 1 and not called, (out, called)
     flag = W._read_jsonl(W._flags_path(None))[0]
-    assert set(flag) == {"id", "chat", "sender", "time", "category", "flagged_at"}, flag
+    # Phase 2 § 4.3: the flag carries its key (chat|second|ordinal, never text) for the missed
+    # lookup; the field set is still fixed and holds nothing of the message.
+    assert set(flag) == {"id", "native_id", "chat", "sender", "time", "category",
+                         "flagged_at"}, flag
+    assert flag["native_id"].count("|") == 2 and flag["native_id"].startswith(ANNA + "|"), flag
     assert "k1ll" not in _all_files_text() and "tomorrow at 9" not in _all_files_text()
 
 
@@ -433,14 +439,14 @@ def _():
     _sandbox(consent=False)
     h = _device()
     r = _client.post("/device/whatsapp/events", headers=h, json={"events": []})
-    assert r.status_code == 403 and r.json()["detail"] == "channel_off", r.text
+    assert r.status_code == 403 and r.json()["detail"] == "no_consent", r.text
     _state["consent"] = True
     _share()
     assert _client.post("/device/whatsapp/events", headers=h,
                         json={"events": [_ev(text="Lunch tomorrow?")]}).status_code == 200
     _state["consent"] = False
-    assert _client.post("/device/whatsapp/events", headers=h,
-                        json={"events": [_ev(text="hi")]}).status_code == 403
+    r = _client.post("/device/whatsapp/events", headers=h, json={"events": [_ev(text="hi")]})
+    assert r.status_code == 403 and r.json()["detail"] == "no_consent", r.text
     intake.sweep()
     assert len(_records()) == 1                         # decision C: nothing deleted
     r = _client.post("/whatsapp/delete-all", headers=_admin())
@@ -685,6 +691,419 @@ def _():
                        headers={"Authorization": f"Bearer {tok}"}).status_code == 200
     devs = _client.get("/whatsapp/devices", headers=_admin()).json()["devices"]
     assert devs[0]["label"] == "Jelly Star" and "token" not in devs[0], devs
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (archive/plans/whatsapp_phase2_build_plan_2026-11-23.md § 4) — the named gate, the run
+# report, the stale line, the missed flags
+# ---------------------------------------------------------------------------
+
+_DEVICE_ROUTES = (("get", "/device/whatsapp/cursor", None),
+                  ("post", "/device/whatsapp/events", {"events": []}),
+                  ("post", "/device/whatsapp/share-list", {"chats": []}),
+                  ("post", "/device/whatsapp/run", {"report": {}}),
+                  ("post", "/device/whatsapp/missed", {"keys": []}))
+
+
+def _call(h, method, path, body):
+    return (_client.get(path, headers=h) if method == "get"
+            else _client.post(path, headers=h, json=body))
+
+
+def _report(**over) -> dict:
+    r = {"v": 1, "run_at": _now_s(), "dry_run": 0, "backup_written": _now_s(3),
+         "full_backup_written": _now_s(48), "base_received": 40, "base_received_text": 30,
+         "inc_received": 6, "inc_received_text": 5, "without_key_id": 0, "without_chat": 0,
+         "text_undecodable": 0, "base_key_collisions": 0, "deletions_listed": 0,
+         "posted_messages": 3, "posted_updates": 1, "posted_reply_markers": 2,
+         "skipped_unchanged": 30, "rejected": 0, "dropped_not_shared": 0,
+         "same_second_groups": 0, "error": ""}
+    r.update(over)
+    return r
+
+
+def _stale(now) -> list[str]:
+    return [l for l in W.context_lines(None, now) if "not reached Metatron" in l]
+
+
+@check("P1 the closed gate names which gate: no_consent / consented_off, on every device route")
+def _():
+    cfg = _sandbox(consent=False)
+    h = _device()
+    for method, path, body in _DEVICE_ROUTES:
+        r = _call(h, method, path, body)
+        assert r.status_code == 403 and r.json()["detail"] == "no_consent", (path, r.text)
+    _state["consent"] = True
+    cfg["channels"]["whatsapp"] = False                 # consent recorded, the stanza off
+    for method, path, body in _DEVICE_ROUTES:
+        r = _call(h, method, path, body)
+        assert r.status_code == 403 and r.json()["detail"] == "consented_off", (path, r.text)
+    cfg["channels"]["whatsapp"] = True
+    cfg["enabled"] = False                              # consent recorded, intake off
+    r = _client.get("/device/whatsapp/cursor", headers=h)
+    assert r.status_code == 403 and r.json()["detail"] == "consented_off", r.text
+    cfg["enabled"] = True                               # all three: open
+    for method, path, body in _DEVICE_ROUTES:
+        r = _call(h, method, path, body)
+        assert r.status_code == 200, (path, r.status_code, r.text)
+    # Consent unreadable → fail closed, as no consent — with the stanza off as well.
+    import core.consent as consent_mod
+    real_is = consent_mod.is_granted
+    W._consent_granted = _REAL_CONSENT_GRANTED
+    consent_mod.is_granted = lambda *a, **k: (_ for _ in ()).throw(OSError("unreadable"))
+    try:
+        cfg["channels"]["whatsapp"] = False
+        r = _client.get("/device/whatsapp/cursor", headers=h)
+        assert r.status_code == 403 and r.json()["detail"] == "no_consent", r.text
+    finally:
+        consent_mod.is_granted = real_is
+    assert W.ChannelOff("channel_off").gate == "no_consent"     # an unknown word fails closed
+
+
+@check("P2 the run report is stored whole-and-only: unknown keys dropped, received_at the VM's")
+def _():
+    _sandbox()
+    h = _device()
+    planted = "PLANTED-RUN-TEXT see you at the usual place"
+    r = _client.post("/device/whatsapp/run", headers=h,
+                     json={"report": _report(note=planted, extra_field=7), "also": planted})
+    assert r.status_code == 200 and r.json() == {"stored": True}, r.text
+    stored = W._load_state(None)["run_report"]
+    assert set(stored) == set(W.RUN_INT_FIELDS) | {"error", "received_at"}, sorted(stored)
+    assert stored["posted_messages"] == 3 and stored["error"] == ""
+    datetime.fromisoformat(stored["received_at"])
+    assert planted not in _all_files_text() and "extra_field" not in _all_files_text()
+    # A second report overwrites the first.
+    _client.post("/device/whatsapp/run", headers=h, json={"report": _report(posted_messages=9)})
+    assert W._load_state(None)["run_report"]["posted_messages"] == 9
+
+
+@check("P3 the run report refuses wrong types and bad codes (400), and stores nothing then")
+def _():
+    _sandbox()
+    h = _device()
+    bad = [_report(posted_messages=True), _report(base_received="40"),
+           _report(inc_received=1.5), _report(rejected=-1), _report(dry_run=2),
+           _report(run_at=int(time.time() * 1000)), _report(error="Schema changed"),
+           _report(error="a" * 49), _report(error="9lives"), _report(error=None),
+           _report(error="PLANTED-CODE-TEXT")]
+    for rep in bad:
+        r = _client.post("/device/whatsapp/run", headers=h, json={"report": rep})
+        assert r.status_code == 400, (rep, r.status_code, r.text)
+    for body in ({}, {"report": "text"}, {"report": [1, 2]}):
+        assert _client.post("/device/whatsapp/run", headers=h, json=body).status_code == 400
+    assert "run_report" not in W._load_state(None)
+    assert "PLANTED-CODE-TEXT" not in _all_files_text()
+    ok = _client.post("/device/whatsapp/run", headers=h,
+                      json={"report": _report(error="share_out_of_step", dry_run=1)})
+    assert ok.status_code == 200, ok.text
+
+
+@check("P4 stale line, 52 h: raised once per onset, cleared by a clean report, raised again")
+def _():
+    _sandbox()
+    t0 = datetime.now().replace(microsecond=0)
+    W.record_run(None, {"report": _report()}, now=t0)
+    assert not _stale(t0 + timedelta(hours=51))
+    first = _stale(t0 + timedelta(hours=53))
+    assert len(first) == 1 and t0.strftime("%Y-%m-%d %H:%M") in first[0], first
+    assert _stale(t0 + timedelta(hours=53, minutes=10))           # same delivery window
+    assert not _stale(t0 + timedelta(hours=53, minutes=31))       # window over
+    assert not _stale(t0 + timedelta(hours=80))                   # same onset: never again
+    t1 = t0 + timedelta(hours=81)
+    W.record_run(None, {"report": _report()}, now=t1)             # clean → the onset ends
+    assert not _stale(t1 + timedelta(minutes=1))
+    again = _stale(t1 + timedelta(hours=53))                      # a new onset
+    assert len(again) == 1 and t1.strftime("%Y-%m-%d %H:%M") in again[0], again
+    # Only code-written words: nothing of the report's own values.
+    assert "untrusted_content" not in again[0]
+
+
+@check("P5 stale line, text gone: ≥ 20 received and none with text — once per onset")
+def _():
+    _sandbox()
+    t0 = datetime.now().replace(microsecond=0)
+    W.record_run(None, {"report": _report(base_received=19, base_received_text=0,
+                                          inc_received=0, inc_received_text=0)}, now=t0)
+    assert not _stale(t0 + timedelta(minutes=1))                  # under 20: not a signal
+    gone = _report(base_received=15, base_received_text=0, inc_received=5, inc_received_text=0)
+    W.record_run(None, {"report": gone}, now=t0 + timedelta(hours=1))
+    n1 = t0 + timedelta(hours=1, minutes=1)
+    assert _stale(n1) and _stale(n1 + timedelta(minutes=20))
+    assert not _stale(n1 + timedelta(minutes=40))
+    W.record_run(None, {"report": gone}, now=t0 + timedelta(hours=25))   # still gone: same onset
+    assert not _stale(t0 + timedelta(hours=25, minutes=1))
+    W.record_run(None, {"report": _report()}, now=t0 + timedelta(hours=26))   # text back
+    assert not _stale(t0 + timedelta(hours=26, minutes=1))
+    W.record_run(None, {"report": gone}, now=t0 + timedelta(hours=50))
+    assert _stale(t0 + timedelta(hours=50, minutes=1))            # a new onset raises again
+
+
+@check("P6 stale line, a refusal: raised once per onset; the retry-later codes are not refusals")
+def _():
+    _sandbox()
+    t0 = datetime.now().replace(microsecond=0)
+    for code in ("being_written", "no_backup_found", "io_error"):
+        W.record_run(None, {"report": _report(error=code)}, now=t0)
+        assert not _stale(t0 + timedelta(minutes=1)), code
+    W.record_run(None, {"report": _report(error="schema_changed")}, now=t0 + timedelta(hours=1))
+    n1 = t0 + timedelta(hours=1, minutes=1)
+    line = _stale(n1)
+    assert len(line) == 1 and t0.strftime("%Y-%m-%d %H:%M") in line[0], line   # since the last clean
+    assert not _stale(n1 + timedelta(minutes=31))
+    W.record_run(None, {"report": _report(error="post_failed")}, now=t0 + timedelta(hours=25))
+    assert not _stale(t0 + timedelta(hours=25, minutes=1))       # another refusal, same onset
+    W.record_run(None, {"report": _report()}, now=t0 + timedelta(hours=26))
+    assert not _stale(t0 + timedelta(hours=26, minutes=1))
+    assert "run_stale" not in W._load_state(None)
+    W.record_run(None, {"report": _report(error="key_refused")}, now=t0 + timedelta(hours=30))
+    assert _stale(t0 + timedelta(hours=30, minutes=1))
+
+
+@check("P7 the stale line is silent while the channel is closed (switched off, consent withdrawn)")
+def _():
+    cfg = _sandbox()
+    t0 = datetime.now().replace(microsecond=0)
+    W.record_run(None, {"report": _report()}, now=t0)
+    cfg["channels"]["whatsapp"] = False
+    assert not _stale(t0 + timedelta(hours=60))
+    cfg["channels"]["whatsapp"] = True
+    _state["consent"] = False
+    assert not _stale(t0 + timedelta(hours=60))
+    assert "run_stale" not in W._load_state(None)                # nothing consumed meanwhile
+    _state["consent"] = True
+    assert _stale(t0 + timedelta(hours=60))
+
+
+@check("P8 any successful revoke and delete-all remove the report: nothing is raised")
+def _():
+    _sandbox()
+    t0 = datetime.now().replace(microsecond=0)
+    d1, _t1 = auth.issue_device_token(PERSONA, "phone one")
+    d2, _t2 = auth.issue_device_token(PERSONA, "phone two")
+    W.record_run(None, {"report": _report(error="schema_changed")}, now=t0)
+    assert _stale(t0 + timedelta(minutes=1))                     # the onset is raised
+    # A revoke that fails keeps the report.
+    r = _client.post("/whatsapp/device/revoke", headers=_admin(), json={"device_id": "no-such"})
+    assert r.status_code == 404, r.text
+    assert "run_report" in W._load_state(None)
+    # Any successful revoke — here with another device still live, as after a re-pair, whose old
+    # token is still unrevoked — removes the report and its onset state (F8).
+    r = _client.post("/whatsapp/device/revoke", headers=_admin(), json={"device_id": d1})
+    assert r.status_code == 200, r.text
+    state = W._load_state(None)
+    assert not any(k in state for k in W._RUN_KEYS), state
+    assert not _stale(t0 + timedelta(hours=60))
+    # A genuinely live device re-posts its report at its next run; the line works again.
+    W.record_run(None, {"report": _report()}, now=t0)
+    assert "run_report" in W._load_state(None)
+    r = _client.post("/whatsapp/device/revoke", headers=_admin(), json={"device_id": d2})
+    assert r.status_code == 200, r.text
+    assert "run_report" not in W._load_state(None)
+    # delete-all.
+    W.record_run(None, {"report": _report(error="schema_changed")}, now=t0)
+    assert _client.post("/whatsapp/delete-all", headers=_admin()).status_code == 200
+    assert not W._state_path(None).exists()
+    assert not _stale(t0 + timedelta(hours=60))
+
+
+def _missed(body, h=None):
+    return _client.post("/device/whatsapp/missed", headers=h or _device(), json=body)
+
+
+def _missed_setup() -> dict:
+    """One key per outcome: recorded (and re-surfaced, delivered), held back, never received,
+    and a clash where the key holds a recorded fact and a re-keyed held-back one."""
+    _share()
+    t = {"rec": _now_s(25), "held": _now_s(5), "never": _now_s(4), "clash": _now_s(3)}
+    _post([_ev(t=t["rec"], text="What time is the party?")])
+    _post([_ev(t=t["held"], text="bring the cocaine")])
+    _post([_ev(chat=JOANNA, t=t["clash"], text="see you there", source="live")])
+    _post([_ev(chat=JOANNA, t=t["clash"], text="bring the cocaine", source="backup")])
+    assert W.backstop(None) == 1
+    assert W.context_lines(None)
+    return {"rec": W.native_key(ANNA, t["rec"], 0), "held": W.native_key(ANNA, t["held"], 0),
+            "never": W.native_key(ANNA, t["never"], 0),
+            "clash": W.native_key(JOANNA, t["clash"], 0)}
+
+
+@check("P9 missed: what the VM did with each key — recorded, held back, never received, both")
+def _():
+    _sandbox()
+    k = _missed_setup()
+    h = _device()
+    out = {}
+    for name in ("rec", "held", "never", "clash"):
+        r = _missed({"keys": [k[name]]}, h)
+        assert r.status_code == 200 and r.json() == {"recorded": 1}, r.text
+        out[name] = W._read_jsonl(W._missed_path(None))[-1]["outcomes"][0]
+    assert out["rec"]["outcome"] == "recorded", out["rec"]
+    rec = out["rec"]["recorded"][0]
+    assert rec["category"] == "action_required" and rec["type"] == "question", rec
+    assert rec["resurfaced"] and rec["delivered"], rec
+    assert out["held"]["outcome"] == "held_back" and out["held"]["held_back"] == ["drugs"], out
+    assert out["never"]["outcome"] == "never_received", out["never"]
+    assert out["clash"]["outcome"] == "both", out["clash"]             # re-keyed key|fp8 found
+    assert out["clash"]["held_back"] == ["drugs"] and len(out["clash"]["recorded"]) == 1
+    rep = W.missed_report(None)
+    s = rep["single"]
+    assert rep["flags"] == 4 and s["never_received"] == 1 and s["both"] == 1, rep
+    assert s["held_back"] == {"drugs": 1} and s["recorded"] == {"action_required": 1}, rep
+    assert s["resurfaced"] == 1 and s["delivered"] == 1, rep
+
+
+@check("P10 missed: ambiguous counted once, ambiguous_over and empty apart; > 5 keys and bad "
+       "keys → 400; the report prints counts only")
+def _():
+    _sandbox()
+    k = _missed_setup()
+    h = _device()
+    r = _missed({"keys": [k["rec"], k["held"], k["never"]], "ambiguous": True}, h)
+    assert r.json() == {"recorded": 3}, r.text
+    row = W._read_jsonl(W._missed_path(None))[-1]
+    assert [o["outcome"] for o in row["outcomes"]] == ["recorded", "held_back", "never_received"]
+    assert _missed({"keys": [], "ambiguous_over": 9}, h).json() == {"recorded": 0}
+    assert _missed({"keys": []}, h).json() == {"recorded": 0}
+    for body in ({"keys": [k["never"]] * 2 + [W.native_key(ANNA, _now_s(i), 0)
+                                                for i in range(10, 14)]},
+                 {"keys": "x"}, {}, {"keys": ["hello there"]}, {"keys": ["a|b|c"]},
+                 {"keys": [f"{ANNA}|{int(time.time() * 1000)}|0"]}, {"keys": [7]},
+                 {"keys": [k["rec"]], "ambiguous": "yes"},
+                 {"keys": [], "ambiguous_over": True}, {"keys": [], "ambiguous_over": -1}):
+        r = _missed(body, h)
+        assert r.status_code == 400, (body, r.status_code, r.text)
+    rep = W.missed_report(None)
+    assert (rep["flags"], rep["ambiguous"], rep["ambiguous_over"], rep["not_found"]) == (3, 1, 1, 1)
+    assert rep["single"]["never_received"] == 0, rep             # the ambiguous keys not counted
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert W._main(["--missed-report", "--persona", PERSONA]) == 0
+    text = buf.getvalue()
+    assert "ambiguous (several matches, counted once): 1" in text, text
+    assert "more than 5 matches: 1" in text and "no sent copy found on the phone: 1" in text, text
+    assert "@" not in text and "|" not in text and "447700" not in text, text
+
+
+@check("P11 missed flags expire at 90 days, go with purge_chat for that chat, and with delete-all")
+def _():
+    _sandbox()
+    k = _missed_setup()
+    h = _device()
+    _missed({"keys": [k["rec"]]}, h)                              # Anna only
+    _missed({"keys": [k["held"], k["clash"]], "ambiguous": True}, h)   # Anna and Joanna
+    _missed({"keys": []}, h)                                      # no chat
+    _missed({"keys": [k["clash"]]}, h)                            # Joanna, to be aged out
+    rows = W._read_jsonl(W._missed_path(None))
+    rows[-1]["at"] = (datetime.now() - timedelta(days=91)).isoformat(timespec="seconds")
+    W._write_jsonl(W._missed_path(None), rows)
+    W.expire(None)
+    rows = W._read_jsonl(W._missed_path(None))
+    assert len(rows) == 3, rows
+    W.set_share_list(None, {"chats": [{"chat": JOANNA, "kind": "one_to_one",
+                                       "label": "Joanna Smith"}]})            # Anna un-shared
+    rows = W._read_jsonl(W._missed_path(None))
+    assert len(rows) == 2, rows
+    assert rows[0]["keys"] == [k["clash"]] and [o["key"] for o in rows[0]["outcomes"]] == [k["clash"]]
+    assert rows[1]["keys"] == []
+    assert ANNA not in W._missed_path(None).read_text()
+    # A merge moves a hidden id's missed keys to the canonical chat, so its purge finds them.
+    hidden = "100000000000001@lid"
+    _missed({"keys": [W.native_key(hidden, _now_s(1), 0)]}, h)
+    W.set_share_list(None, {"chats": [{"chat": JOANNA, "kind": "one_to_one", "label": "Joanna Smith"}],
+                            "merges": [{"from": hidden, "to": JOANNA}]})
+    assert hidden not in W._missed_path(None).read_text()
+    W.set_share_list(None, {"chats": []})
+    assert all(not r["keys"] for r in W._read_jsonl(W._missed_path(None)))
+    assert _client.post("/whatsapp/delete-all", headers=_admin()).status_code == 200
+    assert not W._missed_path(None).exists()
+
+
+@check("P12 a planted text never appears in any file the channel writes")
+def _():
+    _sandbox()
+    _share()
+    h = _device()
+    words = ["PLANTED-ALPHA lunch on the terrace?", "PLANTED-BRAVO bring the cocaine",
+             "PLANTED-CHARLIE quiet note", "PLANTED-DELTA report", "PLANTED-ECHO missed"]
+    t = _now_s(2)
+    _client.post("/device/whatsapp/events", headers=h, json={"events": [
+        _ev(t=t, text=words[0]), _ev(t=t + 1, text=words[1]),
+        _ev(chat=GROUP, sender=BOB, t=t + 2, text=words[2])]})
+    _client.post("/device/whatsapp/run", headers=h,
+                 json={"report": _report(comment=words[3]), "text": words[3]})
+    _client.post("/device/whatsapp/missed", headers=h,
+                 json={"keys": [W.native_key(ANNA, t, 0)], "text": words[4], "note": words[4]})
+    blob = _all_files_text()
+    assert W._missed_path(None).exists() and W._load_state(None).get("run_report")
+    for w in words:
+        assert w not in blob and w.split()[0] not in blob, w
+
+
+HIDDEN = "900000000077@lid"
+
+
+def _merge_setup() -> tuple[int, int]:
+    """A chat shared under its hidden id, two messages recorded under it, then the merge night:
+    the hidden id posted once more beside the phone-number id, with the merge."""
+    W.set_share_list(None, {"chats": [{"chat": HIDDEN, "kind": "one_to_one", "label": ""}]})
+    t1, t2 = _now_s(5), _now_s(4)
+    out = _post([_ev(chat=HIDDEN, t=t1, text="Dinner tomorrow?"),
+                 _ev(chat=HIDDEN, t=t2, text="Lunch on Friday?")])
+    assert out["accepted"] == 2, out
+    W.set_share_list(None, {"chats": [{"chat": ANNA, "kind": "one_to_one", "label": "Anna Petrova"},
+                                      {"chat": HIDDEN, "kind": "one_to_one", "label": ""}],
+                            "merges": [{"from": HIDDEN, "to": ANNA}]})
+    assert W._load_state(None).get("aliases") == {ANNA: [HIDDEN]}
+    return t1, t2
+
+
+@check("P13 after a merge, the same messages under the new id are duplicates; a change updates")
+def _():
+    _sandbox()
+    t1, t2 = _merge_setup()
+    before = {r["id"]: r for r in _records()}
+    out = _post([_ev(chat=ANNA, t=t1, text="Dinner tomorrow?"),
+                 _ev(chat=ANNA, t=t2, text="Lunch on Friday?")])
+    assert out["duplicates"] == 2 and out["accepted"] == 0, out
+    assert len(_records()) == 2
+    # A changed text, sent as an update under the new id, rewrites the original fact.
+    out = _post([_ev(chat=ANNA, t=t2, kind="update", text="Dinner on Saturday at 19:00 at Dishoom?")])
+    assert out["updated"] == 1, out
+    rows = _records()
+    assert len(rows) == 2 and set(r["id"] for r in rows) == set(before), rows
+    assert any("Dishoom" in r["subject"] for r in rows), rows
+    # The next night the retiring hidden id drops off the list: its alias stays with the chat.
+    W.set_share_list(None, {"chats": [{"chat": ANNA, "kind": "one_to_one", "label": "Anna Petrova"}],
+                            "merges": []})
+    assert W._load_state(None).get("aliases") == {ANNA: [HIDDEN]}
+    out = _post([_ev(chat=ANNA, t=t1, text="Dinner tomorrow?")])
+    assert out["duplicates"] == 1 and len(_records()) == 2, out
+    # Merging the same pair again lists it once.
+    state = W._load_state(None)
+    W._apply_merges(None, state, [{"from": HIDDEN, "to": ANNA}])
+    assert state["aliases"] == {ANNA: [HIDDEN]}, state["aliases"]
+
+
+@check("P14 a purge of either id clears the alias; delete-all removes it")
+def _():
+    _sandbox()
+    _merge_setup()
+    W.purge_chat(None, HIDDEN)                                   # the merged-from id
+    assert not (W._load_state(None).get("aliases") or {}), W._load_state(None)
+    _sandbox()
+    _merge_setup()
+    W.set_share_list(None, {"chats": [], "merges": []})          # un-ticking the chat: both ids go
+    assert not (W._load_state(None).get("aliases") or {}), W._load_state(None)
+    assert not _records()
+    _sandbox()
+    _merge_setup()
+    W.purge_chat(None, ANNA)                                     # the merged-into id
+    assert ANNA not in (W._load_state(None).get("aliases") or {})
+    _merge_setup()
+    W.delete_all(None)
+    assert not W._state_path(None).exists()
 
 
 # ---------------------------------------------------------------------------

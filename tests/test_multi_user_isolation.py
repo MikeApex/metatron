@@ -147,7 +147,9 @@ BOUND = {
 # The phone's native code only: a device token, whose user is the token's and nothing else.
 # Every session token — user, admin, service — is refused there (WhatsApp phase-1 plan § 2.1).
 DEVICE_ONLY = {("POST", "/device/whatsapp/events"), ("GET", "/device/whatsapp/cursor"),
-               ("POST", "/device/whatsapp/share-list")}
+               ("POST", "/device/whatsapp/share-list"),
+               # Phase 2 (plan § 4): the run report and the "should have come up" flag.
+               ("POST", "/device/whatsapp/run"), ("POST", "/device/whatsapp/missed")}
 MONITOR_PREFIX, INTERNAL_PREFIX = "/monitor/", "/internal/"
 
 

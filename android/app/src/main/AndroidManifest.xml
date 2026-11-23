@@ -5,7 +5,10 @@
          on the phone, and today already the WebView's localStorage with the session token.
          The key is also kept in no_backup/, which auto-backup never copies; this is the
          second lock, not the only one. -->
+    <!-- android:name: MetatronApp sweeps the WhatsApp read's work folder at every process start
+         (WhatsApp Phase 2 plan § 3.1), so a run killed after its decrypt leaves nothing behind. -->
     <application
+        android:name=".MetatronApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -72,6 +75,75 @@
         <meta-data android:name="delivery_metrics_exported_to_big_query_enabled" android:value="false" />
         <meta-data android:name="firebase_analytics_collection_deactivated" android:value="true" />
 
+        <!-- WhatsApp link (Phase 2 plan § 3.12, decision 1: one APK for every user, switched on
+             by consent). Everything below is declared for everyone and active for nobody until
+             the VM says that user's WhatsApp consent is recorded — whatsapp/Gate.java is the
+             runtime gate, and the VM's consent gate refuses every /device/whatsapp/* call as
+             the second check.
+
+             The screen: pairing, the key, the grants. Not exported — opened only from the page's
+             "WhatsApp link" entry (MainActivity.openWhatsApp) and this app's own notices. -->
+        <activity
+            android:name=".whatsapp.WhatsAppActivity"
+            android:label="WhatsApp link"
+            android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault" />
+
+        <!-- "Choose chats" (§ 3.9). Not exported: reached only from the WhatsApp screen. -->
+        <activity
+            android:name=".whatsapp.ShareListActivity"
+            android:label="Choose chats"
+            android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault" />
+
+        <!-- The nightly backup read (§ 3.2). Only JobScheduler binds to it. -->
+        <service
+            android:name=".whatsapp.NightlyJob"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
+
+        <!-- After a reboot, makes sure the nightly job is scheduled (§ 3.2) — only when the gate
+             and the user's grants allow one. Not exported: only the system's BOOT_COMPLETED. -->
+        <receiver
+            android:name=".whatsapp.WaBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- The live feed (§ 3.10). enabled="false" is the point: a listener the manifest
+             enables would sit in the notification-access list for every user, consented or not.
+             Gate enables it only while the channel is open and disables it on any 403, a 401 or
+             "Turn off". Only the system binds to it (it alone holds the permission below). -->
+        <service
+            android:name=".whatsapp.WaListener"
+            android:label="Metatron WhatsApp link"
+            android:enabled="false"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- "Should have come up" (§ 3.11): WhatsApp → long-press a message → Share → Metatron.
+             Exported because a share target must be; enabled="false" so it is in no one's share
+             sheet until Gate turns it on with the listener. -->
+        <activity
+            android:name=".whatsapp.MissedShareActivity"
+            android:label="Should have come up"
+            android:enabled="false"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -115,4 +187,26 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- WhatsApp link (Phase 2 plan § 3.12). Declared for everyone, asked for from no one until
+         the VM reports that user's consent — and then only at their own tap on the WhatsApp
+         screen (whatsapp/WhatsAppActivity.java).
+
+         MANAGE_EXTERNAL_STORAGE reads WhatsApp's backups in Android/media/com.whatsapp/ from
+         another app. Special access: granted in Settings, never at install, never by a dialog.
+         READ_EXTERNAL_STORAGE covers Android ≤ 12 (13 removed it); the screen asks for it only
+         on Android 10 and below, which have no All-files access.
+         READ_CONTACTS names one-to-one chats by the user's own contact names (§ 3.9);
+         dangerous-tier, runtime-requested.
+         RECEIVE_BOOT_COMPLETED keeps the nightly job across a reboot (§ 3.2); normal tier. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Package visibility (Android 11+): whether WhatsApp is installed, and its version —
+         the backup format can change with any update. -->
+    <queries>
+        <package android:name="com.whatsapp" />
+    </queries>
 </manifest>

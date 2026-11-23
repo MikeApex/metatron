@@ -24,8 +24,10 @@ core/server.py). For each one, here, in code:
 What persists, per user, under data/personas/{p}/intake/:
 
     whatsapp_index.jsonl   one row per fact: chat, times, type, re-surface state, fingerprint
-    whatsapp_flags.jsonl   held-back messages: who, chat, when, category — no text
-    whatsapp_state.json    the share list, the backup cursor, last reply time per chat, the salt
+    whatsapp_flags.jsonl   held-back messages: who, chat, when, category, key — no text
+    whatsapp_missed.jsonl  "this should have come up" flags: keys and what the VM did with each
+    whatsapp_state.json    the share list, the backup cursor, last reply time per chat, the salt,
+                           the phone's latest nightly run report (counts and a code only)
 
 Every write takes tools.intake._state_lock — the hourly sweep runs in the scheduler process and
 the endpoint in the server process (plan § 2.4).
@@ -33,7 +35,11 @@ the endpoint in the server process (plan § 2.4).
 THE CHANNEL IS OFF FOR EVERY USER until BOTH the intake stanza `channels.whatsapp: true` AND the
 user's `whatsapp` consent record (core/consent.py) are present. Turning either off stops
 collection and deletes nothing; deleting is the user's own opt-in, `delete_all()` (Mike,
-decision C). Un-sharing a chat deletes that chat at once (W3).
+decision C). Un-sharing a chat deletes that chat at once (W3). A closed gate says which gate
+(Phase 2 plan § 4.0): `consented_off` when the consent record exists, `no_consent` otherwise.
+
+Phase 2 (archive/plans/whatsapp_phase2_build_plan_2026-11-23.md § 4, decision 4a) adds the
+nightly run report, the one "not reaching Metatron" context line it drives, and the missed flags.
 """
 
 from __future__ import annotations
@@ -71,9 +77,40 @@ RETENTION_DAYS = 90              # W6 / V9
 _ACTION_TYPES = ("question", "proposal", "request")
 _KINDS = ("one_to_one", "group")
 
+# The two words a closed gate answers with (Phase 2 plan § 4.0). The phone treats anything but
+# exactly `consented_off` as no consent, so an unknown word fails closed on the phone too.
+GATE_CONSENTED_OFF = "consented_off"
+GATE_NO_CONSENT = "no_consent"
+
+# The nightly run report (plan § 3.5, § 4.1): a fixed field set, integers and one code. Unknown
+# keys are dropped, never stored — a newer phone must not break an older VM, and nothing
+# free-text is kept. Every integer is below _MS_THRESHOLD: times are whole seconds, and no count
+# comes near it.
+RUN_INT_FIELDS = (
+    "v", "run_at", "dry_run", "backup_written", "full_backup_written",
+    "base_received", "base_received_text", "inc_received", "inc_received_text",
+    "without_key_id", "without_chat", "text_undecodable", "base_key_collisions",
+    "deletions_listed", "posted_messages", "posted_updates", "posted_reply_markers",
+    "skipped_unchanged", "rejected", "dropped_not_shared", "same_second_groups",
+)
+_RUN_CODE_RX = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
+RUN_RETRY_LATER = frozenset({"", "being_written", "no_backup_found", "io_error"})
+STALE_AFTER_HOURS = 52               # decision 2: WhatsApp skips a night with no changes
+TEXT_GONE_MIN_RECEIVED = 20          # § 3.6: ≥ 20 received rows read and none with text
+_RUN_KEYS = ("run_report", "run_clean_at", "run_problem_since", "run_stale")
+
+MAX_MISSED_KEYS = 5                  # § 3.11: up to the 5 newest matches
+_MISSED_KEY_RX = re.compile(r"^([^|\s]{1,200})\|(\d{1,11})\|(\d{1,6})$")
+
 
 class ChannelOff(Exception):
-    """The channel's gate is shut for this user — the phone shows "WhatsApp link is off"."""
+    """The channel's gate is shut for this user. `gate` says which: `consented_off` (the consent
+    record exists, intake or the stanza is off) or `no_consent` (anything else)."""
+
+    def __init__(self, gate: str = GATE_NO_CONSENT) -> None:
+        gate = gate if gate in (GATE_CONSENTED_OFF, GATE_NO_CONSENT) else GATE_NO_CONSENT
+        super().__init__(gate)
+        self.gate = gate
 
 
 class EventError(ValueError):
@@ -115,6 +152,10 @@ def _flags_path(persona):
 
 def _state_path(persona):
     return _dir(persona) / "whatsapp_state.json"
+
+
+def _missed_path(persona):
+    return _dir(persona) / "whatsapp_missed.jsonl"
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -485,8 +526,10 @@ def _clean_label(value) -> str:
 
 
 def _require_open(persona) -> None:
+    """All three, as ever. Closed → which gate: the consent record, read fail-closed, decides
+    between `consented_off` and `no_consent`; nothing else about the gate changes."""
     if not channel_open(persona):
-        raise ChannelOff("channel_off")
+        raise ChannelOff(GATE_CONSENTED_OFF if _consent_granted(persona) else GATE_NO_CONSENT)
 
 
 def set_share_list(persona: str | None, payload: dict) -> dict:
@@ -517,8 +560,11 @@ def set_share_list(persona: str | None, payload: dict) -> dict:
         state = _load_state(persona)
         old = state.get("share") or {}
         removed = [c for c in old if c not in new]
+        # A hidden id dropped the night after its merge is retiring, not un-shared: its chat lives
+        # on under the id it merged into, whose alias must outlive it (F2).
+        retiring = {a for to, al in (state.get("aliases") or {}).items() if to in new for a in al}
         for chat in removed:
-            purged += purge_chat(persona, chat)
+            purged += purge_chat(persona, chat, keep_alias=chat in retiring)
         state = _load_state(persona)          # purge_chat rewrote it
         state["share"] = new
         _apply_merges(persona, state, merges)
@@ -537,11 +583,30 @@ def _apply_merges(persona, state: dict, merges: list) -> None:
         if r.get("chat") in rename:
             r["chat"] = rename[r["chat"]]
     _write_jsonl(_index_path(persona), rows)
+    # Missed flags name their chat inside each key; moved too, so a later purge of the canonical
+    # chat still finds them.
+    mpath = _missed_path(persona)
+    if mpath.exists():
+        missed = _read_jsonl(mpath)
+        for m in missed:
+            m["keys"] = [_rename_key(k, rename) for k in m.get("keys") or []]
+            for o in m.get("outcomes") or []:
+                o["key"] = _rename_key(o.get("key") or "", rename)
+        _write_jsonl(mpath, missed)
     last = state.get("last_reply") or {}
     for a, b in pairs:
         if a in last:
             last[b] = max(last.pop(a), last.get(b, 0))
     state["last_reply"] = last
+    # The merged id is remembered under its new one (F2): a message the phone re-sends under the
+    # new id is found under the key it was first recorded with, so it is not a second fact.
+    aliases = state.setdefault("aliases", {})
+    for a, b in pairs:
+        if a == b:
+            continue
+        al = aliases.setdefault(b, [])
+        if a not in al:
+            al.append(a)
 
 
 def get_cursor(persona: str | None) -> dict:
@@ -553,12 +618,16 @@ def get_cursor(persona: str | None) -> dict:
 # Events (V1's body) → screen → fact → ingest
 # ---------------------------------------------------------------------------
 
-def _flag(persona, env_id: str, chat: str, sender: str, time_s: int, category: str) -> None:
+def _flag(persona, env_id: str, key: str, chat: str, sender: str, time_s: int,
+          category: str) -> None:
+    """`native_id` is the key as recorded — `chat|second|ordinal`, or `…|fp8` when the clash rule
+    re-keyed it — so a missed flag can find a held-back message under either (§ 4.3)."""
     rows = _read_jsonl(_flags_path(persona))
     if any(r.get("id") == env_id for r in rows):
         return
-    rows.append({"id": env_id, "chat": chat, "sender": sender, "time": _iso(time_s),
-                 "category": category, "flagged_at": datetime.now().isoformat(timespec="seconds")})
+    rows.append({"id": env_id, "native_id": key, "chat": chat, "sender": sender,
+                 "time": _iso(time_s), "category": category,
+                 "flagged_at": datetime.now().isoformat(timespec="seconds")})
     _write_jsonl(_flags_path(persona), rows)
 
 
@@ -653,6 +722,7 @@ def handle_events(persona: str | None, payload: dict) -> dict:
         state = _load_state(persona)
         salt = _salt(state)
         share = state.get("share") or {}
+        aliases = state.get("aliases") or {}
         index = {r["id"]: r for r in _read_jsonl(_index_path(persona)) if r.get("id")}
         seen = intake._load_seen(persona)
         envelopes: list[intake.Envelope] = []
@@ -677,6 +747,15 @@ def handle_events(persona: str | None, payload: dict) -> dict:
             key = native_key(ev["chat"], ev["time"], ev["ordinal"])
             env_id = intake.envelope_id(CHANNEL, key)
             fp = fingerprint(ev["text"], salt)
+            if env_id not in seen and env_id not in index and env_id not in pending:
+                # Recorded before a merge, under the id this chat had then (F2): that key and
+                # envelope stand, so an unchanged copy is a duplicate and a changed one an update.
+                for alias in aliases.get(ev["chat"]) or []:
+                    a_key = native_key(alias, ev["time"], ev["ordinal"])
+                    a_id = intake.envelope_id(CHANNEL, a_key)
+                    if a_id in seen or a_id in index or a_id in pending:
+                        key, env_id = a_key, a_id
+                        break
 
             if ev["kind"] == "message" and (env_id in seen or env_id in index or env_id in pending):
                 prior = index.get(env_id) or pending.get(env_id) or {}
@@ -694,7 +773,7 @@ def handle_events(persona: str | None, payload: dict) -> dict:
             a = analysed.get(i) or _analyse(ev, entry)
             category = a["category"]
             if category:
-                _flag(persona, env_id, ev["chat"], sender, ev["time"], category)
+                _flag(persona, env_id, key, ev["chat"], sender, ev["time"], category)
                 if ev["kind"] == "update" and env_id in index:
                     _drop_fact(persona, env_id)
                     index.pop(env_id, None)
@@ -780,6 +859,142 @@ def _drop_fact(persona, env_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase 2 — the phone's nightly run report (§ 4.1) and the stale line it drives (§ 4.2)
+# ---------------------------------------------------------------------------
+
+def _clean_report(raw) -> dict:
+    """The report, reduced to the fixed field set. A wrong type or a bad code refuses the whole
+    report (400); an unknown key is dropped, never stored."""
+    if not isinstance(raw, dict):
+        raise EventError("`report` must be an object")
+    out: dict = {}
+    for name in RUN_INT_FIELDS:
+        if name not in raw:
+            continue
+        v = raw[name]
+        if not isinstance(v, int) or isinstance(v, bool) or v < 0 or v >= _MS_THRESHOLD:
+            raise EventError(f"`{name}` must be a whole number ≥ 0 (times in whole seconds)")
+        out[name] = v
+    if out.get("dry_run", 0) not in (0, 1):
+        raise EventError("`dry_run` must be 0 or 1")
+    code = raw.get("error", "")
+    if not isinstance(code, str) or (code and not _RUN_CODE_RX.match(code)):
+        raise EventError("`error` must be \"\" or a code")
+    out["error"] = code
+    return out
+
+
+def _report_problems(report: dict) -> set[str]:
+    """What the report itself says is wrong: the text gone from the backups, or a refusal. The
+    retry-later codes are not refusals."""
+    problems = set()
+    received = int(report.get("base_received") or 0) + int(report.get("inc_received") or 0)
+    with_text = (int(report.get("base_received_text") or 0)
+                 + int(report.get("inc_received_text") or 0))
+    if received >= TEXT_GONE_MIN_RECEIVED and with_text == 0:
+        problems.add("text_gone")
+    if (report.get("error") or "") not in RUN_RETRY_LATER:
+        problems.add("refused")
+    return problems
+
+
+def _run_conditions(report: dict, now: datetime) -> set[str]:
+    """All three conditions: the two the report names, and its own age past STALE_AFTER_HOURS —
+    the only one that survives the phone's job dying."""
+    problems = _report_problems(report)
+    try:
+        age = now - datetime.fromisoformat(str(report.get("received_at")))
+    except Exception:  # noqa: BLE001 — an unreadable time is treated as stale, fail visible
+        age = timedelta(hours=STALE_AFTER_HOURS + 1)
+    if age > timedelta(hours=STALE_AFTER_HOURS):
+        problems.add("stale")
+    return problems
+
+
+def record_run(persona: str | None, payload: dict, now: datetime | None = None) -> dict:
+    """The body of POST /device/whatsapp/run: the latest report, overwritten, with the VM's own
+    `received_at`. A clean report ends the current onset; a report naming a problem continues it
+    (or starts one, raised at the next context load)."""
+    _require_open(persona)
+    report = _clean_report(payload.get("report"))
+    now = now or datetime.now()
+    report["received_at"] = now.isoformat(timespec="seconds")
+    with intake._state_lock(persona):
+        state = _load_state(persona)
+        state["run_report"] = report
+        if _report_problems(report):
+            state.setdefault("run_problem_since", report["received_at"])
+        else:
+            state["run_clean_at"] = report["received_at"]
+            state.pop("run_problem_since", None)
+            state.pop("run_stale", None)
+        _save_state(state, persona)
+    return {"stored": True}
+
+
+def forget_run_report(persona: str | None) -> bool:
+    """Delete the stored report and its onset state — so a deliberate "Turn off" raises nothing.
+    True if there was anything to delete."""
+    path = _state_path(persona)
+    if not path.exists():
+        return False
+    with intake._state_lock(persona):
+        state = _load_state(persona)
+        removed = [k for k in _RUN_KEYS if state.pop(k, None) is not None]
+        if removed:
+            _save_state(state, persona)
+    return bool(removed)
+
+
+def device_revoked(persona: str | None) -> bool:
+    """After any successful revoke: the run report and its onset state go (F8). A re-paired phone
+    leaves its old token unrevoked and live for days, so "the last live device" cannot be told
+    from the device list; a genuinely live other device re-posts its report at its next nightly
+    run, well inside the 52 h the stale line waits. True if it was deleted."""
+    return forget_run_report(persona)
+
+
+def _stale_lines(persona: str | None, now: datetime) -> list[str]:
+    """One code-written line while a stored report shows any of the three conditions — raised
+    once per onset (review 5): offered to every context load within DELIVERY_WINDOW_MIN of the
+    first that showed it, then not again until a clean report has ended the onset. Nothing while
+    the channel is closed: a channel switched off, or consent withdrawn, is not a broken link."""
+    path = _state_path(persona)
+    if not path.exists() or not _load_state(persona).get("run_report"):
+        return []
+    if not channel_open(persona):
+        return []
+    with intake._state_lock(persona):
+        state = _load_state(persona)
+        report = state.get("run_report")
+        if not report:
+            return []
+        if not _run_conditions(report, now):
+            if state.pop("run_stale", None) is not None:
+                _save_state(state, persona)
+            return []
+        onset = state.get("run_stale")
+        if onset:
+            try:
+                if now - datetime.fromisoformat(onset["delivered_at"]) > timedelta(
+                        minutes=DELIVERY_WINDOW_MIN):
+                    return []
+            except Exception:  # noqa: BLE001
+                return []
+        else:
+            state["run_stale"] = {"since": (state.get("run_clean_at")
+                                            or state.get("run_problem_since")
+                                            or report.get("received_at")),
+                                  "delivered_at": now.isoformat(timespec="seconds")}
+            _save_state(state, persona)
+        since = str(state["run_stale"].get("since") or "")[:16].replace("T", " ")
+    return [f"[WhatsApp — not reaching Metatron; raise it once, gently] WhatsApp messages have "
+            f"not reached Metatron since {since}. Until that is fixed a quiet WhatsApp says "
+            f"nothing about the user's chats — never tell the user nothing new has arrived "
+            f"there. Say once that the WhatsApp link on their phone needs a look."]
+
+
+# ---------------------------------------------------------------------------
 # V6 — the awaiting-reply backstop, and its one context line
 # ---------------------------------------------------------------------------
 
@@ -828,9 +1043,13 @@ def backstop(persona: str | None, now: datetime | None = None) -> int:
 def context_lines(persona: str | None, now: datetime | None = None) -> list[str]:
     """`[WhatsApp — still unanswered]`, offered to every context load within DELIVERY_WINDOW_MIN
     of the first that showed it (Coordinator and Synth of one session), then never again. A reply
-    marker that arrived meanwhile clears it."""
-    from tools.untrusted import wrap_untrusted
+    marker that arrived meanwhile clears it. Then the stale line (§ 4.2), on the same pattern."""
     now = now or datetime.now()
+    return _unanswered_lines(persona, now) + _stale_lines(persona, now)
+
+
+def _unanswered_lines(persona: str | None, now: datetime) -> list[str]:
+    from tools.untrusted import wrap_untrusted
     path = _index_path(persona)
     if not path.exists():
         return []
@@ -868,6 +1087,139 @@ def context_lines(persona: str | None, now: datetime | None = None) -> list[str]
 
 
 # ---------------------------------------------------------------------------
+# Phase 2 — "this should have come up" (§ 3.11, § 4.3)
+# ---------------------------------------------------------------------------
+
+def _key_chat(key: str) -> str:
+    return str(key or "").split("|", 1)[0]
+
+
+def _rename_key(key: str, rename: dict) -> str:
+    chat, sep, rest = str(key or "").partition("|")
+    return (rename.get(chat, chat) + sep + rest) if sep else key
+
+
+def _matches(native_id: str | None, key: str) -> bool:
+    """The key itself, or the key re-keyed by the clash rule (`key|fp8`)."""
+    n = str(native_id or "")
+    return n == key or n.startswith(key + "|")
+
+
+def _outcome(key: str, index: list[dict], flags: list[dict], records: dict) -> dict:
+    """What the VM did with one key, from what the channel already keeps — no text: held back
+    (with the screen's category), recorded (with its intake category, and whether the backstop
+    re-surfaced and delivered it), both (a same-key clash; which one was meant is not knowable),
+    or never received."""
+    env_id = intake.envelope_id(CHANNEL, key)
+    held = [f.get("category") for f in flags
+            if _matches(f.get("native_id"), key) or (not f.get("native_id")
+                                                    and f.get("id") == env_id)]
+    recorded = []
+    for r in index:
+        if not _matches(r.get("native_id"), key):
+            continue
+        rec = records.get(r.get("id")) or {}
+        recorded.append({"category": rec.get("category"), "disposition": rec.get("disposition"),
+                         "type": r.get("type"), "resurfaced": bool(r.get("resurfaced_at")),
+                         "delivered": bool(r.get("delivered_at"))})
+    outcome = ("both" if held and recorded else "held_back" if held
+               else "recorded" if recorded else "never_received")
+    return {"key": key, "outcome": outcome, "held_back": held, "recorded": recorded}
+
+
+def record_missed(persona: str | None, payload: dict, now: datetime | None = None) -> dict:
+    """The body of POST /device/whatsapp/missed: one row per flag — when, the keys, the flags and
+    what the VM did with each key. Never text; unknown body keys are dropped."""
+    _require_open(persona)
+    keys = payload.get("keys")
+    if not isinstance(keys, list):
+        raise EventError("`keys` must be a list")
+    if len(keys) > MAX_MISSED_KEYS:
+        raise EventError(f"at most {MAX_MISSED_KEYS} keys")
+    clean: list[str] = []
+    for k in keys:
+        m = _MISSED_KEY_RX.match(k) if isinstance(k, str) else None
+        if not m or int(m.group(2)) >= _MS_THRESHOLD:
+            raise EventError("each key must be chat|second|ordinal")
+        if k not in clean:
+            clean.append(k)
+    ambiguous = payload.get("ambiguous", False)
+    if not isinstance(ambiguous, bool):
+        raise EventError("`ambiguous` must be true or false")
+    over = payload.get("ambiguous_over")
+    if over is not None and (not isinstance(over, int) or isinstance(over, bool) or over < 0
+                             or over >= _MS_THRESHOLD):
+        raise EventError("`ambiguous_over` must be a whole number ≥ 0")
+    now = now or datetime.now()
+    with intake._state_lock(persona):
+        index = _read_jsonl(_index_path(persona))
+        flags = _read_jsonl(_flags_path(persona))
+        records = ({r.get("id"): r for r in intake.read_records(persona=persona)
+                    if r.get("channel") == CHANNEL} if clean else {})
+        row = {"at": now.isoformat(timespec="seconds"), "keys": clean, "ambiguous": ambiguous,
+               "outcomes": [_outcome(k, index, flags, records) for k in clean]}
+        if over is not None:
+            row["ambiguous_over"] = over
+        rows = _read_jsonl(_missed_path(persona))
+        rows.append(row)
+        _write_jsonl(_missed_path(persona), rows)
+    return {"recorded": len(clean)}
+
+
+def missed_report(persona: str | None) -> dict:
+    """Counts only. A flag with several keys (or marked ambiguous) is counted once, under
+    `ambiguous`; one the phone could not narrow to five, under `ambiguous_over`; one the phone
+    found no sent copy for, under `not_found`. The rest — one key each — by outcome."""
+    single = {"never_received": 0, "held_back": {}, "recorded": {}, "both": 0,
+              "resurfaced": 0, "delivered": 0}
+    out = {"flags": 0, "single": single, "ambiguous": 0, "ambiguous_over": 0, "not_found": 0}
+    path = _missed_path(persona)
+    for row in _read_jsonl(path) if path.exists() else []:
+        out["flags"] += 1
+        keys = row.get("keys") or []
+        if row.get("ambiguous_over"):
+            out["ambiguous_over"] += 1
+        elif row.get("ambiguous") or len(keys) > 1:
+            out["ambiguous"] += 1
+        elif not keys:
+            out["not_found"] += 1
+        else:
+            o = (row.get("outcomes") or [{}])[0]
+            kind = o.get("outcome") or "never_received"
+            if kind == "held_back":
+                for cat in o.get("held_back") or ["?"]:
+                    single["held_back"][str(cat)] = single["held_back"].get(str(cat), 0) + 1
+            elif kind == "recorded":
+                for rec in o.get("recorded") or [{}]:
+                    cat = str(rec.get("category") or "?")
+                    single["recorded"][cat] = single["recorded"].get(cat, 0) + 1
+                    single["resurfaced"] += bool(rec.get("resurfaced"))
+                    single["delivered"] += bool(rec.get("delivered"))
+            elif kind == "both":
+                single["both"] += 1
+            else:
+                single["never_received"] += 1
+    return out
+
+
+def _format_missed_report(rep: dict) -> str:
+    s = rep["single"]
+    lines = [f"missed flags: {rep['flags']}",
+             f"  one message: {rep['flags'] - rep['ambiguous'] - rep['ambiguous_over'] - rep['not_found']}",
+             f"    never received: {s['never_received']}",
+             f"    held back: {sum(s['held_back'].values())}"]
+    lines += [f"      {cat}: {n}" for cat, n in sorted(s["held_back"].items())]
+    lines.append(f"    recorded: {sum(s['recorded'].values())}")
+    lines += [f"      {cat}: {n}" for cat, n in sorted(s["recorded"].items())]
+    lines += [f"      of which re-surfaced: {s['resurfaced']}, delivered: {s['delivered']}",
+              f"    held back and recorded under one key: {s['both']}",
+              f"  ambiguous (several matches, counted once): {rep['ambiguous']}",
+              f"  ambiguous, more than {MAX_MISSED_KEYS} matches: {rep['ambiguous_over']}",
+              f"  no sent copy found on the phone: {rep['not_found']}"]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # V8 purge (W3), the user's opt-in deletion (decision C), V9 expiry (W6)
 # ---------------------------------------------------------------------------
 
@@ -891,8 +1243,10 @@ def _forget(persona, ids: set[str]) -> int:
     return n
 
 
-def purge_chat(persona: str | None, chat: str) -> int:
-    """Un-sharing a chat (W3): everything the channel holds for it, at once."""
+def purge_chat(persona: str | None, chat: str, keep_alias: bool = False) -> int:
+    """Un-sharing a chat (W3): everything the channel holds for it, at once — its alias list
+    with it, and the chat itself out of every other chat's aliases (unless `keep_alias`: a
+    hidden id retiring after its merge, whose chat lives on under the id it merged into)."""
     with intake._state_lock(persona):
         ids = {r["id"] for r in _read_jsonl(_index_path(persona)) if r.get("chat") == chat}
         n = _forget(persona, ids)
@@ -900,24 +1254,61 @@ def purge_chat(persona: str | None, chat: str) -> int:
         kept = [f for f in flags if f.get("chat") != chat]
         if len(kept) != len(flags):
             _write_jsonl(_flags_path(persona), kept)
+        _purge_missed(persona, lambda key: _key_chat(key) == chat)
         state = _load_state(persona)
+        changed = False
         if chat in (state.get("last_reply") or {}):
             state["last_reply"].pop(chat)
+            changed = True
+        aliases = state.get("aliases") or {}
+        if chat in aliases:
+            aliases.pop(chat)
+            changed = True
+        if not keep_alias:
+            for to in list(aliases):
+                if chat in aliases[to]:
+                    aliases[to] = [a for a in aliases[to] if a != chat]
+                    if not aliases[to]:
+                        aliases.pop(to)
+                    changed = True
+        if changed:
             _save_state(state, persona)
     return n
 
 
+def _purge_missed(persona, drop_key) -> None:
+    """Take the matching keys (and their outcomes) out of every missed flag; a flag left with no
+    keys, that had some, goes. A flag that never had a key names no chat and stays."""
+    path = _missed_path(persona)
+    if not path.exists():
+        return
+    rows, changed = [], False
+    for row in _read_jsonl(path):
+        keys = row.get("keys") or []
+        kept = [k for k in keys if not drop_key(k)]
+        if len(kept) != len(keys):
+            changed = True
+            if not kept:
+                continue
+            row["keys"] = kept
+            row["outcomes"] = [o for o in row.get("outcomes") or [] if not drop_key(o.get("key"))]
+        rows.append(row)
+    if changed:
+        _write_jsonl(path, rows)
+
+
 def delete_all(persona: str | None) -> dict:
-    """The user's own opt-in (decision C): every WhatsApp fact, flag, marker, the share list, the
-    cursor and the salt. Not gated on the channel being open — withdrawing consent first must not
-    take away the means to delete."""
+    """The user's own opt-in (decision C): every WhatsApp fact, flag, marker, missed flag, the
+    share list, the cursor, the salt and the run report. Not gated on the channel being open —
+    withdrawing consent first must not take away the means to delete."""
     with intake._state_lock(persona):
         ids = {r["id"] for r in _read_jsonl(_index_path(persona)) if r.get("id")}
         ids |= {r.get("id") for r in intake.read_records(persona=persona)
                 if r.get("channel") == CHANNEL and r.get("id")}
         n = _forget(persona, ids)
         flags = len(_read_jsonl(_flags_path(persona)))
-        for path in (_index_path(persona), _flags_path(persona), _state_path(persona)):
+        for path in (_index_path(persona), _flags_path(persona), _state_path(persona),
+                     _missed_path(persona)):
             if path.exists():
                 path.unlink()
     return {"deleted_facts": n, "deleted_flags": flags}
@@ -959,14 +1350,45 @@ def expire(persona: str | None, now: datetime | None = None) -> int:
             kept = [f for f in flags if str(f.get("time") or "") >= cutoff]
             if len(kept) != len(flags):
                 _write_jsonl(fpath, kept)
+    mpath = _missed_path(persona)
+    if mpath.exists():
+        with intake._state_lock(persona):
+            missed = _read_jsonl(mpath)
+            kept = [m for m in missed if str(m.get("at") or "") >= cutoff]
+            if len(kept) != len(missed):
+                _write_jsonl(mpath, kept)
     return n
 
 
 def hourly(persona: str | None, cfg: dict | None = None) -> None:
     """From intake.sweep(), every hour whatever the switches say: expiry always; the backstop only
     while the channel is open. Does nothing at all for a user who never had the channel."""
-    if not _index_path(persona).exists() and not _flags_path(persona).exists():
+    if not any(p.exists() for p in (_index_path(persona), _flags_path(persona),
+                                    _missed_path(persona))):
         return
     expire(persona)
     if channel_open(persona, cfg):
         backstop(persona)
+
+
+def _main(argv: list[str] | None = None) -> int:
+    """`python -m tools.intake_whatsapp --missed-report --persona p` — counts only, never a key,
+    a chat or a word of any message."""
+    import argparse
+    from core.persona import persona_scope, validate_persona_name
+    ap = argparse.ArgumentParser(prog="python -m tools.intake_whatsapp")
+    ap.add_argument("--missed-report", action="store_true",
+                    help="counts of the user's 'should have come up' flags, by outcome")
+    ap.add_argument("--persona", required=True)
+    args = ap.parse_args(argv)
+    if not args.missed_report:
+        ap.error("nothing to do: pass --missed-report")
+    persona = validate_persona_name(args.persona)
+    with persona_scope(persona):
+        print(_format_missed_report(missed_report(None)))
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(_main())

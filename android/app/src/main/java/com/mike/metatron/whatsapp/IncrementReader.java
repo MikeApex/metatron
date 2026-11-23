@@ -369,7 +369,8 @@ public final class IncrementReader {
         boolean fromMe = flag == 1;
         String text = content == null ? null : text(d, content.start, content.end, undecodable);
         String groupSender = !fromMe && chatJid.endsWith("@g.us") ? sender : null;
-        return new WaMessage(chatJid, keyId, fromMe, seconds * 1000L, groupSender, text, rowId);
+        // Increments carry no type (-1); whether the content block was present is what ReplyRule reads instead.
+        return new WaMessage(chatJid, keyId, fromMe, seconds * 1000L, groupSender, text, rowId, -1, content != null);
     }
 
     /** The first TEXT_PATHS entry present in the content block; null when none. Lenient below 1.2. */

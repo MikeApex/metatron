@@ -29,28 +29,30 @@ public final class FullBackupMessages {
     }
 
     /**
+     * Checks the schema (names only) before any query, so a renamed column is
+     * {@link BackupError#SCHEMA_CHANGED}, never an SQLite crash (Phase 2 plan § 2 item 3).
+     *
      * @param sinceSeconds read messages from the start of this whole second on (timestamp ≥
      *                     sinceSeconds × 1000), so a second is never cut in half and
      *                     {@link BackupCombiner#combine} numbers each one whole (review finding 5)
      */
-    public static FullBackupMessages read(File database, long sinceSeconds) {
+    public static FullBackupMessages read(File database, long sinceSeconds) throws BackupException {
         SQLiteDatabase db = SQLiteDatabase.openDatabase(database.getPath(), null,
                 SQLiteDatabase.OPEN_READONLY | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
         try {
+            BackupSchema.require(db);
             List<WaMessage> out = new ArrayList<>();
-            int noKey = 0, noChat = 0;
-            try (Cursor c = db.rawQuery("SELECT m.key_id, m._id, m.from_me, m.timestamp, cj.raw_string, sj.raw_string, m.text_data "
+            int[] noKey = {0}, noChat = {0};
+            try (Cursor c = db.rawQuery("SELECT m.key_id, m._id, m.from_me, m.timestamp, cj.raw_string, sj.raw_string, m.text_data, "
+                    + "m.message_type "
                     + "FROM message m LEFT JOIN chat c ON c._id = m.chat_row_id LEFT JOIN jid cj ON cj._id = c.jid_row_id "
                     + "LEFT JOIN jid sj ON sj._id = m.sender_jid_row_id WHERE m.timestamp >= ?",
                     new String[]{String.valueOf(sinceSeconds * 1000L)})) {
                 while (c.moveToNext()) {
-                    if (c.isNull(4)) { noChat++; continue; }
-                    if (c.isNull(0)) { noKey++; continue; }
-                    String chat = c.getString(4);
-                    boolean fromMe = c.getInt(2) == 1;
-                    String sender = !fromMe && chat.endsWith("@g.us") && !c.isNull(5) ? c.getString(5) : null;
-                    out.add(new WaMessage(chat, c.getString(0), fromMe, c.getLong(3), sender,
-                            c.isNull(6) ? null : c.getString(6), c.getLong(1)));
+                    WaMessage m = row(c.isNull(0) ? null : c.getString(0), c.getLong(1), c.getInt(2) == 1, c.getLong(3),
+                            c.isNull(4) ? null : c.getString(4), c.isNull(5) ? null : c.getString(5),
+                            c.isNull(6) ? null : c.getString(6), c.isNull(7) ? null : c.getInt(7), noKey, noChat);
+                    if (m != null) out.add(m);
                 }
             }
             BackupCombiner.JidTables t = new BackupCombiner.JidTables();
@@ -60,9 +62,22 @@ public final class FullBackupMessages {
             try (Cursor c = db.rawQuery("SELECT lid_row_id, jid_row_id FROM jid_map", null)) {
                 while (c.moveToNext()) t.putLink(c.getLong(0), c.getLong(1));
             }
-            return new FullBackupMessages(out, t, noKey, noChat);
+            return new FullBackupMessages(out, t, noKey[0], noChat[0]);
         } finally {
             db.close();
         }
+    }
+
+    /**
+     * One message row, mapped — plain Java, so the mapping is unit-tested without SQLite. Null (and
+     * counted) for a row with no chat or no key_id. The sender is kept only on a group message not
+     * from the user; a null type is unknown (-1). hasContent is null: a full backup does not say.
+     */
+    static WaMessage row(String keyId, long rowId, boolean fromMe, long timestampMs, String chat, String sender,
+                         String text, Integer type, int[] withoutKeyId, int[] withoutChat) {
+        if (chat == null) { withoutChat[0]++; return null; }
+        if (keyId == null) { withoutKeyId[0]++; return null; }
+        String s = !fromMe && chat.endsWith("@g.us") ? sender : null;
+        return new WaMessage(chat, keyId, fromMe, timestampMs, s, text, rowId, type == null ? -1 : type, null);
     }
 }

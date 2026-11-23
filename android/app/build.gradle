@@ -21,10 +21,14 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
-        // WhatsApp Phase 0 probe — throwaway (archive/plans/whatsapp_input_plan_2026-10-26.md § 4).
-        // Its listener, All-files permission and debug screen live only in src/waprobe/, so
-        // `./gradlew assembleDebug` — the APK anyone else installs — never contains them. Built
-        // only by `./gradlew assembleWaprobe`. Same app ID: google-services.json is keyed to it.
+        // WhatsApp probe — `debug` plus the probe screen and its listener (src/waprobe/), for
+        // Mike's re-measuring; built only by `./gradlew assembleWaprobe`. Same app ID:
+        // google-services.json is keyed to it.
+        // `debug` itself now carries the WhatsApp link — its listener, All-files and contacts
+        // permissions, nightly job and share target (archive/plans/
+        // whatsapp_phase2_build_plan_2026-11-23.md § 3.12). Decision 1: one APK for every user,
+        // with the listener and share target disabled in the manifest and nothing asked for until
+        // the VM reports that user's consent (whatsapp/Gate.java). The probe screen stays here.
         waprobe {
             initWith debug
             matchingFallbacks = ['debug']

@@ -8,6 +8,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 
 /**
  * The full backup plus its increments, combined (format description § 12). Platform-free.
@@ -89,18 +91,19 @@ public final class BackupCombiner {
         }
     }
 
-    /** Raw id → canonical id, from folded tables. */
-    static final class Canon {
+    /** Raw id → canonical id, from these tables as they stand (fold first for the night's view). */
+    public static final class Canon {
         private final Map<String, String> map = new HashMap<>();
 
-        Canon(JidTables t) {
+        public Canon(JidTables t) {
             for (Map.Entry<Long, Long> e : t.lidToJid.entrySet()) {
                 String lid = t.raw.get(e.getKey()), phone = t.raw.get(e.getValue());
                 if (lid != null && phone != null && lid.endsWith("@lid")) map.put(lid, phone);
             }
         }
 
-        String of(String raw) {
+        /** The canonical id; the id itself when no link applies; null for null. */
+        public String of(String raw) {
             if (raw == null) return null;
             String c = map.get(raw);
             return c == null ? raw : c;
@@ -120,9 +123,32 @@ public final class BackupCombiner {
          * overwrite visible (review finding 10). Expected 0.
          */
         public final int baseKeyCollisions;
+        /**
+         * Hidden ids that gained a link tonight: canonical id before the fold (the full backup's
+         * tables alone — for an unlinked hidden id, the hidden id itself) → canonical id after it
+         * (base plus increments). Feeds the share list's migration and the contract's
+         * {@code merges} ({@code [{from, to}]}). Only a hidden id with no link before and one after;
+         * a link lost or moved to another id is not listed, because a merge moves the from-id's
+         * facts to the to-id and must never move them off a phone-number id. Empty on most nights.
+         */
+        public final Map<String, String> newLinks;
+        /**
+         * Canonical group chat id → canonical sender ids seen in that group's returned messages (allowed
+         * chats, from the since-second on). From the messages themselves: no participants table assumed.
+         */
+        public final Map<String, Set<String>> groupSenders;
 
         Combined(List<WaMessage> messages, int baseMessages, int incrementsApplied, int incrementMessages,
                  int added, int replaced, int textChanged, int deletionsListed, int baseKeyCollisions) {
+            this(messages, baseMessages, incrementsApplied, incrementMessages, added, replaced, textChanged, deletionsListed,
+                    baseKeyCollisions, Collections.<String, String>emptyMap(), Collections.<String, Set<String>>emptyMap());
+        }
+
+        Combined(List<WaMessage> messages, int baseMessages, int incrementsApplied, int incrementMessages,
+                 int added, int replaced, int textChanged, int deletionsListed, int baseKeyCollisions,
+                 Map<String, String> newLinks, Map<String, Set<String>> groupSenders) {
+            this.newLinks = Collections.unmodifiableMap(newLinks);
+            this.groupSenders = Collections.unmodifiableMap(groupSenders);
             this.messages = Collections.unmodifiableList(messages);
             this.baseMessages = baseMessages;
             this.incrementsApplied = incrementsApplied;
@@ -188,6 +214,11 @@ public final class BackupCombiner {
                     // An increment carries seconds; keep the full backup's milliseconds for the same
                     // second, so the message's time (P2's dedup key) does not move.
                     if (prev.timeMs / 1000 == m.timeMs / 1000) next = m.with(m.chatJid, m.senderJid, prev.timeMs);
+                    // An increment carries no type: keep the full backup's (carried by any earlier
+                    // replacement). hasContent stays the increment's own.
+                    if (next.type < 0) next = next.withType(prev.type);
+                    // A later copy without text (null or "") keeps the earlier text: a lost message is the failure this path guards.
+                    if ((next.text == null || next.text.isEmpty()) && prev.text != null && !prev.text.isEmpty()) next = next.withText(prev.text);
                 }
                 byKey.put(k, next);
             }
@@ -219,7 +250,40 @@ public final class BackupCombiner {
         Collections.sort(out, (a, b) -> second(a.timeMs) != second(b.timeMs)
                 ? Long.compare(second(a.timeMs), second(b.timeMs)) : BY_ROW.compare(a, b));
         return new Combined(out, base.size(), increments.size(), incMessages, added, replaced, textChanged, deletions,
-                baseCollisions);
+                baseCollisions, newLinks(tables, t), groupSenders(out));
+    }
+
+    /**
+     * Hidden ids with no link in {@code before} and one in {@code after}: before-canonical (the hidden
+     * id itself) → after-canonical. Sorted by hidden id, so the same tables give the same map.
+     */
+    static Map<String, String> newLinks(JidTables before, JidTables after) {
+        Canon was = new Canon(before), now = new Canon(after);
+        TreeSet<String> hidden = new TreeSet<>();
+        for (String raw : after.raw.values()) if (raw.endsWith("@lid")) hidden.add(raw);
+        Map<String, String> out = new LinkedHashMap<>();
+        for (String lid : hidden) {
+            String from = was.of(lid), to = now.of(lid);
+            if (from.equals(lid) && !to.equals(lid)) out.put(from, to);
+        }
+        return out;
+    }
+
+    /** Canonical group id → canonical sender ids, over these (already canonical, allowed, windowed) messages. */
+    static Map<String, Set<String>> groupSenders(List<WaMessage> canonical) {
+        Map<String, TreeSet<String>> acc = new TreeMap<>();
+        for (WaMessage m : canonical) {
+            if (m.senderJid == null || m.chatJid == null || !m.chatJid.endsWith("@g.us")) continue;
+            TreeSet<String> s = acc.get(m.chatJid);
+            if (s == null) {
+                s = new TreeSet<>();
+                acc.put(m.chatJid, s);
+            }
+            s.add(m.senderJid);
+        }
+        Map<String, Set<String>> out = new LinkedHashMap<>();
+        for (Map.Entry<String, TreeSet<String>> e : acc.entrySet()) out.put(e.getKey(), Collections.unmodifiableSet(e.getValue()));
+        return out;
     }
 
     /** The whole second of a time in ms — the contract's time, and the unit an increment carries. */
@@ -232,7 +296,7 @@ public final class BackupCombiner {
     }
 
     /** These messages with chat and sender canonicalised against these tables — for checks that compare sources. */
-    static List<WaMessage> canonicalise(List<WaMessage> messages, JidTables tables) {
+    public static List<WaMessage> canonicalise(List<WaMessage> messages, JidTables tables) {
         Canon canon = new Canon(tables);
         List<WaMessage> out = new ArrayList<>(messages.size());
         for (WaMessage m : messages) out.add(m.with(canon.of(m.chatJid), canon.of(m.senderJid), m.timeMs));

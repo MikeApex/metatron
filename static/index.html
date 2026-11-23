@@ -996,6 +996,10 @@
     <div id="conn-msg"></div>
     <h3>Permissions</h3>
     <div id="consent-list"></div>
+    <div id="wa-entry" style="display:none">
+      <h3>WhatsApp</h3>
+      <button id="wa-open" class="quiet">WhatsApp link</button>
+    </div>
     <div style="margin-top:14px"><button id="conn-close" class="quiet">Close</button></div>
   </div>
 </div>
@@ -2093,6 +2097,15 @@
   }
 
   document.getElementById('conn-toggle').addEventListener('click', openConnections);
+  // WhatsApp link (Phase 2 plan § 3.8): only inside the app, for a signed-in user. It opens the
+  // native screen, which pairs and takes the key itself — nothing of the link passes through here.
+  document.getElementById('conn-toggle').addEventListener('click', () => {
+    const inApp = !!(window.Metatron && window.Metatron.openWhatsApp);
+    document.getElementById('wa-entry').style.display = inApp && authToken && currentPersona ? '' : 'none';
+  });
+  document.getElementById('wa-open').addEventListener('click', () => {
+    try { window.Metatron.openWhatsApp(); } catch (e) {}
+  });
   document.getElementById('conn-close').addEventListener('click', () => {
     document.getElementById('conn-panel').classList.remove('shown');
     document.getElementById('conn-password').value = '';

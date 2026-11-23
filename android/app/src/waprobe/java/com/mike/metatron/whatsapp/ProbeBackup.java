@@ -108,10 +108,7 @@ final class ProbeBackup {
         b.append("tables: ").append(longOf(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table'")).append('\n');
         Map<String, Set<String>> cols = new LinkedHashMap<>();
         for (String t : PROBED_TABLES) {
-            Set<String> c = new LinkedHashSet<>();
-            try (Cursor cur = db.rawQuery("PRAGMA table_info(" + t + ")", null)) {
-                while (cur.moveToNext()) c.add(cur.getString(1));
-            }
+            Set<String> c = BackupSchema.columns(db, t); // the schema reader moved to main (Phase 2 § 2 item 3)
             if (!c.isEmpty()) cols.put(t, c);
             b.append(t).append(c.isEmpty() ? ": TABLE MISSING" : " (" + c.size() + "): " + c).append('\n');
         }

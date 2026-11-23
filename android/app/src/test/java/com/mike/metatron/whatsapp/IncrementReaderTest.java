@@ -166,7 +166,7 @@ public class IncrementReaderTest {
         assertEquals("KEYG1", c.messages.get(1).keyId);
         assertEquals("deletions are counted, never applied", "kept despite a deletion list", c.messages.get(1).text);
         assertEquals("KEYA3", c.messages.get(2).keyId);
-        assertNull("a re-sent copy without text removes the text", c.messages.get(2).text);
+        assertEquals("a re-sent copy without text keeps the earlier text (F4)", "a new message", c.messages.get(2).text);
         assertEquals(1, c.deletionsListed);
         assertEquals(4, c.incrementMessages);
         assertEquals(1, c.added);

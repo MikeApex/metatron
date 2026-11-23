@@ -125,6 +125,21 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    /**
+     * WhatsApp link (Phase 2 plan § 3.2): a force-stop cancels the nightly job and Android says
+     * nothing, so every return to the app asks whether the last successful run is over 26 h old.
+     * NightlyJob decides — and does nothing unless the gate and the grants already allow a run.
+     */
+    @Override
+    public void onResume() {
+        super.onResume();
+        try {
+            com.mike.metatron.whatsapp.NightlyJob.onAppOpen(getApplicationContext());
+        } catch (Exception ignored) {
+            // Never let the WhatsApp link stop the app from opening; the job reruns next time.
+        }
+    }
+
     @Override
     public void onDestroy() {
         if (tts != null) {
@@ -309,6 +324,17 @@ public class MainActivity extends BridgeActivity {
                 // No google-services.json in this build: Firebase never initialised, so there
                 // is no push channel — the app works as before, without it.
             }
+        }
+
+        /**
+         * The page's "WhatsApp link" entry: opens the native WhatsApp screen (plan § 3.8). The
+         * screen pairs, takes the key and asks for grants itself — nothing about the link,
+         * the device token included, passes back through the page.
+         */
+        @JavascriptInterface
+        public void openWhatsApp() {
+            startActivity(new Intent(MainActivity.this,
+                    com.mike.metatron.whatsapp.WhatsAppActivity.class));
         }
 
         @JavascriptInterface
