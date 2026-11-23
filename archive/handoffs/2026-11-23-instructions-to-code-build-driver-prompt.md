@@ -72,7 +72,11 @@ the live checks are a list you hand to Mike.
   veto any skip, and code may add a flag but never clear one. Anything touching Finance arithmetic
   or clinical flags goes through `tests/run_a4_safety.py`. Mike lifted the A4 suspension for these
   fixtures (D10): state the expected cost (about $3–4) in chat before each live run.
-- **Do not build** the review's 19 misses, or anything § 6 defers. Record them for the final report.
+- **The review's misses are in scope** (Mike, 2026-11-23): 18 of the 19, listed by stage below as
+  "M1"–"M19", using the review's MISSES numbering. **Not M15**, the wishes-store read: Mike
+  skipped it as 11-05 review #29. Each one gets the same plan review as a sweep finding. A miss
+  the plan review finds wrong is dropped and reported, not forced. Do not build anything § 6
+  defers.
 
 ## The stages
 
@@ -108,6 +112,13 @@ grant parity check passes, and `check_agent_tools` exits 0.
   the typed-greeting half of the rule.
 - #4: the 5-per-key cap. The function-call move is measured only, not switched.
 - #10: chain limit in code (`[DB-0804-02]`).
+- M6: Pattern Miner's tracker write merges into `patterns` only and never replaces follow-ups or
+  held items. **Data loss**, so do it first in this stage.
+- M7: `CLARIFICATION_NEEDED` holds the writing specialists. Mental Wellbeing and Physical Health
+  are never held.
+- M10: drop `ORIGINAL_MESSAGE` from the Coordinator's package, and point the Synthesizer at the
+  user's own text.
+- M11: a `routing_miss` key in the `[CONTEXT]` block, parsed in code, in place of the tool round.
 
 **Not #3** (D13: wait for capture fidelity).
 
@@ -123,6 +134,11 @@ grant parity check passes, and `check_agent_tools` exits 0.
 - #13: Finance period totals per category, computed in code, plus fixtures in the A4 runner.
 - #18 / D8: a scripted Goals Interviewer safety scenario in the A4 runner. It must be done before
   the second user's first interview.
+- M8: a clinical flag without `MUST_SURFACE` gets it added by code, and a missing journal record
+  is written by code. Add-only.
+- M9: on a turn where the suicide flag fired on the user's own words, code checks that the reply
+  carries the configured crisis line. Add-only, never a rewrite of the rest.
+- M17: cessation streaks are counted by code, alongside #14.
 
 **Stage 4: C2, evidence handed in**
 - **Step 0: measure.** Find a read-only way to see current first-turn tool sequences on the VM:
@@ -136,7 +152,16 @@ grant parity check passes, and `check_agent_tools` exits 0.
   - #15: skill practice into ledger habits. Add the task-tool grants Learning & Growth lacks; those
     are Red edits.
   - #6: pass `PROACTIVE_FLAGS` and the PM headline into directives.
-  - #20: Pattern Miner prefetch.
+  - #20: Pattern Miner prefetch, plus M16 (use its granted baseline tools).
+  - M1: a "newly captured, confirm in one clause" line for the Synthesizer, built from the
+    arguments `write_contact` and `write_profile` actually received.
+  - M2: the tone shape handed over with #12's resolved recipient.
+  - M3: contacts with an `important_dates` entry in the next N days, handed over with the
+    overdue list.
+  - M4: each held item stamped with its first-held date and shown as "held N days".
+  - M12: pending confirmations kept as ledger `waiting` rows only.
+  - M13: code writes Logistics' log entry from the actions that actually ran.
+  - M14: `[VERIFY]` events re-checked on the next calendar read.
 - **#9 last, and only once #8 and #14 pass:** wire quick mode (code passes `mode: quick` into the
   directive), with Logistics' horizon filing carved out. First re-run the A4 Physical Health
   scenarios on quick, to confirm the medication check still fires. D5: both horizon channels
@@ -151,6 +176,11 @@ grant parity check passes, and `check_agent_tools` exits 0.
   - b.2 / D12: **estimate task lengths, update the estimate on evidence, and ask only for an
     unknown task**; one home for the rule;
   - b.3–b.6.
+- M5: an append mode for `write_persona`, so saving one preference never re-types the others.
+- M18: flight and line checks report only disruptions, plus a throttle for the
+  one-request-a-second limit.
+- M19: a quality event when the reply contains a listed "enjoy …" phrase. Detection only,
+  never a rewrite.
 
 ## Final report (in chat, numbered, plus a file in `archive/plans/`)
 
@@ -158,19 +188,20 @@ grant parity check passes, and `check_agent_tools` exits 0.
    and why.
 2. **Mike's deploy list:** the commits, `./deploy.sh`, and for each stage one live check (what to
    do, what to see, pass or fail).
-3. The review's 19 misses, each with a recommended cluster, for Mike to rule.
+3. Any miss or finding dropped at plan review, and why.
 4. Spend against budget.
 
 Then run `/archive`.
 
 ## Budget
 
-- **Build:** about 1.4–1.7M weighted input tokens across Stages 0–5:
+- **Build:** about 1.8–2.1M weighted input tokens across Stages 0–5. The 18 misses add about
+  350–450k to the original estimate:
   - four plans at high, about 100k each;
   - builds about 650k;
   - Fable reviews about 300k;
   - driver overhead.
-- **Live gates:** about $3–4 per A4 run, one or two runs.
+- **Live gates:** about $3–4 per A4 run, two or three runs.
 - **Run (after deploy):**
   - #2 about $0.05/day/user, doubling 2027-01-01;
   - #22 adds a fraction of a cent per specialist call and saves 1–2 turns;

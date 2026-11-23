@@ -362,3 +362,9 @@ effort** (the header's "high" is wrong). Three corrections checked against code 
   when needed (an unknown task). This rule replaces the "ask once" text in `synthesizer.md:395` and
   `synthesizer_day_plan.md:36`.
 - **D13 — wait:** no forced Diarist (#3) until the capture-fidelity measurement reports.
+- **Red edits in two rounds** for the whole build (Mike): one before any code, one after all of
+  it.
+- **The build runs from one driver chat up to commit and push.** It is held until the
+  data-object project finishes, and then includes #8 and the quick-mode wiring (#9).
+- **The review's misses are folded into the build** (Mike), 18 of 19. Not M15, the wishes-store
+  read, already skipped as 11-05 #29. Placement is in the driver prompt.
