@@ -814,6 +814,10 @@ Housekeeping: consolidate the duplicate backlog files — `archive/security/secu
 > as "nothing outstanding" and preserves a damaged file before the next write replaces it (that
 > write was destroying clinical threads). 12 checks in `tests/test_degradation_paths.py`.
 >
+> **✅ Built 2026-11-24 (instructions-to-code Stage 2, not yet deployed):** the existing
+> four-round cap (`_SYNTH_MAX_ROUNDS`) now records `CHAIN_LIMIT_REACHED` and the final round says
+> plainly what is still unchecked (B4's consequence wording). The note below predates it.
+>
 > **Max chain depth is NOT built, and cannot be as written.** The 3-round limit exists only as
 > instruction in `config/agents/synthesizer.md`; `CHAIN_LIMIT_REACHED` appears nowhere in code,
 > so nothing can detect the condition and there is no moment at which a message could fire.
