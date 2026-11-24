@@ -27,8 +27,11 @@ there. What comes back is outside content and is wrapped as such (tools/untruste
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
+import threading
+import unicodedata
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +80,15 @@ _FIGURES = (
 )
 
 
+def _fold(text: str) -> str:
+    """Diacritics stripped (NFKD, combining marks dropped): "Zoë Brontë" reads "Zoe Bronte"."""
+    decomposed = unicodedata.normalize("NFKD", str(text or ""))
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
 def _norm(text: str) -> str:
     # Apostrophes split too, so "Grace Hopper's party" still holds "grace hopper".
-    return " " + re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip() + " "
+    return " " + re.sub(r"[^a-z0-9]+", " ", _fold(text).lower()).strip() + " "
 
 
 class _Unreadable(Exception):
@@ -100,21 +109,38 @@ def _aliases(value) -> list[str]:
 
 
 def _load_profile() -> dict:
+    """The profile, or {} when there is none. Anything but a mapping is unreadable — a store
+    whose shape is wrong cannot be checked, so it refuses (fail-closed)."""
     try:
         from tools.profile import _load as _profile
-        prof = _profile() or {}
+        prof = _profile()
     except Exception as exc:  # noqa: BLE001
         raise _Unreadable("profile") from exc
-    return prof if isinstance(prof, dict) else {}
+    if prof is None:
+        return {}
+    if not isinstance(prof, dict):
+        raise _Unreadable("profile")
+    return prof
 
 
 def _load_contacts() -> list[dict]:
+    """The contacts, read here rather than through `crm._load_contacts`, which turns a file that
+    is not a list into [] — an unread store must refuse, not pass (fail-closed)."""
     try:
         from tools import crm
-        contacts = crm._load_contacts()
+        path = crm._crm_path()
+        if not path.exists():
+            return []
+        data = json.loads(path.read_text())
     except Exception as exc:  # noqa: BLE001
         raise _Unreadable("contacts") from exc
-    return [c for c in contacts or [] if isinstance(c, dict)]
+    if not isinstance(data, list):
+        raise _Unreadable("contacts")
+    return [c for c in data if isinstance(c, dict)]
+
+
+# A leading article or possessive is not part of a name: "The Plumber" is one word, a role.
+_LEADING = frozenset({"the", "a", "an", "my", "our", "your", "his", "her", "their"})
 
 
 def _contact_label(c: dict) -> str:
@@ -136,6 +162,8 @@ def _name_entries(persona: str | None) -> list[tuple[str, str, str]]:
 
     def add(full: str, whose: str) -> None:
         parts = _norm(full).split()
+        while parts and parts[0] in _LEADING:
+            parts = parts[1:]
         if len(parts) >= 2:
             names.append((parts[0], parts[-1], whose))
 
@@ -154,6 +182,13 @@ def _name_entries(persona: str | None) -> list[tuple[str, str, str]]:
         for alias in _aliases(c.get("referred_to_as")):
             if _capitalised(alias):
                 add(alias, label)
+        # A child named on a contact: as written, and a lone first name with the family name.
+        for kid in _aliases(c.get("kids_names")):
+            kid = kid.strip()
+            whose = f"{kid}, child of {label}"
+            add(kid, whose)
+            if kid and last and len(_norm(kid).split()) == 1:
+                add(f"{kid} {last}", whose)
     return names
 
 
@@ -222,87 +257,166 @@ def check(question: str, persona: str | None = None, refuse_figures: bool = True
 RESEARCH_REFUSED = "refused before sending:"
 UNREADABLE = "the user's records could not be read (so nothing could be checked)"
 
-_UNIT_WORDS = frozenset({"flat", "apartment", "apt", "unit", "suite", "floor", "room"})
+_UNIT_WORDS = frozenset({"flat", "apartment", "apt", "unit", "suite", "floor", "room", "no"})
+_STREET_TYPES = frozenset({
+    "street", "st", "road", "rd", "avenue", "ave", "lane", "ln", "drive", "dr", "close", "way",
+    "crescent", "court", "ct", "place", "pl", "terrace", "gardens", "grove", "square", "mews",
+    "row", "hill", "walk", "parade", "park", "rise", "boulevard", "blvd", "strasse", "straße"})
 # A postcode that is not UK-shaped: a digit-bearing code in a later segment of the address
-# ("75001 Paris", "10115 Berlin", "D-10115", "90210-1234"). Matched whitespace- and
-# case-normalised, as its own string (build amendment 4).
+# ("75001 Paris", "10115 Berlin", "D-10115", "90210-1234") — build amendment 4.
 _OTHER_POSTCODE = re.compile(r"\b(?:[A-Z]{1,2}-)?\d{4,6}(?:-\d{3,4})?\b", re.I)
+# A phone-shaped run in a query: digits with single spaces, dots, dashes or brackets between,
+# bounded so a run is never glued to a word or a currency sign.
+_PHONE_RUN = re.compile(r"(?<![\w£$€])\+?\(?\d(?:[ \t().-]?\d){6,}(?!\w)")
+_PHONE_SPLIT = re.compile(r"\s*(?:\bext\.?\b|\bextension\b|\bx\b|[,;/])\s*", re.I)
+_TOKEN = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+
+# Roles of an identifier in a check: refused on its own; refused only beside another part of
+# the same address (a numeric-only postcode — "2026" alone is a year, "1000" a dose); or only
+# ever the other part (a city, which on its own is public).
+_ALONE, _WITH_COMPANY, _COMPANION = "alone", "with_company", "companion"
 
 
-def _phone_key(raw: str) -> str:
-    """Digits only, the last 9: the national number whatever the country code or leading 0."""
-    digits = re.sub(r"\D", "", str(raw or ""))
-    return digits[-9:] if len(digits) >= 7 else ""
+def _phone_keys(raw: str) -> list[str]:
+    """Each stored number, digits only, the last 9 — the national number whatever the country
+    code or leading 0. A second number or an extension after "ext", "x", ",", ";" or "/" is its
+    own number."""
+    keys = []
+    for part in _PHONE_SPLIT.split(str(raw or "")):
+        digits = re.sub(r"\D", "", part)
+        if len(digits) >= 7:
+            keys.append(digits[-9:])
+    return keys
 
 
-def _postcode_key(address: str, explicit: str = "") -> str:
-    if explicit.strip():
-        return re.sub(r"\s+", "", explicit).upper()
-    m = _POSTCODE.search(address)
-    if m:
-        return re.sub(r"\s+", "", m.group()).upper()
-    for seg in address.split(",")[1:]:
-        m = _OTHER_POSTCODE.search(seg)
-        if m:
-            return re.sub(r"\s+", "", m.group()).upper()
-    return ""
-
-
-def _street_key(address: str) -> str:
-    """The street segment: the first comma segment that holds a house number — never a bare
-    district or city. A flat or unit number on its own ("Flat 3") is not the street, so the
-    next segment is read instead."""
-    for seg in address.split(",")[:2]:
-        words = _norm(seg).split()
-        if not any(any(ch.isdigit() for ch in w) for w in words):
+def _segments(address: str) -> list[str]:
+    """Comma- or line-separated parts, a number-only part joined to the next ("14, Elm Road")."""
+    parts = [p.strip() for p in re.split(r"[,\n]+", str(address or "")) if p.strip()]
+    out: list[str] = []
+    carry = ""
+    for p in parts:
+        if re.fullmatch(r"\d+[A-Za-z]?", p):
+            carry = f"{carry} {p}".strip()
             continue
-        if all(w in _UNIT_WORDS or any(ch.isdigit() for ch in w) for w in words):
-            continue
-        return _norm(seg)
-    return ""
-
-
-def _details(info: dict, whose: str) -> list[tuple[str, str, str]]:
-    """(kind, key, whose) for the email, phone, postcode and street in one contact block."""
-    if not isinstance(info, dict):
-        return []
-    out: list[tuple[str, str, str]] = []
-    for e in [info.get("email")] + list(info.get("other_emails") or []):
-        e = str(e or "").strip().lower()
-        if "@" in e:
-            out.append(("an email address", e, whose))
-    key = _phone_key(str(info.get("phone") or ""))
-    if key:
-        out.append(("a phone number", key, whose))
-    address = str(info.get("address") or "").strip()
-    explicit = str(info.get("postcode") or info.get("postal_code") or info.get("zip") or "")
-    key = _postcode_key(address, explicit)
-    if key:
-        out.append(("a postcode", key, whose))
-    key = _street_key(address)
-    if key:
-        out.append(("a street address", key, whose))
+        out.append(f"{carry} {p}".strip() if carry else p)
+        carry = ""
+    if carry:
+        out.append(carry)
     return out
 
 
-def _own_identifiers(persona: str | None) -> list[tuple[str, str, str]]:
+def _street_key(address: str) -> str:
+    """The street: a house number and the words after it, up to and including a street-type
+    word, stopping before a postcode, at most four words — from the first of the first three
+    parts that holds one. Never a bare district or city; a flat or unit number ("Flat 3") is
+    not a house number. Works on comma-less and multi-line addresses alike."""
+    for seg in _segments(address)[:3]:
+        words = _norm(seg).split()
+        for i, w in enumerate(words):
+            if not any(ch.isdigit() for ch in w) or (i and words[i - 1] in _UNIT_WORDS):
+                continue
+            taken = [w]
+            for nxt in words[i + 1:]:
+                if any(ch.isdigit() for ch in nxt) or len(taken) > 4:
+                    break
+                taken.append(nxt)
+                if nxt in _STREET_TYPES:
+                    break
+            if len(taken) >= 2:
+                return " " + " ".join(taken) + " "
+    return ""
+
+
+def _postcodes(address: str, explicit: str = "") -> list[tuple[str, str]]:
+    """(key, role): a UK-shaped postcode is refused on its own; any other is matched as its
+    normalised string, refused on its own only when it holds a letter."""
+    folded = _fold(address).upper()
+    if explicit.strip():
+        key = re.sub(r"\s+", "", _fold(explicit)).upper()
+    else:
+        m = _POSTCODE.search(folded)
+        if m:
+            return [(re.sub(r"\s+", "", m.group()), "uk")]
+        key = ""
+        for seg in _segments(folded)[1:]:
+            m = _OTHER_POSTCODE.search(seg)
+            if m:
+                key = m.group().upper()
+                break
+    if not key:
+        return []
+    if _POSTCODE.fullmatch(key):
+        return [(key, "uk")]
+    return [(key, "other")]
+
+
+def _cities(address: str, street: str) -> list[str]:
+    """The other named parts of an address, as companions only (never refused alone)."""
+    out = []
+    for seg in _segments(address):
+        words = [w for w in _norm(_POSTCODE.sub(" ", _OTHER_POSTCODE.sub(" ", _fold(seg)))).split()
+                 if not any(ch.isdigit() for ch in w)]
+        key = " " + " ".join(words) + " "
+        if words and key.strip() and key not in (street or "") and len(key.strip()) >= 3:
+            out.append(key)
+    return out
+
+
+def _details(info, whose: str, group: str) -> list[tuple[str, str, str, str, str]]:
+    """(kind, key, whose, group, role) for the email, phone, postcode, street and city in one
+    contact block. A block of the wrong shape is unreadable (fail-closed)."""
+    if not info:
+        return []
+    if not isinstance(info, dict):
+        raise _Unreadable("contact details")
+    out: list[tuple[str, str, str, str, str]] = []
+    for e in [info.get("email")] + list(info.get("other_emails") or []):
+        e = _fold(str(e or "")).strip().lower()
+        if "@" in e:
+            out.append(("an email address", e, whose, group, _ALONE))
+    for key in _phone_keys(str(info.get("phone") or "")):
+        out.append(("a phone number", key, whose, group, _ALONE))
+    address = str(info.get("address") or "").strip()
+    explicit = str(info.get("postcode") or info.get("postal_code") or info.get("zip") or "")
+    street = _street_key(address)
+    for key, shape in _postcodes(address, explicit):
+        numeric = shape == "other" and re.fullmatch(r"[\d-]+", key)
+        out.append(("a postcode", f"{shape}:{key}", whose, group,
+                    _WITH_COMPANY if numeric else _ALONE))
+    if street:
+        out.append(("a street address", street, whose, group, _ALONE))
+    for city in _cities(address, street):
+        out.append(("a city", city, whose, group, _COMPANION))
+    return out
+
+
+def _own_identifiers(persona: str | None) -> list[tuple[str, str, str, str, str]]:
     """The user's own stored email, phone, postcode and street (profile `contact`), and each
     contact's (CRM `contact_info`, build amendment 1), normalised for matching. Raises
-    `_Unreadable` when either store exists but cannot be read, as `_name_entries` does."""
-    out = _details(_load_profile().get("contact") or {}, "the user's own")
-    for c in _load_contacts():
-        out += _details(c.get("contact_info") or {}, f"of {_contact_label(c)}, a contact")
+    `_Unreadable` when either store exists but cannot be read or has the wrong shape, as
+    `_name_entries` does."""
+    out = _details(_load_profile().get("contact"), "the user's own", "user")
+    for n, c in enumerate(_load_contacts()):
+        out += _details(c.get("contact_info"), f"of {_contact_label(c)}, a contact", f"c{n}")
     return out
 
 
 def _detail_in(kind: str, key: str, query: str) -> bool:
+    """Matched on the query with token boundaries — never by gluing digits across words."""
+    folded = _fold(query)
     if kind == "an email address":
-        return key in query.lower()
+        return bool(re.search(r"(?<![\w.+-])" + re.escape(key) + r"(?![\w-])", folded.lower()))
     if kind == "a phone number":
-        runs = re.findall(r"\d{7,}", re.sub(r"[\s.()\-+]", "", query))
-        return any(key in r for r in runs)
-    if kind == "a postcode":
-        return key in re.sub(r"\s+", "", query).upper()
+        return any(re.sub(r"\D", "", m.group()).endswith(key)
+                   for m in _PHONE_RUN.finditer(folded))
+    if kind.startswith("a postcode"):
+        shape, _, code = key.partition(":")
+        if shape == "uk":
+            return any(re.sub(r"\s+", "", m.group()).upper() == code
+                       for m in _POSTCODE.finditer(folded))
+        toks = [t.upper() for t in _TOKEN.findall(folded)]
+        pairs = {a + b for a, b in zip(toks, toks[1:])}
+        return code in toks or code in pairs
     return key in _norm(query)
 
 
@@ -319,8 +433,11 @@ def check_research(query: str, persona: str | None = None) -> str | None:
     at = _name_at(_norm(q), names)
     if at is not None:
         return _name_refusal(names[at])
-    for kind, key, whose in details:
-        if _detail_in(kind, key, q):
+    hit = [d for d in details if _detail_in(d[0], d[1], q)]
+    groups_with_company = {d[3] for d in hit if d[4] in (_ALONE, _COMPANION)
+                           and d[0] in ("a street address", "a city")}
+    for kind, _key, whose, group, role in hit:
+        if role == _ALONE or (role == _WITH_COMPANY and group in groups_with_company):
             return f"{kind} ({whose})"
     return None
 
@@ -332,6 +449,18 @@ def refusal_text(why: str) -> str:
                 f"Answer without the lookup, or ask the user.")
     return (f"{RESEARCH_REFUSED} the question carries {why}. Nothing left this device. Ask it "
             f"again without that.")
+
+
+# A refusal is signalled to `lookup_public_fact` by code, on its own thread — never read back
+# from Research's text, which a model writes (review item 4). `run_session` runs the agent on the
+# calling thread, so the choke point in `_run_single_agent` records into the watch opened here.
+_WATCH = threading.local()
+
+
+def note_refusal(why: str) -> None:
+    """Called by the choke point when it refuses: recorded only while a lookup is watching."""
+    if getattr(_WATCH, "active", False):
+        _WATCH.refused = why
 
 
 # --- the tool ----------------------------------------------------------------------------------
@@ -380,6 +509,7 @@ def ask_public(question: str, persona: str, source: str = "lookup_public_fact",
     from core.trace import get_subagent_depth, set_subagent_depth
     from core.orchestrator import run_session
     from tools.untrusted import wrap_untrusted
+    _WATCH.active, _WATCH.refused = True, None
     try:
         check_before_session()
         depth = get_subagent_depth()
@@ -395,13 +525,16 @@ def ask_public(question: str, persona: str, source: str = "lookup_public_fact",
         # Nothing ran: give the place back (Fable #11).
         _refund(persona, today)
         return "the lookup did not come back — ask the user instead."
-    answer = str(answer or "")
-    if answer.startswith(RESEARCH_REFUSED):
-        # Refused by the Research check before any search: nothing was spent, so the day's
-        # place comes back, and the refusal is code's own text — not outside content.
+    finally:
+        refused = getattr(_WATCH, "refused", None)
+        _WATCH.active, _WATCH.refused = False, None
+    if refused:
+        # Refused by the Research check before any search (the choke point said so, in code):
+        # nothing was spent, so the day's place comes back, and the refusal is code's own
+        # text — not outside content.
         _refund(persona, today)
-        return answer
-    text = answer
+        return refusal_text(refused)
+    text = str(answer or "")
     if max_chars:
         text = text[:max_chars]      # cut before wrapping, so the closing tag is never lost
     return wrap_untrusted(text, source=f"research_agent:{source}")

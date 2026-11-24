@@ -81,6 +81,10 @@ check("CLINICAL_CONCERN vetoes the skip",
       not _signoff_skip("--- mental_wellbeing ---\nCLINICAL_CONCERN: low mood", "over and out", False))
 check("MEDICATION_MISSED_CRITICAL vetoes the skip",
       not _signoff_skip("--- physical_health ---\nMEDICATION_MISSED_CRITICAL", "over and out", False))
+check("ESCALATION vetoes the skip (Stage 5 review item 0)",
+      not _signoff_skip("--- mental_wellbeing ---\nFLAGS: ESCALATION", "over and out", False))
+check("ESCALATION also keeps the sign-off note off, so the turn runs as normal",
+      _signoff_note("--- mental_wellbeing ---\nFLAGS: ESCALATION", "over and out", False) == "")
 
 # 2026-10-26: a sign-off that carries something runs the Synthesizer (Mike: "Synth shouldn't
 # skip when there's something active requested, even with over and out"). The long cases are

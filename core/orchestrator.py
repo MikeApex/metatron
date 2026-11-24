@@ -6118,6 +6118,8 @@ def _research_refusal(query: str, persona: str | None) -> str | None:
     if why is None:
         return None
     _trace(f"[RESEARCH] refused: {why.split(' (')[0]}")
+    # The structured signal lookup_public_fact reads — never a prefix of Research's text.
+    LG.note_refusal(why)
     return LG.refusal_text(why)
 
 
@@ -8420,7 +8422,10 @@ _PROACTIVE_FRAME = (
 # Known, accepted gap: a skipped turn writes no [CONTEXT] block, so the context
 # tracker does not see this exchange. A sign-off turn carries no new content by
 # definition — the substance was in the turns before it.
-_SIGNOFF_FLAG_TOKENS = ("MUST_SURFACE", "CLINICAL_CONCERN", "MEDICATION_MISSED_CRITICAL")
+# ESCALATION added by the Stage 5 review (2026-11-24): a clinical flag the specialists
+# write, and the safe direction — it can only stop a skip, never cause one.
+_SIGNOFF_FLAG_TOKENS = ("MUST_SURFACE", "CLINICAL_CONCERN", "MEDICATION_MISSED_CRITICAL",
+                        "ESCALATION")
 # A natural phrase, not an emoji — Mike's call 2026-08-27, after the pre-deploy
 # Synthesizer coincidentally replied "Received. Talk to you later." to a sign-off
 # and it read exactly right. A fixed string: no model call, no translation pass
