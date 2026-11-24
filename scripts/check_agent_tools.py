@@ -148,6 +148,8 @@ _TOOL_REF_RE = re.compile(r'`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\s*(\()?')
 # Config keys, filenames and field names that are lower_snake_case but are not
 # tools. Without this the report is mostly noise about YAML keys.
 _NOT_TOOLS = {
+    # `routing_miss`: a [CONTEXT] block key (synthesizer.md), parsed by code — 2026-11-24.
+    "routing_miss",
     "allowed_tools", "local_enabled", "fallback_provider", "prime_directive",
     "deployment_mode", "interval_minutes", "medication_profile", "account_email",
     "tone_shape", "private_why", "shareable_what", "delay_minutes", "days_since_rain",

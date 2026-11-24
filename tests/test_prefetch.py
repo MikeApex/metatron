@@ -250,8 +250,9 @@ def _():
             ORC._run_single_agent("logistics", "the directive", persona=PERSONA, prefetch=pre)
     (sys_a, user_a), (sys_b, user_b) = seen
     assert sys_a == sys_b
-    assert "PREFETCHED" not in sys_a
-    assert "PREFETCHED" not in user_a and "[PREFETCHED" in user_b
+    # The block's header, not the bare word: agent files name `PREFETCHED` since the closing round.
+    assert "[PREFETCHED" not in sys_a
+    assert "[PREFETCHED" not in user_a and "[PREFETCHED" in user_b
     assert user_b.index("System clock") < user_b.index("[PREFETCHED") < user_b.index(
         "the directive")
 

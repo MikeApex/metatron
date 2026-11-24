@@ -1263,3 +1263,20 @@ applies these four local fixes; each is part of the sub-build's acceptance.
    structured rows (`conflict_check_status`, `end`, `uid`) from the same fetch path before
    wrapping. `read_calendar` itself does not change, and nothing parses text out of the wrapper.
    This is the only addition to `caldav.py`. It is Amber and read-only.
+
+## Amendment 1 REVERSED (driver, 2026-11-24, from the Fable review of 4e)
+
+Amendment 1 ("merge, never replace; leave only via `held_dropped`") was wrong. The Synthesizer
+signals "raised" by **omitting** an item, and `held_dropped` is named in no agent file. So under
+amendment 1, raised items came back as "not yet raised" with a growing age, and reworded copies
+multiplied. M4 now renders the held list back to the Synthesizer every turn, so its omission is
+informed. The rule:
+- **Key absent** from the `[CONTEXT]` block (partial salvage, short reply): the stored list is
+  kept.
+- **Key present**, including `[]`: the incoming list replaces the stored one.
+- **Dates:** each item keeps its first `held_since` when it matches a stored item by normalised
+  text, or by token similarity ≥ 0.8 once the template's own words are removed.
+- **Removed items are archived**, never deleted.
+
+**C32** therefore says: re-send the full held list each turn; leave an item out once raised or no
+longer worth holding; leave the key out only if you mean "no change". `held_dropped` is not used.
