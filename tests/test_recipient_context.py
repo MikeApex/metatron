@@ -275,6 +275,66 @@ def _():
         assert "late hit" not in block and took < 3.0, (took, block)
 
 
+JL = {"id": "c_jl", "name": "Jordan Lee", "first_name": "Jordan", "last_name": "Lee"}
+MJ = {"id": "c_mj", "name": "Michael Jordan", "first_name": "Michael", "last_name": "Jordan"}
+
+
+@check("12. another contact's surname makes a first name not unique, and a hit inside another "
+       "contact's full name is not about this one ('Call Michael Jordan …' ≠ Jordan Lee)")
+def _():
+    import tools.obligations as O
+    with sandbox():
+        _seed([JL, MJ])
+        O.open_task("Call Michael Jordan about the surprise party", kind="deadline",
+                    due="2026-12-01", new_instance=True)
+        by_rule, _ = RC.matcher(JL, [JL, MJ])
+        assert not by_rule("Call Michael Jordan about the surprise party")
+        assert by_rule("Jordan Lee's surprise party")
+        with patched([(MEM, "search_memory", _memory([]))]):
+            block = RC.on_file_block([JL], contacts=[JL, MJ])
+        assert "surprise party" not in block, block
+        # Beside a capitalised word not on the record, even when the first name is unique.
+        solo = {"id": "c_b", "name": "Birch Moss", "first_name": "Birch", "last_name": "Moss"}
+        by_rule, _ = RC.matcher(solo, [solo])
+        assert by_rule("Birch said yes") and not by_rule("Ask Birch Wood about it")
+
+
+@check("13. unlinked list entries follow the only-this-person rule: a bare 'Sam' with two Sams "
+       "is neither's; 'Sam Lee' is Sam Lee's; a linked entry stays with its contact")
+def _():
+    rows = [{"title": "chalk bag", "for": "Sam"}, {"title": "scarf", "for": "sam lee"},
+            {"title": "book", "for": "Sam", "for_contact": "c_sam2"}]
+    obj = {"id": "gifts", "name": "Gift ideas", "store": "archive", "status": "active",
+           "fields": {"for": {}}}
+    with sandbox(), patched([(DO, "objects", lambda: [obj]), (DO, "_rows", lambda oid: rows),
+                             (DO, "may_read", lambda agent, o: (True, ""))]):
+        by = lambda c, cs: RC.matcher(c, cs)[0]  # noqa: E731
+        got = [r["title"] for r in RC._list_rows(SAM, "relationships", by(SAM, [SAM, SAM2]))]
+        assert got == ["scarf"], got
+        got = [r["title"] for r in RC._list_rows(SAM2, "relationships", by(SAM2, [SAM, SAM2]))]
+        assert got == ["book"], got
+        got = [r["title"] for r in RC._list_rows(SAM, "relationships", by(SAM, [SAM]))]
+        assert got == ["chalk bag", "scarf"], got
+
+
+@check("14. the people records are their own prefetch read: emitted even when the on-file "
+       "read runs out of time")
+def _():
+    import time as _time
+    with sandbox():
+        _seed([SAM])
+        cfg = dict(PF.load_config())
+        cfg["read_timeout_s"] = 1
+        with patched([(PF, "load_config", lambda: cfg),
+                      (RC, "on_file_block", lambda *a, **k: _time.sleep(4) or "late")]):
+            t0 = _time.monotonic()
+            block = PF.build("relationships", "Draft a note to Sam Lee.", "", PERSONA, now=NOW)
+            took = _time.monotonic() - t0
+        assert '"id": "c_sam"' in block and "overdue for contact" in block, block
+        assert "(not read in advance: call `read_contact`)" in block and "late" not in block
+        assert took < 2.5, took
+
+
 if __name__ == "__main__":
     for name, ok, detail in _results:
         print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"\n        {detail}" if detail else ""))

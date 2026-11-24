@@ -8060,18 +8060,17 @@ def _dispatch_from_coordinator(
     # shapeless or older than 14 days. Same recipients as the flags.
     _headline = _pattern_headline(persona)
 
-    # Stage 4 #12: names are resolved from the Coordinator's own directive and the user's words
-    # only — never from the blocks code appends below (knowledge, logs, PROACTIVE_FLAGS), which
-    # name other people (review of 56cce4f, item 1).
-    own_directives: dict[str, str] = {}
     for spec in specialists:
         if not isinstance(spec, dict):
             continue
         agent = spec.get("agent", "")
         agent = _normalize_agent(agent)
         directive = spec.get("directive", "")
-        if agent and isinstance(directive, str):
-            own_directives.setdefault(agent, directive)
+        # Stage 4 #12: names are resolved from THIS spec's own directive and the user's words
+        # only — never from the blocks code appends below (knowledge, logs, PROACTIVE_FLAGS),
+        # which name other people. Captured per spec, so a second spec for the same agent
+        # resolves from its own directive (reviews of 56cce4f item 1, 1c6f39d item 3).
+        own = directive if isinstance(directive, str) else ""
         mode = spec.get("mode", "")
         is_ff = spec.get("fire_and_forget", False) or agent == "diarist"
         complexity: str | None = mode if mode in ("quick", "deep") else None
@@ -8136,16 +8135,16 @@ def _dispatch_from_coordinator(
 
         if is_ff:
             # Collected, NOT started — see the deferral note below the blocking loop.
-            fire_and_forget.append((agent, directive, complexity))
+            fire_and_forget.append((agent, directive, complexity, own))
             outputs[agent] = f"{agent}: dispatched (async)"
         else:
-            blocking.append((agent, directive, complexity))
+            blocking.append((agent, directive, complexity, own))
 
     # Stage 4 M1: what is on file before any writer runs, so the reply reads back only what this
     # turn newly saved. Real user turns only, and only when a dispatched specialist can write a
     # contact or the profile (cost: one contacts.json load). Values only, on the request trace.
     if blocking and user_turn:
-        _readback_snapshot([a for a, _, _ in blocking])
+        _readback_snapshot([a for a, *_ in blocking])
 
     if blocking:
         with ThreadPoolExecutor() as executor:
@@ -8161,7 +8160,7 @@ def _dispatch_from_coordinator(
             _fan_agent = _tr.get_current_agent()
             _fan_turn = _turn.current()
 
-            def _make_specialist(agent_name, directive, cx):
+            def _make_specialist(agent_name, directive, cx, own_directive):
                 def _worker():
                     _tr.set_trace(_fan_trace)
                     _tr.set_subagent_depth(_fan_depth)
@@ -8173,8 +8172,7 @@ def _dispatch_from_coordinator(
                         try:
                             from core import prefetch as _prefetch
                             pre = _prefetch.build(
-                                agent_name, own_directives.get(agent_name, directive),
-                                user_text, persona, user_turn,
+                                agent_name, own_directive, user_text, persona, user_turn,
                                 calendar_future=(calendar_future
                                                  if agent_name == "logistics" else None))
                         except Exception as exc:  # noqa: BLE001
@@ -8186,8 +8184,8 @@ def _dispatch_from_coordinator(
                         )
                 return _worker
             futures = {
-                executor.submit(_make_specialist(a, d, c)): a
-                for a, d, c in blocking
+                executor.submit(_make_specialist(a, d, c, o)): a
+                for a, d, c, o in blocking
             }
             for future in as_completed(futures):
                 a = futures[future]
@@ -8211,7 +8209,7 @@ def _dispatch_from_coordinator(
     # Synthesizer does, rather than racing it.
     if fire_and_forget:
         new_pending = _pending_raised_since(_pending_at_dispatch, persona)
-        for agent, directive, complexity in fire_and_forget:
+        for agent, directive, complexity, own in fire_and_forget:
             directive, asserted_done = pending_directive_note(directive, new_pending)
             if asserted_done:
                 actions = ", ".join(sorted({p.get("action", "an action")
@@ -8244,7 +8242,7 @@ def _dispatch_from_coordinator(
                         f"{_data_object_directive(data_turn, 'diarist')}" if _tokens else "")
 
             def _bg(a: str = agent, d: str = directive, c: str | None = complexity,
-                    depth: int = _tr.get_subagent_depth(),
+                    o: str = own, depth: int = _tr.get_subagent_depth(),
                     spoken: list[str] = _turn.current_spoken(),
                     tokens: list[str] = _tokens, retry_d: str = _retry_d) -> None:
                 _tr.set_subagent_depth(depth)
@@ -8267,8 +8265,16 @@ def _dispatch_from_coordinator(
                 # run stays unbound, as before.
                 if not user_turn:
                     _turn.adopt({"user_turn": False, "started_at": time.time(), "spoken": []})
+                # Stage 4 #12: a fire-and-forget specialist's prefetch resolves names from the
+                # Coordinator's own directive too — never from the code-appended blocks in `d`.
                 try:
-                    run_session(a, user_input=d, persona=persona, complexity=c,
+                    from core import prefetch as _prefetch
+                    pre = _prefetch.build(a, o, user_text, persona, user_turn)
+                except Exception as exc:  # noqa: BLE001 — a hint, never a cost
+                    logger.warning(f"[prefetch] {a}: {exc}")
+                    pre = ""
+                try:
+                    run_session(a, user_input=d, persona=persona, complexity=c, prefetch=pre,
                                 **({} if user_turn else {"proactive": True}))
                 except Exception as exc:
                     logger.warning(f"[fire_and_forget] {a} failed: {exc}")
@@ -9721,9 +9727,12 @@ def run_session(agent_name: str, user_input: str,
                 history: list[dict] | None = None,
                 bare: bool = False, proactive: bool = False,
                 thinking_budget: int | None = None,
-                scheduled_job: bool = False) -> str:
+                scheduled_job: bool = False, prefetch: str | None = None) -> str:
     """
     Run a single conversation session.
+
+    `prefetch`: a specialist's PREFETCHED block already built by the caller (the pipeline's
+    fire-and-forget dispatch); None builds it in _run_single_agent, as before.
 
     When agent_name is "coordinator", runs the full Coordinator → Synthesizer
     pipeline automatically. For all other agents, runs a single agent pass.
@@ -9786,6 +9795,7 @@ def run_session(agent_name: str, user_input: str,
                 persona=bound, provider=provider,
                 model_override=model_override, complexity=complexity,
                 history=history, bare=bare, thinking_budget=thinking_budget,
+                prefetch=prefetch,
             )
             # `user_input` is this entry point's own argument — the message being
             # answered. The filter only acts on the Synthesizer at all, and the

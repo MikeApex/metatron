@@ -467,6 +467,69 @@ def _():
                          "- Kate Lowe — phone: 07700 900 555"], items
 
 
+@check("S1. a lone name beside someone else's capitalised name is not resolved, only offered "
+       "('Sam Peters', 'Michael Jordan'); 'Sam said' and 'Yesterday Sam called' resolve; a "
+       "name-only record's first word never resolves alone ('the City council')")
+def _():
+    with sandbox():
+        people = [_c("c_hale", "Sam Hale", "Sam", "Hale"), _c("c_jl", "Jordan Lee", "Jordan", "Lee"),
+                  {"id": "c_city", "name": "City Dental"}]
+        _seed(people)
+        ids, got = _ids("I had lunch with Sam Peters today")
+        assert ids == [] and [(w, c["id"]) for w, c in got["possibly"]] == [
+            ("Sam Peters", "c_hale")], got
+        block, _, _ = CR.people_block("I had lunch with Sam Peters today", "", date(2026, 11, 20))
+        assert 'possibly Sam Hale (c_hale)? "Sam Peters" may be someone else' in block, block
+        ids, got = _ids("We watched Michael Jordan highlights")
+        assert ids == [] and [c["id"] for _, c in got["possibly"]] == ["c_jl"], got
+        assert _ids("Then Sam said hello")[0] == ["c_hale"]
+        assert _ids("Yesterday Sam called me")[0] == ["c_hale"]
+        assert _ids("Sam Hale and Sam Peters came")[0] == ["c_hale"], "the full name still does"
+        ids, got = _ids("I wrote to the City council")
+        assert ids == [] and [c["id"] for _, c in got["possibly"]] == ["c_city"], got
+        assert _ids("I booked the City Dental check-up")[0] == ["c_city"]
+
+
+@check("S3. two specs for one agent each resolve from their own directive; a fire-and-forget "
+       "Relationships resolves from the Coordinator's directive, not code-appended blocks")
+def _():
+    import threading
+    with sandbox():
+        _seed()
+        specs = [{"agent": "relationships", "directive": "Help call Will Turner."},
+                 {"agent": "relationships", "directive": "Help text Mark Ellis."}]
+        s = Script({"relationships": "ok"})
+        with patched([(RC, "_memory_lines", lambda c, n: [])]), pipeline(s), \
+                T.turn_scope(user_turn=True):
+            ORC._dispatch_from_coordinator(coordinator_package(specs), persona=PERSONA,
+                                           provider="openai", user_turn=True, user_text="")
+        ins = s.inputs.get("relationships") or []
+        assert len(ins) == 2, len(ins)
+        will = [x for x in ins if "Help call Will Turner." in x][0]
+        mark = [x for x in ins if "Help text Mark Ellis." in x][0]
+        assert '"id": "c_will"' in will and '"id": "c_mark"' not in will, will[:1500]
+        assert '"id": "c_mark"' in mark and '"id": "c_will"' not in mark, mark[:1500]
+
+        seen, done = {}, threading.Event()
+
+        def fake_run_session(agent, user_input="", **kw):
+            seen.update(agent=agent, user_input=user_input, prefetch=kw.get("prefetch"))
+            done.set()
+            return ""
+        spec = [{"agent": "relationships", "directive": "Help call Will Turner.",
+                 "fire_and_forget": True}]
+        with patched([(RC, "_memory_lines", lambda c, n: []),
+                      (ORC, "_knowledge_block", lambda *a, **k: "KNOWN: Mark Ellis plays golf"),
+                      (ORC, "run_session", fake_run_session)]), pipeline(Script({})):
+            ORC._dispatch_from_coordinator(coordinator_package(spec), persona=PERSONA,
+                                           provider="openai", knowledge=[{"key": "k"}],
+                                           user_turn=True, user_text="")
+            assert done.wait(10), "the fire-and-forget thread never ran"
+        assert "KNOWN: Mark Ellis plays golf" in seen["user_input"], seen
+        assert '"id": "c_will"' in (seen["prefetch"] or ""), seen["prefetch"]
+        assert '"id": "c_mark"' not in (seen["prefetch"] or ""), seen["prefetch"]
+
+
 if __name__ == "__main__":
     for name, ok, detail in _results:
         print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"\n        {detail}" if detail else ""))

@@ -41,7 +41,6 @@ import logging
 import re
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -102,23 +101,42 @@ def _single_names(contact: dict, counts: Counter) -> list[str]:
 
 
 def matcher(contact: dict, contacts: list[dict]):
-    """(names_full, names_single) → a function text -> bool telling whether text names this
-    contact under rule 3, and a function for full-name-only matching."""
-    from tools.contact_resolution import _singles
+    """Two functions, text -> bool: whether text names this contact under rule 3, and whether it
+    names them by full name. A single name is unique only if no other contact carries it as a
+    first name, nickname OR last name ("Jordan" is not unique beside Michael Jordan), and a
+    single-name hit is rejected when it sits beside a capitalised word that is not on this
+    contact's record — that is someone else's full name ("Call Michael Jordan …")."""
+    from tools.contact_resolution import _foreign_neighbour, _singles, _words
+    from tools.heard_names import _contact_words
     counts: Counter = Counter()
+    cid = contact.get("id")
     for c in contacts or [contact]:
-        for w in _singles(c):
+        words = set(_singles(c))
+        if c.get("id") != cid:
+            words |= set(_words(c.get("last_name")))
+            name = _words(c.get("name"))
+            if len(name) >= 2:
+                words.add(name[-1])
+        for w in words:
             counts[w] += 1
     full = _full_patterns(contact)
+    own = _contact_words(contact)
     singles = [re.compile(rf"(?<![A-Za-z]){re.escape(w)}(?![A-Za-z])")
                for w in _single_names(contact, counts)]
 
     def by_full(text) -> bool:
         return any(p.search(str(text or "")) for p in full)
 
+    def _single_hit(t: str) -> bool:
+        for p in singles:
+            for m in p.finditer(t):
+                if not _foreign_neighbour(t, m.start(), m.end(), own):
+                    return True
+        return False
+
     def by_rule(text) -> bool:
         t = str(text or "")
-        return by_full(t) or any(p.search(t) for p in singles)
+        return by_full(t) or _single_hit(t)
     return by_rule, by_full
 
 
@@ -159,10 +177,37 @@ def _holds(granted: set[str] | None, tool: str) -> bool:
 
 # --- the sources --------------------------------------------------------------------------------
 
-def _list_entries(contact: dict, agent: str) -> list[str]:
-    from tools.data_objects import entries_for_contact
+def _list_rows(contact: dict, agent: str, by_rule) -> list[dict]:
+    """The entries in the user's lists that are for this person: linked to them by id, or — not
+    linked — with a `for` that names them under rule 3 (their full name, or a first name or
+    nickname no other contact shares). The read rule binds for `agent`, as in
+    tools/data_objects.entries_for_contact, whose walk this mirrors."""
+    from tools import data_objects as DO
+    cid = str(contact.get("id") or "")
+    out = []
     with _as_agent(agent):
-        rows = entries_for_contact(contact)
+        for o in DO.objects():
+            if o.get("store") != "archive" or "for" not in (o.get("fields") or {}) \
+                    or o.get("status") != "active":
+                continue
+            if not DO.may_read(agent, o)[0]:
+                continue
+            for r in DO._rows(o["id"]):
+                if not isinstance(r, dict) or r.get("removed"):
+                    continue
+                linked = r.get("for_contact")
+                written = " ".join(str(r.get("for") or "").split())
+                if (cid and linked == cid) or (not linked and written and (
+                        by_rule(written) or by_rule(written.title()))):
+                    out.append({"list": o["name"], **{k: v for k, v in r.items()
+                                if k not in ("for_contact", "derived", "source_turn")}})
+    return out
+
+
+def _list_entries(contact: dict, agent: str, by_rule=None) -> list[str]:
+    if by_rule is None:
+        by_rule = matcher(contact, [contact])[0]
+    rows = _list_rows(contact, agent, by_rule)
     out = []
     for r in rows:
         what = next((str(r[k]) for k in ("title", "text", "item", "idea", "description", "what")
@@ -239,15 +284,17 @@ def on_file_block(resolved: list[dict], agent: str = "relationships",
             def _search(c):
                 with (persona_scope(persona) if persona else contextlib.nullcontext()):
                     return _memory_lines(c, match[str(c["id"])][0])
-            pool = ThreadPoolExecutor(max_workers=len(people), thread_name_prefix="on-file")
-            futures = {str(c["id"]): pool.submit(_search, c) for c in people}
-            pool.shutdown(wait=False)
+            # Daemon threads (core.prefetch._submit): a search abandoned past the budget must
+            # never hold the process open at exit, which a ThreadPoolExecutor's workers do.
+            from core.prefetch import _submit
+            futures = {str(c["id"]): _submit(lambda c=c: _search(c), "on-file")
+                       for c in people}
 
         sections = []
         for c in people:
             by_rule, by_full = match[str(c["id"])]
             lines: list[str] = []
-            sources = [("lists", lambda: _list_entries(c, agent), True),
+            sources = [("lists", lambda: _list_entries(c, agent, by_rule), True),
                        ("tasks", lambda: _task_lines(by_rule), True),
                        ("facts", lambda: _wisdom_lines(by_rule, by_full),
                         _holds(granted, "read_wisdom"))]

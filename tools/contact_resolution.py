@@ -218,10 +218,56 @@ def _two_token_hits(text: str, phrases: dict) -> tuple[list[tuple[str, list[dict
 
 def _uncovered(word: str, text: str, spans: list) -> bool:
     """Does `word` occur in `text` at least once outside the two-token matches?"""
-    for m in re.finditer(rf"(?<![A-Za-z']){re.escape(word)}(?![A-Za-z])", text):
-        if not any(s <= m.start() < e for s, e in spans):
-            return True
-    return False
+    return bool(_occurrences(word, text, spans))
+
+
+def _occurrences(word: str, text: str, spans: list) -> list[tuple[int, int]]:
+    return [(m.start(), m.end())
+            for m in re.finditer(rf"(?<![A-Za-z']){re.escape(word)}(?![A-Za-z])", text)
+            if not any(s <= m.start() < e for s, e in spans)]
+
+
+def _sentence_initial(text: str, start: int) -> bool:
+    from tools.heard_names import _ABBREV_BEFORE_RE, _BREAK_WINDOW, _SENTENCE_BREAK_RE
+    if not text[:start].strip(" \"'([\t"):
+        return True
+    before = text[max(0, start - _BREAK_WINDOW):start]
+    return bool(_SENTENCE_BREAK_RE.search(before) and not _ABBREV_BEFORE_RE.search(before))
+
+
+def _foreign_neighbour(text: str, start: int, end: int, own: set[str]) -> str:
+    """The name as written with the capitalised word right beside [start, end) — spaces only
+    between — when that word is NOT on the matched contact's record; else "". "lunch with Sam
+    Peters" when Sam Hale is the contact: "Peters" is somebody else's surname, so "Sam" there is
+    not known to be Sam Hale. A sentence-initial neighbour ("Yesterday Sam called") and a known
+    non-name are not names."""
+    from tools.heard_names import _NOT_NAMES
+    word = text[start:end]
+    after = re.match(r"[ \t]+([A-Za-z][A-Za-z'\-]*)", text[end:])
+    if after:
+        w = _POSSESSIVE_RE.sub("", after.group(1)).strip("'-")
+        if w[:1].isupper() and w.lower() not in own and w.lower() not in _NOT_NAMES:
+            return f"{word} {w}"
+    m = re.search(r"([A-Za-z][A-Za-z'\-]*)[ \t]+$", text[:start])
+    if m:
+        w = _POSSESSIVE_RE.sub("", m.group(1)).strip("'-")
+        if (w[:1].isupper() and w.lower() not in own and w.lower() not in _NOT_NAMES
+                and not _sentence_initial(text, m.start(1))):
+            return f"{w} {word}"
+    return ""
+
+
+def _implied_only(c: dict, word: str) -> bool:
+    """`word` reaches this contact only as the first token of a name with no first_name ("City
+    Dental"): it counts toward "which one?", but never resolves alone ("the City council")."""
+    if _words(c.get("first_name")):
+        return False
+    explicit = set(_words(c.get("nickname"))[:1])
+    for value in [c.get("name")] + list(c.get("referred_to_as") or []):
+        w = _words(value)
+        if len(w) == 1:
+            explicit.add(w[0])
+    return word not in explicit and word == first_word(c)
 
 
 def resolve(texts: list[str], contacts: list[dict] | None = None,
@@ -229,11 +275,13 @@ def resolve(texts: list[str], contacts: list[dict] | None = None,
     """Who the texts name, exactly. Returns
     {"resolved": [contact, …] (first-named first, unique by id),
      "ambiguous": [(word, [contact, …]), …],
-     "prefix": [(word, contact), …]}.
+     "prefix": [(word, contact), …],
+     "possibly": [(as written, contact), …]}  — a single name beside someone else's name, or a
+    name-only record's first word: never resolved, offered for the model to check.
     Never writes; never raises (an unreadable store resolves nobody)."""
     from tools import crm as CRM
-    from tools.heard_names import _candidates, _known_words
-    out = {"resolved": [], "ambiguous": [], "prefix": []}
+    from tools.heard_names import _candidates, _contact_words, _known_words
+    out = {"resolved": [], "ambiguous": [], "prefix": [], "possibly": []}
     try:
         contacts = CRM._load_contacts() if contacts is None else contacts
         if not contacts:
@@ -272,7 +320,27 @@ def resolve(texts: list[str], contacts: list[dict] | None = None,
                 if not _uncovered(word, text, spans):
                     continue
                 if low in singles:
-                    settle(word, singles[low])
+                    matches = singles[low]
+                    # Item 1 (review of 1c6f39d): a lone name beside another capitalised name
+                    # that is not on the same record is somebody else — "Sam Peters", "Michael
+                    # Jordan". Resolved only from an occurrence with no such neighbour.
+                    own = set()
+                    for c in matches:
+                        own |= _contact_words(c)
+                    clean, beside = False, ""
+                    for start, end in _occurrences(word, text, spans):
+                        other = _foreign_neighbour(text, start, end, own)
+                        if not other:
+                            clean = True
+                            break
+                        beside = beside or other
+                    if not clean or all(_implied_only(c, low) for c in matches):
+                        for c in matches[:MAX_PREFIX]:
+                            if len(out["possibly"]) < MAX_PREFIX and \
+                                    all(x[1].get("id") != c.get("id") for x in out["possibly"]):
+                                out["possibly"].append((beside or word, c))
+                        continue
+                    settle(word, matches)
                     continue
                 # Rule 2: a prefix of a contact's first name is offered, never resolved.
                 if (low in known or low in prefix_seen or len(low) < CRM._MIN_PREFIX_LEN
@@ -287,6 +355,7 @@ def resolve(texts: list[str], contacts: list[dict] | None = None,
                             break
         # A person both resolved and offered as a prefix is not offered.
         out["prefix"] = [(w, c) for w, c in out["prefix"] if c.get("id") not in seen_ids]
+        out["possibly"] = [(w, c) for w, c in out["possibly"] if c.get("id") not in seen_ids]
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[contact_resolution] nobody resolved: {exc}")
     return out
@@ -415,10 +484,13 @@ def people_block(directive: str, user_text: str, today: date,
                       for m in matches[:MAX_ASK_WHICH]]
             if len(matches) > MAX_ASK_WHICH:
                 parts.append(f"(+{len(matches) - MAX_ASK_WHICH} more)")
+        for written, c in got["possibly"]:
+            parts.append(f"possibly {_display(c)} ({c.get('id')})? \"{written}\" may be "
+                         f"someone else — read the record or ask before using it")
         for word, c in got["prefix"]:
             parts.append(f"possibly {_display(c)} ({c.get('id')}) for \"{word}\" (name prefix): "
                          f"read the record before writing a new contact")
-        if not (people or got["ambiguous"] or got["prefix"]):
+        if not (people or got["ambiguous"] or got["prefix"] or got["possibly"]):
             parts.append("No one named in this turn matches a contact exactly.")
         lists: list[str] = []
         overdue = overdue_lines(today)

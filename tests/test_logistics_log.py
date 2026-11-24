@@ -383,6 +383,51 @@ def _():
         _ = t
 
 
+@check("S4. a series that began last month is re-checked at its next occurrence (past test and "
+       "window); a series whose occurrences are all over is not")
+def _():
+    series = {**_F1, "uid": "weekly", "start": "2026-10-20T12:30", "end": "2026-10-20T13:30",
+              "recurrence": "FREQ=WEEKLY",
+              "occurs_in_range": ["2026-11-20T08:00", "2026-11-20T12:30", "2026-11-21T12:30"]}
+    over = {**series, "uid": "done", "occurs_in_range": ["2026-11-20T07:00"]}
+    with _calendar(series, over) as (checks, writes):
+        got, _ = _read("logistics")
+        assert checks == [("2026-11-20T12:30:00", "2026-11-20T13:30:00", "weekly")], checks
+        assert [r["uid"] for r in got["reverify"]] == ["weekly"] and writes == []
+        TR.set_trace(None)
+
+
+@check("S5c. the re-check lock is per persona")
+def _():
+    import core.persona as P
+    with patched([(P, "current_persona", lambda: "user_a")]):
+        a = LL._reverify_lock()
+    with patched([(P, "current_persona", lambda: "user_b")]):
+        b = LL._reverify_lock()
+    with patched([(P, "current_persona", lambda: "user_a")]):
+        assert LL._reverify_lock() is a
+    assert a is not b
+
+
+@check("S6. only a whole-line none-phrase is empty; a line that goes on is kept; False is "
+       "recorded as 'false'")
+def _():
+    for nothing in ("None", "None identified", "None at this time.", "Nothing to note", "n/a",
+                    "N/A for now", "[none]", "No cross-domain opportunities",
+                    "No coordination opportunities today", "-"):
+        assert LL.coordination_from(f"COORDINATION_OPPORTUNITIES: {nothing}\n") == [], nothing
+    for real in ("None of the errands overlap, but the pharmacy is next to the dentist",
+                 "Nothing urgent, but the bank is beside the office"):
+        assert LL.coordination_from(f"COORDINATION_OPPORTUNITIES: {real}\n") == [
+            {"text": real}], real
+    assert LL._short(False) == "false" and LL._short(None) == "" and LL._short(0) == "0"
+    with sandbox():
+        LL.record_run(_rec("logistics", [("update_calendar_event", {"uid": "u-1",
+                                                                    "all_day": False},
+                                          _event_ok("u-1"), True)]), "", user_turn=True)
+        assert _code_part()["events_scheduled"][0]["changed"] == {"all_day": "false"}
+
+
 if __name__ == "__main__":
     for name, ok, detail in _results:
         print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"\n        {detail}" if detail else ""))

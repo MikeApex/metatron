@@ -81,6 +81,7 @@ READ_TOOLS: dict[str, str] = {
     "baseline_row": "get_baseline_context",
     "baseline_periods": "read_baseline_periods",
     "people": "read_contact",
+    "people_on_file": "read_contact",
 }
 
 # Not an evidence agent (it gets no PROACTIVE_FLAGS and no headline), but its fixed reads are
@@ -387,32 +388,52 @@ def _read_baseline_periods(agent: str, e: dict, ctx: dict) -> tuple[str, str, bo
     got = read_baseline_periods()
     text = json.dumps(got, ensure_ascii=False) if got else "no labelled baseline periods."
     return ("read_baseline_periods() — labelled periods", _cap(text, _entry_cap(e, ctx)), False)
+
+
+# --- 4c: the people a Relationships dispatch names (#12, M2, M3, #16) -----------------------------
+
+def _contacts_or_none() -> list[dict] | None:
+    from tools.crm import _load_contacts
+    try:
+        return _load_contacts()
+    except Exception as exc:  # noqa: BLE001 — the readers report and degrade on their own
+        logger.warning(f"[prefetch] contacts unreadable: {exc}")
+        return None
+
+
 def _read_people(agent: str, e: dict, ctx: dict) -> tuple[str, str, bool]:
-    """4c (#12, M2, M3, #16): the people this dispatch names, matched exactly to contacts, the
-    overdue and upcoming-dates lists, and what is on file naming them. Resolved from the
-    directive and — on a real user turn only — the user's words (build() blanks them otherwise).
-    Never calls get_tone_shape; never writes."""
+    """4c (#12, M2, M3): the people this dispatch names, matched exactly to contacts, and the
+    overdue and upcoming-dates lists. Resolved from the Coordinator's own directive and — on a
+    real user turn only — the user's words (build() blanks them otherwise). Never calls
+    get_tone_shape; never writes. Its own read, so it is emitted even when the on-file read
+    (`people_on_file`, below) runs out of time (review of 1c6f39d, item 5b)."""
     from tools.contact_resolution import DEFAULT_UPCOMING_DAYS, people_block
-    from tools.recipient_context import on_file_block
     try:
         days = int(e.get("upcoming_days") or DEFAULT_UPCOMING_DAYS)
     except (TypeError, ValueError):
         days = DEFAULT_UPCOMING_DAYS
-    from tools.crm import _load_contacts
-    try:
-        contacts = _load_contacts()
-    except Exception as exc:  # noqa: BLE001 — people_block reports and degrades on its own
-        logger.warning(f"[prefetch] contacts unreadable: {exc}")
-        contacts = None
-    # Records, overdue and dates first; #16's block after, under its own time budget, so a slow
-    # past-entry search can never cost the records (review of 56cce4f, item 5).
-    named, lists, resolved = people_block(ctx.get("directive") or "",
-                                          ctx.get("user_text") or "", ctx["today"], days,
-                                          contacts=contacts, cache=ctx.get("request_cache"))
-    on_file = on_file_block(resolved, agent, contacts) if resolved else ""
-    body = "\n\n".join(x for x in (named, on_file, lists) if x)
+    named, lists, _ = people_block(ctx.get("directive") or "", ctx.get("user_text") or "",
+                                   ctx["today"], days, contacts=_contacts_or_none(),
+                                   cache=ctx.get("request_cache"))
+    body = "\n\n".join(x for x in (named, lists) if x)
     return ("people named here, overdue contacts and upcoming dates (matched exactly by code)",
             _cap(body, ctx["cap"]), False)
+
+
+def _read_people_on_file(agent: str, e: dict, ctx: dict) -> tuple[str, str, bool]:
+    """4c (#16): what is on file naming the people resolved here — the same exact resolution as
+    `people`, made again (cheap; the archive scan is memoised per request). "" when no one is
+    resolved or nothing is on file."""
+    from tools.contact_resolution import MAX_PEOPLE, resolve
+    from tools.recipient_context import on_file_block
+    contacts = _contacts_or_none()
+    if not contacts:
+        return ("what is on file about them", "", False)
+    got = resolve([ctx.get("directive") or "", ctx.get("user_text") or ""], contacts,
+                  ctx.get("request_cache"))
+    people = got["resolved"][:MAX_PEOPLE]
+    body = on_file_block(people, agent, contacts) if people else ""
+    return ("what is on file about the people named (code)", _cap(body, ctx["cap"]), False)
 
 
 _READERS: dict[str, Callable[[str, dict, dict], tuple[str, str, bool]]] = {
@@ -431,6 +452,7 @@ _READERS: dict[str, Callable[[str, dict, dict], tuple[str, str, bool]]] = {
     "baseline_row": _read_baseline_row,
     "baseline_periods": _read_baseline_periods,
     "people": _read_people,
+    "people_on_file": _read_people_on_file,
 }
 
 

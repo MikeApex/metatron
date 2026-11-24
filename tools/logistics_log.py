@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,20 @@ MAX_COORDINATION = 5
 _TEXT_CHARS = 300
 
 _WRITE_LOCK = threading.Lock()      # read-append-write of today's sub-dict is one step
-_REVERIFY_LOCK = threading.Lock()   # a uid is checked once per request, even under parallel reads
+_REVERIFY_LOCKS: dict[str, threading.Lock] = {}   # per persona: one user never waits on another
+_REVERIFY_LOCKS_GUARD = threading.Lock()
+
+
+def _reverify_lock() -> threading.Lock:
+    """A uid is checked once per request even under parallel reads — under a lock per persona,
+    so one user's CalDAV re-check never holds up another's read."""
+    from core.persona import current_persona
+    key = current_persona() or ""
+    with _REVERIFY_LOCKS_GUARD:
+        lock = _REVERIFY_LOCKS.get(key)
+        if lock is None:
+            lock = _REVERIFY_LOCKS[key] = threading.Lock()
+        return lock
 
 _UID_RE = re.compile(r'"uid"\s*:\s*"([^"]+)"')
 
@@ -69,7 +82,11 @@ def _succeeded(tc) -> bool:
 
 
 def _short(value) -> str:
-    text = " ".join(str(value or "").split())
+    if value is None:
+        return ""
+    if isinstance(value, bool):          # all_day=False is a change worth recording as such
+        return "true" if value else "false"
+    text = " ".join(str(value).split())
     return text[:_TEXT_CHARS]
 
 
@@ -112,16 +129,22 @@ def actions_from(agent_rec) -> dict[str, list[dict]]:
     return out
 
 
-_NONE_WORDS = {"none", "n/a", "na", "nothing", "no", "omit", "-", "nil"}
-# "None identified", "None at this time", "Nothing to coordinate", "N/A for now", "No
-# opportunities" — a model's way of saying there is nothing is not an opportunity.
-_NONE_RE = re.compile(r"^\W*(none|nothing|nil|n/?a|no\s+(coordination|opportunit|cross)\w*|omit)"
-                      r"(\b|\W|$)", re.IGNORECASE)
+# A model's way of saying there is nothing is not an opportunity — but only as the WHOLE line:
+# "None identified", "None at this time", "Nothing to note", "n/a", "No cross-domain
+# opportunities". A line that starts that way and goes on ("None of the errands overlap, but the
+# pharmacy is next to the dentist") is an opportunity, and is kept (review of 1c6f39d, item 6).
+_NONE_TAIL = (r"(?:\s+(?:identified|found|noted|today|now|for\s+now|at\s+(?:this|the\s+moment|"
+              r"present)(?:\s+time)?|this\s+(?:time|turn|session|week)|right\s+now|to\s+"
+              r"(?:note|report|flag|coordinate|add|surface)|yet|so\s+far|apparent|currently))*")
+_NONE_RE = re.compile(
+    r"^(?:none|nothing|nil|n/?a|omit(?:ted)?|-+|no(?:\s+(?:cross[-\s]?domain|coordination|"
+    r"new|clear|obvious|relevant))*\s+(?:coordination\s+)?opportunit(?:y|ies)|no)"
+    + _NONE_TAIL + r"[\s.!]*$", re.IGNORECASE)
 
 
 def _is_none(text: str) -> bool:
     t = str(text or "").strip().strip("[]()").strip()
-    return not t or t.lower().strip(".") in _NONE_WORDS or bool(_NONE_RE.match(t))
+    return not t or bool(_NONE_RE.match(t))
 
 
 def coordination_from(output: str) -> list[dict]:
@@ -215,6 +238,26 @@ def _naive_local(value: str, now: datetime) -> datetime | None:
     return dt
 
 
+def _next_instance(r: dict, now: datetime) -> dict | None:
+    """For a repeating event (`occurs_in_range`, tools/caldav.py), the row moved to its next
+    occurrence that has not ended — the series' own `start` is when it BEGAN (last month, say),
+    which is neither the past test nor the window to check. None when every occurrence in the
+    range is over. A one-off row comes back as it is (review of 1c6f39d, item 4)."""
+    occs = r.get("occurs_in_range")
+    if not isinstance(occs, list):
+        return r
+    now_naive = now.replace(tzinfo=None)
+    s0, e0 = _naive_local(r.get("start") or "", now), _naive_local(r.get("end") or "", now)
+    duration = (e0 - s0) if s0 and e0 and e0 > s0 else timedelta(0)
+    for occ in sorted(str(o) for o in occs):
+        when = _naive_local(occ, now)
+        if when is None:
+            continue
+        if when + duration > now_naive or (not duration and when >= now_naive):
+            return {**r, "start": when.isoformat(), "end": (when + duration).isoformat()}
+    return None
+
+
 def _now() -> datetime:
     from tools.ambient import _now_local
     return _now_local()
@@ -233,6 +276,9 @@ def read_calendar_reverified(start_date: str, end_date: str) -> dict:
         pending = []
         for r in rows:
             if str(r.get("conflict_check_status") or "").upper() != "FAILED":
+                continue
+            r = _next_instance(r, now)
+            if r is None:
                 continue
             end = _naive_local(r.get("end") or r.get("start") or "", now)
             if end is None or end <= now_naive:
@@ -258,7 +304,7 @@ def read_calendar_reverified(start_date: str, end_date: str) -> dict:
         if cache is None:
             cache = {}
         out = []
-        with _REVERIFY_LOCK:
+        with _reverify_lock():
             for r in pending:
                 uid = str(r.get("uid") or "")
                 ckey = (uid, str(r.get("start") or ""))
