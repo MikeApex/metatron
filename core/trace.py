@@ -187,6 +187,12 @@ class RequestTrace:
         # and only when the persona's scheduler.yaml names this agent for that job. None on every
         # other request, proactive or not (a Coordinator pipeline, a fire-and-forget run).
         self.scheduled_job: str | None = None
+        # Stage 4 M1: what was on file before dispatch (contact and profile values as comparison
+        # keys), so the reply reads back only what this request newly saved. Never serialised.
+        self.readback_snapshot: dict | None = None
+        # Stage 4 M14: calendar uids whose [VERIFY] conflict check code re-ran this request, and
+        # the result — re-used, never re-run, by a second read. Never serialised.
+        self.reverified: dict = {}
         self.start_mono = time.monotonic()
         self._lock = threading.Lock()  # guards pipeline/subagent list mutations from worker threads
 

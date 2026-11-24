@@ -3078,6 +3078,7 @@ _NO_WORDS_REFUSED_WRITES = frozenset({
 from core.actions import NO_WORDS_REFUSAL as _NO_WORDS_REFUSAL  # noqa: E402 — one home
 from core.actions import CLARIFY_REFUSAL as _CLARIFY_REFUSAL  # noqa: E402
 from core.actions import designed_refusal as _designed_refusal  # noqa: E402
+from tools import logistics_log as _logistics_log  # noqa: E402 — Stage 4 M13/M14
 
 # M7 (D-S2-4, shadow first). Mental Wellbeing and Physical Health are never held — not in
 # dispatch, not as a Synthesizer follow-up. `_CLARIFY_HOLD_LIVE` stays False this run: code
@@ -3180,7 +3181,15 @@ def dispatch_tool(name: str, inputs: dict, handlers: dict,
                 result += f" Correct usage: {hint}"
             ok = False
         else:
-            result = fn(**inputs)
+            if (name == "read_calendar" and _caller == "logistics"
+                    and _logistics_log.is_plain_read_calendar(fn)):
+                # Stage 4 M14: Logistics' own calendar read re-checks up to two [VERIFY] events
+                # and attaches the result. Read-only — the calendar is never written by a read
+                # (4-7 = no). Prefetch and the speculative read call the handler directly, never
+                # through here, so they never re-check.
+                result = _logistics_log.read_calendar_reverified(**inputs)
+            else:
+                result = fn(**inputs)
             if isinstance(result, dict):
                 # [DB-0910-02] Eighteen tool files report failure as {"error": "..."} — CalDAV's
                 # "401 Unauthorized" among them. Encoded to JSON the result starts with "{", so
@@ -6320,7 +6329,22 @@ def _run_single_agent(agent_name: str, user_input: str,
         # Stage 4 #14 (build-time amendment 3): today's counted signals at the same hook, on
         # every path — after the medication check, re-read from the logs this run just wrote.
         result = _counters_return(agent_name, result, persona)
+        # Stage 4 M13: code writes Logistics' log entry from the calls that ran (its own record),
+        # on every path. `result` is unchanged; coordination opportunities on real user turns only.
+        if agent_name == "logistics":
+            _logistics_return(_agent_rec, result, persona)
     return result
+
+
+def _logistics_return(agent_rec, result: str, persona: str | None) -> None:
+    """M13 — see tools/logistics_log.record_run. The bound turn decides whether the prose-derived
+    list is written (no turn = not a user turn: fail closed, 4-6). Never raises."""
+    try:
+        user_turn = bool((_turn.current() or {}).get("user_turn"))
+        with persona_scope(resolve_persona(persona)):
+            _logistics_log.record_run(agent_rec, result, user_turn)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[logistics_log] not recorded: {exc}")
 
 
 _COUNTED_SLOT_KEY = "counted"
@@ -6351,6 +6375,31 @@ def _speculative_calendar(persona: str | None):
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[prefetch] speculative calendar: {exc}")
         return None
+
+
+def _readback_snapshot(agents: list[str]) -> None:
+    """M1 — see tools/contact_resolution.take_snapshot. Never raises."""
+    try:
+        from core.router import get_allowed_tools
+        from tools.contact_resolution import CONTACT_WRITERS, PROFILE_WRITERS, take_snapshot
+        held: set[str] = set()
+        for a in agents:
+            allowed = get_allowed_tools(a)
+            held |= (CONTACT_WRITERS | PROFILE_WRITERS) if allowed is None else set(allowed)
+        take_snapshot(_tr.get_trace(), bool(held & CONTACT_WRITERS), bool(held & PROFILE_WRITERS))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[readback] snapshot not taken: {exc}")
+
+
+def _readback_block(user_turn: bool) -> str:
+    """M1 — the NEWLY SAVED read-back line for the Synthesizer, from this request's trace. ""
+    on a turn with no user words, with nothing new, or on any error."""
+    try:
+        from tools.contact_resolution import readback_block
+        return readback_block(_tr.get_trace(), user_turn)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[readback] not built: {exc}")
+        return ""
 
 
 def _counters_return(agent_name: str, result: str, persona: str | None) -> str:
@@ -8086,6 +8135,12 @@ def _dispatch_from_coordinator(
         else:
             blocking.append((agent, directive, complexity))
 
+    # Stage 4 M1: what is on file before any writer runs, so the reply reads back only what this
+    # turn newly saved. Real user turns only, and only when a dispatched specialist can write a
+    # contact or the profile (cost: one contacts.json load). Values only, on the request trace.
+    if blocking and user_turn:
+        _readback_snapshot([a for a, _, _ in blocking])
+
     if blocking:
         with ThreadPoolExecutor() as executor:
             _fan_persona = current_persona()
@@ -8958,6 +9013,8 @@ def run_pipeline_session(user_input: str,
         # After the specialists, so their writes this turn are already in the trace.
         capture_turn = _capture.note_for_synthesizer(persona, capture_job, _capture_trace,
                                                   _data_object_ids(data_turn))
+        # Stage 4 M1: details newly saved this turn, read back by the reply. Mirrors the twin.
+        readback_text = _readback_block(has_real_user_turn(user_input, is_proactive, attachments))
 
         # User signed off ("over and out") with nothing asked or reported, and nothing
         # pressing came back from the specialists: rest without the Synthesizer pass.
@@ -9013,6 +9070,7 @@ def run_pipeline_session(user_input: str,
             + (f"\n\n{pm_headline}" if pm_headline else "")
             + (f"\n\n{crisis_text}" if crisis_text else "")
             + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
+            + (f"\n\n{readback_text}" if readback_text else "")
             + (f"\n\n{signoff_note}" if signoff_note else "")
             + (f"\n\n{focus_block}" if focus_block else "")
             + f"\n\n{_action_block(data_turn)}"
@@ -9290,6 +9348,8 @@ def _run_pipeline_session_stream_inner(
     task_hint = _task_hint_block(user_input, is_proactive, history, persona)
     capture_turn = _capture.note_for_synthesizer(persona, capture_job, _capture_trace,
                                               _data_object_ids(data_turn))
+    # Stage 4 M1: details newly saved this turn, read back by the reply. Mirrors the twin.
+    readback_text = _readback_block(has_real_user_turn(user_input, is_proactive, attachments))
     # Sign-off skip — mirrors the non-streaming branch above; same veto, same ack.
     # The code medication line is read by the veto too — mirrors the non-streaming twin.
     veto_text = f"{spec_text}\n\n{med_line}" if med_line else spec_text
@@ -9343,6 +9403,7 @@ def _run_pipeline_session_stream_inner(
         + (f"\n\n{pm_headline}" if pm_headline else "")
         + (f"\n\n{crisis_text}" if crisis_text else "")
         + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
+        + (f"\n\n{readback_text}" if readback_text else "")
         + (f"\n\n{signoff_note}" if signoff_note else "")
         + (f"\n\n{focus_block}" if focus_block else "")
         + f"\n\n{_action_block(data_turn)}"

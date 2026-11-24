@@ -40,6 +40,9 @@ agents:
     - {read: counters}
   relationships:
     - {read: agent_config}
+    # 4c: people named, matched exactly (#12); stored tone shape only (M2); overdue + dates in the
+    # next `upcoming_days` (M3); what is on file naming them (#16). Never calls get_tone_shape.
+    - {read: people, upcoming_days: 14}
   work_vocation:
     - {read: agent_config}
     - {read: log_field, field: wellbeing}   # #6: the flow cross-check reads MW's and PH's fields

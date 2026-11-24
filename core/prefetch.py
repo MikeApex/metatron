@@ -41,6 +41,9 @@ The rules this module keeps, each tested in tests/test_prefetch.py:
 9. **"Today" is the persona's day**, placed the way the medication view places doses
    (tools/domain_counters.day_entry): each field by its write time in the persona's zone and day
    boundary, read from the same-date file and both neighbours.
+10. **Names resolve exactly, or not at all** (4c, tools/contact_resolution.py): a person is
+    never picked from several, merged or created, and the stored tone shape is handed over but
+    `get_tone_shape` is never called (it would start a mailbox sweep).
 
 Cost: Logistics ≈ 4–5k tokens re-sent on each remaining turn (uncached user message); PH and MW
 ≈ 1.5k. Nothing persists between requests — the speculative calendar future dies with it.
@@ -77,6 +80,7 @@ READ_TOOLS: dict[str, str] = {
     "wisdom_duplicates": "find_duplicate_wisdom",
     "baseline_row": "get_baseline_context",
     "baseline_periods": "read_baseline_periods",
+    "people": "read_contact",
 }
 
 # Not an evidence agent (it gets no PROACTIVE_FLAGS and no headline), but its fixed reads are
@@ -383,6 +387,23 @@ def _read_baseline_periods(agent: str, e: dict, ctx: dict) -> tuple[str, str, bo
     got = read_baseline_periods()
     text = json.dumps(got, ensure_ascii=False) if got else "no labelled baseline periods."
     return ("read_baseline_periods() — labelled periods", _cap(text, _entry_cap(e, ctx)), False)
+def _read_people(agent: str, e: dict, ctx: dict) -> tuple[str, str, bool]:
+    """4c (#12, M2, M3, #16): the people this dispatch names, matched exactly to contacts, the
+    overdue and upcoming-dates lists, and what is on file naming them. Resolved from the
+    directive and — on a real user turn only — the user's words (build() blanks them otherwise).
+    Never calls get_tone_shape; never writes."""
+    from tools.contact_resolution import DEFAULT_UPCOMING_DAYS, people_block
+    from tools.recipient_context import on_file_block
+    try:
+        days = int(e.get("upcoming_days") or DEFAULT_UPCOMING_DAYS)
+    except (TypeError, ValueError):
+        days = DEFAULT_UPCOMING_DAYS
+    named, lists, resolved = people_block(ctx.get("directive") or "",
+                                          ctx.get("user_text") or "", ctx["today"], days)
+    on_file = on_file_block(resolved, agent) if resolved else ""
+    body = "\n\n".join(x for x in (named, on_file, lists) if x)
+    return ("people named here, overdue contacts and upcoming dates (matched exactly by code)",
+            _cap(body, ctx["cap"]), False)
 
 
 _READERS: dict[str, Callable[[str, dict, dict], tuple[str, str, bool]]] = {
@@ -400,6 +421,7 @@ _READERS: dict[str, Callable[[str, dict, dict], tuple[str, str, bool]]] = {
     "wisdom_duplicates": _read_wisdom_duplicates,
     "baseline_row": _read_baseline_row,
     "baseline_periods": _read_baseline_periods,
+    "people": _read_people,
 }
 
 
