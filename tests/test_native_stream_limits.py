@@ -515,7 +515,25 @@ def _():
                   + [lambda: [_Chunk([_text(shown), _call("probe_tool")])]]
                   + [lambda f=final: [_Chunk([_text(f)])]])
         out, hist = _run(_FakeClient(rounds))
-        expect = shown if dropped else f"{shown}\n\n{final}"
+        # A kept reply that restates the shown text contributes only what follows it.
+        tail = ("Saturday could not be checked because the calendar did not answer."
+                if final.startswith(shown) else final)
+        expect = shown if dropped else f"{shown}\n\n{tail}"
+        assert out == expect, (final, out)
+        assert hist[-1]["content"] == out
+    # A reply that restates the shown preamble and goes on: only the new part is appended.
+    for shown2, final, expect in (
+            ("Let me check.", "Let me check. Saturday is free.",
+             "Let me check.\n\nSaturday is free."),
+            ("Let me check.", "let me CHECK — Saturday is free from two o'clock.",
+             "Let me check.\n\nSaturday is free from two o'clock."),
+            ("Let me check.", "Saturday is free, as I said: let me check the rest.",
+             "Let me check.\n\nSaturday is free, as I said: let me check the rest.")):
+        _reset()
+        rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
+                  + [lambda s2=shown2: [_Chunk([_text(s2), _call("probe_tool")])]]
+                  + [lambda f=final: [_Chunk([_text(f)])]])
+        out, hist = _run(_FakeClient(rounds))
         assert out == expect, (final, out)
         assert hist[-1]["content"] == out
     # Nothing shown and a no-content final reply: the fixed line, never "nothing".

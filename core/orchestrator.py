@@ -5245,6 +5245,10 @@ def _run_gemini_native_stream(client, model_name: str,
     final = (final or "").strip()
     if _final_adds_nothing(final, already):
         final = ""
+    elif final:
+        # The shown text is already on screen (streamed): a reply that restates it and goes on
+        # contributes only what follows it.
+        final = _final_tail(final, already)
     if final:
         sep = "\n\n" if already.strip() else ""
         yield sep + final
@@ -5263,11 +5267,11 @@ _EMPTY_FINAL_REPLIES = frozenset({
     "", "nothing", "nothing further", "nothing more", "nothing to add", "nothing else",
     "none", "na", "empty", "no reply", "no further reply", "no response", "empty reply",
 })
-# How much new text a final reply that CONTAINS what was shown must add to be kept. A reply
-# that repeats the answer with a few words more is a doubled answer; one that extends a
-# preamble ("Let me check." → "Let me check. Saturday is free from 2pm.") is the answer, and
-# dropping it would leave the user with only the preamble.
-_FINAL_EXTENSION_MIN_CHARS = 24
+# How much new text (normalised) a final reply that CONTAINS what was shown must add to be kept.
+# Only the added part is appended (_final_tail), so the test is on that part alone: "Done." or
+# "OK" after a restated answer is padding; "Saturday is free." after "Let me check." is the
+# answer, and dropping it would leave the user with only the preamble.
+_FINAL_EXTENSION_MIN_CHARS = 8
 
 
 def _norm_reply(text: str) -> str:
@@ -5289,7 +5293,30 @@ def _final_adds_nothing(final: str, already: str) -> bool:
         return False
     if nf in na:
         return True
-    return na in nf and len(nf) - len(na) < _FINAL_EXTENSION_MIN_CHARS
+    if na not in nf:
+        return False
+    added = nf.replace(na, " ", 1).strip()
+    return added in _EMPTY_FINAL_REPLIES or len(added) < _FINAL_EXTENSION_MIN_CHARS
+
+
+def _final_tail(final: str, already: str) -> str:
+    """`final` with a leading restatement of `already` removed, when the normalised reply starts
+    with the normalised shown text (located by the longest raw prefix that normalises to it).
+    Anything else — the shown text in the middle, or not there at all — returns `final` whole."""
+    na = _norm_reply(already)
+    if not na or not _norm_reply(final).startswith(na):
+        return final
+    cut = None
+    for i in range(1, len(final) + 1):
+        n = _norm_reply(final[:i])
+        if n == na:
+            cut = i
+        elif cut is not None or len(n) > len(na):
+            break
+    if cut is None:
+        return final
+    tail = final[cut:].strip()
+    return tail or final
 
 
 def _final_reply_round(client, model_name: str, contents: list, config, types,
