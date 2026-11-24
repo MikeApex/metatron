@@ -30,7 +30,7 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
-### 2026-11-24, fourth (the agent-instructions-to-code build — all five stages built, reviewed and landed; two Red rounds; nothing deployed) — `8cd3be3` → `36c5972` — **committed and pushed, NOT deployed**
+### 2026-11-24, fourth (the agent-instructions-to-code build — all five stages built, reviewed and landed; two Red rounds; deployed by Mike) — `8cd3be3` → `36c5972` — **committed and pushed; DEPLOYED by Mike 11-24** (the VM was at `28c369c`, so all five stages went live together; Stage 2 had not ridden an earlier deploy)
 
 **Incoming handoff:** `archive/handoffs/2026-11-23-instructions-to-code-build-driver-prompt.md`
 (Opus, high): one driver chat, two Red rounds, the review's misses included (18 of 19).
@@ -86,7 +86,6 @@ list and the per-stage live checks.
 `main`. Never stage through the shared index.
 
 **Owed, all Mike's:**
-- Check the VM HEAD first, because Stage 2 may already be live, then `./deploy.sh`.
 - The five per-stage live checks in the report.
 - The clinical A4 suite before Alpha, about $4.
 - The persona-file cleanups (Denied).
@@ -154,6 +153,8 @@ list and the per-stage live checks.
 **How:** one line removed from `permissions.ask` in `.claude/settings.json`, with a dated note in `_comment_ask`. `scripts/hook_context_gate.py::_tier` reads settings.json, so the edit-time briefing reclassifies agent files without a code change. Tier tables brought into line in `CLAUDE.md` § Change tiers, `docs/WORKFLOW.md` and `.claude/commands/fix.md`.
 
 **Decision made in-session, flagged to Mike:** "Red" carried two meanings — prompts on edit, *and* never delegated to a worker. Only the first was removed. Agent files stay main-session-only (CLAUDE.md now says so beside the Red line; `/fix` has an "Amber, not delegated" row), `build-implementer`/`build-planner` still list them as off-limits, and Build's hardcoded deny list in `core/build/gates.py` is untouched. *Rejected:* making them fully Amber (delegable) — Mike's stated reason was editing friction, not who builds, and the rule's reason ("there the judgement is the work") still holds. Reversing it is two agent files plus the `/fix` row if Mike wants it.
+
+**Same day, second ask — routing follows (Mike: "Remove routing.yaml from red tier as well"):** both `Edit(./config/modules/routing.yaml)` and `routing_cloud.yaml` removed from `ask`, read as the pair every tier table groups as `routing*.yaml` — `routing_cloud.yaml` is the one the VM actually runs. Same terms as agent files: no prompt, still main-session-only. Red is now only `core/{router,persona,scheduler,spend_guard}.py` and the inert `git push`.
 
 **Corrected in passing:** `_comment_ask` said "all nine Edit rules below" when there were seven; it now says "every Edit rule".
 

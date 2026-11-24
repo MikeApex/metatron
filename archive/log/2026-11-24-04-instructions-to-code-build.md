@@ -1,4 +1,4 @@
-### 2026-11-24, fourth (the agent-instructions-to-code build — all five stages built, reviewed and landed; two Red rounds; nothing deployed) — `8cd3be3` → `36c5972` — **committed and pushed, NOT deployed**
+### 2026-11-24, fourth (the agent-instructions-to-code build — all five stages built, reviewed and landed; two Red rounds; deployed by Mike) — `8cd3be3` → `36c5972` — **committed and pushed; DEPLOYED by Mike 11-24** (the VM was at `28c369c`, so all five stages went live together; Stage 2 had not ridden an earlier deploy)
 
 **Incoming handoff:** `archive/handoffs/2026-11-23-instructions-to-code-build-driver-prompt.md`
 (Opus, high): one driver chat, two Red rounds, the review's misses included (18 of 19).
@@ -54,7 +54,6 @@ list and the per-stage live checks.
 `main`. Never stage through the shared index.
 
 **Owed, all Mike's:**
-- Check the VM HEAD first, because Stage 2 may already be live, then `./deploy.sh`.
 - The five per-stage live checks in the report.
 - The clinical A4 suite before Alpha, about $4.
 - The persona-file cleanups (Denied).
