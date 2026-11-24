@@ -59,12 +59,135 @@ def _clean(value: str) -> str:
     return text[:_MAX_VALUE_CHARS].strip()
 
 
-def _parse_profile(raw: str) -> dict:
+# --- post-validation against the sample (Stage 5 #21) ------------------------------------------
+#
+# The profiler's own instructions say "only record what recurs" and "no third parties", and a
+# model follows both imperfectly. Code can check both exactly against the sample it was given, so
+# it does, BEFORE the per-list truncation (so a one-off cannot use up one of the 6 slots):
+#   1. a pet name or shared phrase seen fewer than _MIN_RECURRENCE times is dropped;
+#   2. a value naming another person the user knows is dropped (list) or blanked (string);
+#   3. a name "they use for the user" must actually appear in what THEY wrote.
+
+_MIN_RECURRENCE = 5
+# Capitalised words that are common words as well as names. Never treated as another person's
+# name: erring toward keeping a value; the agent file's third-party rule covers the rest.
+_NAME_STOPLIST = frozenset(w.lower() for w in (
+    "Will", "May", "Mark", "Grace", "Rose", "June", "Hope", "Bill", "Pat", "Art", "Joy", "Dawn",
+    "Summer", "Faith", "Frank", "Grant", "Victor", "Sterling", "Iris", "Ivy", "Jade", "Ruby",
+    "Amber", "Holly", "Rich", "Sunny", "Bob", "Sue", "Rob", "Jack", "Bay", "Jay"))
+_BLOCK_RE = re.compile(r"^\[(user|them)\] ", re.M)
+_QUOTED = re.compile(r"(?:^|(?<=[\s(]))['\"‘“]([^'\"‘’“”]{2,}?)['\"’”](?=$|[\s.,;:!?)])")
+_WORD = re.compile(r"[^\W\d_]+")
+
+
+def _occurrences(phrase: str, text: str) -> int:
+    phrase = phrase.strip()
+    if not phrase:
+        return 0
+    return len(re.findall(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", text, re.I))
+
+
+def _recurs(value: str, sample: str) -> bool:
+    """A value that quotes its phrase (`calls Fridays 'the long one'`) is counted by the quote;
+    counting the whole description would drop every correct entry."""
+    quoted = _QUOTED.findall(value)
+    return _occurrences(quoted[0] if quoted else value, sample) >= _MIN_RECURRENCE
+
+
+def _their_text(sample: str) -> str:
+    """Only what the contact wrote: the `[them]` blocks of tools/mail.search_correspondence."""
+    marks = list(_BLOCK_RE.finditer(sample))
+    parts = []
+    for i, m in enumerate(marks):
+        if m.group(1) == "them":
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(sample)
+            parts.append(sample[m.end():end])
+    return "\n".join(parts)
+
+
+def _name_words(record: dict, keys: tuple) -> set[str]:
+    words: set[str] = set()
+    for k in keys:
+        v = record.get(k)
+        for s in (v if isinstance(v, list) else [v]):
+            if isinstance(s, str):
+                words |= {w.lower() for w in _WORD.findall(s) if len(w) >= 2}
+    return words
+
+
+_OWN_KEYS = ("name", "first_name", "last_name", "nickname", "preferred_name", "referred_to_as")
+
+
+def _other_names(contact: dict | None, contacts: list, user_name: str, sample: str) -> set[str]:
+    """Name words of OTHER people the user knows: any word of another contact's name, first name
+    or nickname — minus every word the profiled contact is known by (a duplicate record or a
+    namesake must never remove the contact's own name, review L8), minus the user's own name
+    words, minus the stoplist — and only a word that appears capitalised in the sample (build
+    amendment 2: exact for this check, so a contact saved as "School Office" whose words the mail
+    never capitalises contributes nothing)."""
+    contact = contact or {}
+    own = _name_words(contact, _OWN_KEYS) | {w.lower() for w in _WORD.findall(user_name or "")}
+    in_sample = {w for w in _WORD.findall(sample) if w[0].isupper()}
+    cid = contact.get("id")
+    out: set[str] = set()
+    for c in contacts or []:
+        if not isinstance(c, dict) or (cid and c.get("id") == cid):
+            continue
+        for w in _name_words(c, ("name", "first_name", "nickname")):
+            if w in own or w in _NAME_STOPLIST:
+                continue
+            for form in in_sample:
+                if form.lower() == w:
+                    out.add(form)
+    return out
+
+
+def _names_other(value: str, names: set[str]) -> bool:
+    """Case-sensitive, capitalised tokens only — "will do" never matches a contact named Will."""
+    return any(w[0].isupper() and w in names for w in _WORD.findall(value))
+
+
+def _validate(data: dict, sample: str, contact: dict | None, contacts: list,
+              user_name: str) -> dict:
+    names = _other_names(contact, contacts, user_name, sample)
+    theirs = _their_text(sample)
+    out = dict(data)
+    for key in _STR_KEYS:
+        v = out.get(key)
+        if isinstance(v, str) and names and _names_other(v, names):
+            out[key] = ""
+    for key in _LIST_KEYS:
+        items = out.get(key)
+        if isinstance(items, str):
+            items = [items]
+        if not isinstance(items, list):
+            continue
+        kept = []
+        for v in items:
+            if not isinstance(v, str):
+                continue
+            if names and _names_other(v, names):
+                continue
+            if key in ("pet_names", "shared_phrases") and not _recurs(v, sample):
+                continue
+            if key == "names_they_use_for_user" and not _occurrences(
+                    (_QUOTED.findall(v) or [v])[0], theirs):
+                continue
+            kept.append(v)
+        out[key] = kept
+    return out
+
+
+def _parse_profile(raw: str, sample: str = "", contact: dict | None = None,
+                   contacts: list | None = None, user_name: str = "") -> dict:
     """
     Pull the JSON object out of a model response and reduce it to the fixed key set.
 
     Tolerates a markdown fence and surrounding chatter because models add them despite
     instructions, but tolerates nothing about *which* keys survive.
+
+    With `sample` (the correspondence the profiler read), every value is first checked against
+    it — see `_validate` — before the truncation, so one-offs do not use up the slots.
     """
     if not raw:
         return {}
@@ -84,6 +207,8 @@ def _parse_profile(raw: str) -> dict:
         return {}
     if not isinstance(data, dict):
         return {}
+    if sample:
+        data = _validate(data, sample, contact, contacts or [], user_name)
 
     out: dict = {}
     for key in _STR_KEYS:
@@ -224,7 +349,19 @@ def _extract(address: str, contact_id: str, persona: str | None = None) -> dict:
             bare=True,
         )
 
-        profile = _parse_profile(raw)
+        # Post-validation (Stage 5 #21) needs who else the user knows. Unreadable records mean
+        # a third party's name cannot be checked for, so nothing is written this time.
+        try:
+            from tools import crm
+            from tools.profile import _load as _load_profile
+            contacts = crm._load_contacts()
+            user_name = str((_load_profile() or {}).get("name") or "")
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "error", "detail": f"Records unreadable: {type(exc).__name__}"}
+        record = next((c for c in contacts if isinstance(c, dict) and c.get("id") == contact_id),
+                      {})
+        profile = _parse_profile(raw, sample=str(sample.get("correspondence") or ""),
+                                 contact=record, contacts=contacts, user_name=user_name)
         if not profile:
             return {"status": "error", "detail": "Extractor returned no usable JSON."}
 

@@ -113,7 +113,15 @@ MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANS
                  # weekly Pattern Miner run ended without a valid report, so nothing was
                  # written. It wrote none for 12 straight Sundays unseen; this is the line
                  # that makes the next failing Sunday visible.
-                 "PATTERN_REPORT_MISSING"}
+                 "PATTERN_REPORT_MISSING",
+                 # Stage 5 #11, 2026-11-24 (core/orchestrator._record_unparsed_horizon): a
+                 # specialist's HORIZON_ITEMS block (line or JSON-key form) was not valid JSON,
+                 # so its findings were not filed. Carries the first 300 chars of the block.
+                 "HORIZON_BLOCK_UNPARSED",
+                 # Stage 5 M19, 2026-11-24 (tools/reply_checks.check_filler): a reply opened a
+                 # sentence with a listed filler phrase ("Enjoy the museum"). Detection only —
+                 # the count is what shows whether the Synthesizer's rule is holding.
+                 "FILLER_PHRASE"}
 
 WANTED = USER_TYPES | MACHINE_TYPES
 
@@ -192,6 +200,8 @@ LABELS = {
     "BUILD_CHECK_FAILED": "a build landing failed its checks and was reverted",
     "CHAIN_LIMIT_REACHED": "a reply ran out of tool rounds before it finished",
     "PATTERN_REPORT_MISSING": "the weekly pattern analysis wrote no report",
+    "HORIZON_BLOCK_UNPARSED": "a specialist's upcoming-items block was lost, unparsed",
+    "FILLER_PHRASE": "a reply used a filler phrase the rules forbid",
 }
 
 ROOT = Path(__file__).resolve().parent.parent

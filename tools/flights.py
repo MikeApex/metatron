@@ -17,6 +17,8 @@ checks on travel days, not a polling loop.
 from __future__ import annotations
 
 import os
+import threading
+import time
 from datetime import datetime
 
 import requests
@@ -24,6 +26,35 @@ import requests
 TIMEOUT_SECONDS = 10
 _HOST = "aerodatabox.p.rapidapi.com"
 _BASE = f"https://{_HOST}"
+
+# The plan's one-request-a-second limit, kept in code rather than asked of a model (Stage 5
+# M18). Per process: the server and a scheduler unit can still collide, which is why the 429
+# message below stays. The stamp lives in memory and dies with the process.
+_MIN_INTERVAL_S = 1.05
+_THROTTLE_LOCK = threading.Lock()
+_LAST_REQUEST = {"at": None}
+
+
+def _throttle() -> None:
+    """Sleep until _MIN_INTERVAL_S has passed since the last request in this process."""
+    with _THROTTLE_LOCK:
+        last = _LAST_REQUEST["at"]
+        if last is not None:
+            wait = _MIN_INTERVAL_S - (time.monotonic() - last)
+            if wait > 0:
+                time.sleep(wait)
+        _LAST_REQUEST["at"] = time.monotonic()
+
+
+_DISRUPTED_STATUSES = ("cancelled", "canceled", "diverted")
+
+
+def is_disrupted(f: dict) -> bool:
+    """The one home of "this flight is off schedule": either leg later than scheduled, or a
+    cancelled / diverted status. Running early is not a disruption."""
+    dep, arr = f.get("departure") or {}, f.get("arrival") or {}
+    status = str(f.get("status") or "").lower()
+    return bool(dep.get("delayed") or arr.get("delayed") or status in _DISRUPTED_STATUSES)
 
 
 def _api_key() -> str | None:
@@ -57,6 +88,7 @@ def get_flight_status(flight_number: str, date: str = "") -> dict:
         path += f"/{date.strip()}"
 
     try:
+        _throttle()
         resp = requests.get(
             f"{_BASE}{path}",
             headers={"x-rapidapi-host": _HOST, "x-rapidapi-key": key},
@@ -115,13 +147,17 @@ def get_flight_status(flight_number: str, date: str = "") -> dict:
 
     flights = []
     for f in data if isinstance(data, list) else []:
-        flights.append({
+        flight = {
             "number": f.get("number", num),
             "airline": (f.get("airline") or {}).get("name", "?"),
             "status": f.get("status", "Unknown"),
             "departure": _leg(f.get("departure") or {}),
             "arrival": _leg(f.get("arrival") or {}),
-        })
+        }
+        # Details are kept — "which terminal?" is still a fair question — and the flag says
+        # whether there is anything to tell the user at all.
+        flight["disrupted"] = is_disrupted(flight)
+        flights.append(flight)
 
     return {"flights": flights}
 
@@ -132,9 +168,10 @@ GET_FLIGHT_STATUS_SCHEMA = {
         "Current status of a scheduled flight by flight number (e.g. 'BA117') — on time, "
         "delayed, cancelled, arrived, with departure/arrival airport, terminal, and "
         "scheduled vs. current-estimate times. Use ahead of a travel day to check before "
-        "the user asks. Rate-limited to 1 request/second on the current plan — call once "
-        "per flight, not in a tight loop. An empty result means no matching flight was "
-        "found; say so rather than guessing at a status."
+        "the user asks. Each flight carries `disrupted` (a leg running late, or cancelled "
+        "or diverted); when it is false there is nothing to tell the user. Call once per "
+        "flight — the rate limit is kept by the tool. An empty result means no matching "
+        "flight was found; say so rather than guessing at a status."
     ),
     "input_schema": {
         "type": "object",

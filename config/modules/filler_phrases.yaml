@@ -1,0 +1,15 @@
+# Filler phrases — the DETECTOR's list for Stage 5 M19 (tools/reply_checks.py check_filler).
+#
+# The rule itself lives in config/agents/synthesizer.md ("Do not tell the user to enjoy
+# things."); this file is only what the detector looks for, so a slip is counted rather than
+# lost. Detection only: nothing here changes a reply. A match writes at most one FILLER_PHRASE
+# quality event per reply, which reaches DEV_BACKLOG.md through the backlog sync.
+#
+# Each entry is a regular expression, matched case-insensitively at the START of a sentence
+# only — "Enjoy the museum." is filler; "you'd enjoy the quieter route" is advice. Edited here,
+# picked up on the next reply (the file is re-read when it changes).
+sentence_starts:
+  - 'enjoy (the|your|it|yourself)\b'
+  - 'have a (great|good|lovely|wonderful) time\b'
+  - 'have fun\b'
+  - 'hope it goes well\b'

@@ -524,6 +524,8 @@ def _():
     plan = D.current(_PERSONA)
     first = D.length_ask(_PERSONA, plan, mark=True)
     assert first and "set_minutes" in first and "Write the report" not in first, first
+    # Stage 5 D12: estimate and record, never "record their answer as stated".
+    assert "estimated" in first and "stated" not in first.replace("estimated", ""), first
     named = {t for t in (a, b, c) if t in first}
     assert len(named) == 1, first
     assert first not in (D.length_ask(_PERSONA, plan) or "")           # never the same one twice

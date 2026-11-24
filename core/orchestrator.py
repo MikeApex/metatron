@@ -6103,6 +6103,24 @@ _CACHED_SPECIALISTS = {
 _EVIDENCE_AGENTS = frozenset(_CACHED_SPECIALISTS)
 
 
+def _research_refusal(query: str, persona: str | None) -> str | None:
+    """The refusal a Research query gets before it leaves (Stage 5 #17), or None. Any failure
+    to check refuses — fail-closed, by the privacy ruling."""
+    from tools import lookup_guard as LG
+    try:
+        with persona_scope(resolve_persona(persona)):
+            why = LG.check_research(query, persona)
+    except PersonaError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[research] check failed, refusing: {type(exc).__name__}")
+        why = LG.UNREADABLE
+    if why is None:
+        return None
+    _trace(f"[RESEARCH] refused: {why.split(' (')[0]}")
+    return LG.refusal_text(why)
+
+
 def _run_single_agent(agent_name: str, user_input: str,
                       persona: str | None = None, provider: str | None = None,
                       model_override: str | None = None,
@@ -6141,6 +6159,15 @@ def _run_single_agent(agent_name: str, user_input: str,
         base_url_override = model_cfg.base_url
 
     _trace(f"[AGENT] {agent_name}  provider={provider}  model={model_override}{'  bare=True' if bare else ''}")
+    if agent_name == "research_agent":
+        # Stage 5 #17: the one choke point every Research call passes — Coordinator dispatch,
+        # run_subagent, lookup_public_fact. A query carrying a full name the user's records
+        # hold, or a stored email, phone, postcode or street (the user's or a contact's), is
+        # refused before any provider is called, never rewritten. Fail-closed: unreadable
+        # records refuse. The trace carries the kind only, never the value.
+        refusal = _research_refusal(user_input, persona)
+        if refusal:
+            return refusal
     agent = load_agent(agent_name)
 
     if bare or agent_name in {"research_agent", "diarist"}:
@@ -7252,6 +7279,9 @@ _HORIZON_ITEMS_RE = _re.compile(
     r'HORIZON_ITEMS:\s*(?:```(?:json)?\s*(?P<fenced>.*?)```|(?P<bare>\[.*?\]))',
     _re.DOTALL,
 )
+# The key form inside a JSON object (Stage 5 #11): `"HORIZON_ITEMS": [ ... ]`. Non-greedy to
+# the first `]` for the same reason as the bare form above.
+_HORIZON_KEY_RE = _re.compile(r'"HORIZON_ITEMS"\s*:\s*(?P<arr>\[.*?\])', _re.DOTALL)
 
 
 def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
@@ -7279,19 +7309,26 @@ def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
 
     cleaned: dict = {}
     for agent, text in outputs.items():
-        if not isinstance(text, str) or "HORIZON_ITEMS:" not in text:
+        if not isinstance(text, str) or not ("HORIZON_ITEMS:" in text
+                                             or _HORIZON_KEY_RE.search(text)):
             cleaned[agent] = text
             continue
 
         items: list = []
-        for match in _HORIZON_ITEMS_RE.finditer(text):
-            raw = (match.group("fenced") or match.group("bare") or "").strip()
+        raws = [(m.group("fenced") or m.group("bare") or "").strip()
+                for m in _HORIZON_ITEMS_RE.finditer(text)]
+        # Stage 5 #11: the key form inside a JSON object — Recreation's safety net beside its
+        # `HORIZON_ITEMS:` line. Stripped with one adjacent comma so the object still parses.
+        raws += [m.group("arr") for m in _HORIZON_KEY_RE.finditer(text)]
+        for raw in raws:
             try:
                 parsed = json.loads(raw)
             except json.JSONDecodeError as exc:
                 # A specialist that wrote prose instead of JSON is a real regression in its
-                # agent file, not a user-visible fault — logged loudly, never raised.
+                # agent file, not a user-visible fault — logged loudly, never raised, and
+                # recorded so a lost finding reaches the backlog with its raw text.
                 logger.warning(f"[horizon] {agent} HORIZON_ITEMS parse error: {exc}")
+                _record_unparsed_horizon(agent, raw)
                 continue
             items.extend(parsed if isinstance(parsed, list) else [parsed])
 
@@ -7304,9 +7341,45 @@ def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"[horizon] {agent} filing failed: {exc}")
 
-        cleaned[agent] = _HORIZON_ITEMS_RE.sub("", text).strip()
+        cleaned[agent] = _strip_horizon_key(_HORIZON_ITEMS_RE.sub("", text)).strip()
 
     return cleaned
+
+
+def _strip_horizon_key(text: str) -> str:
+    """Remove each `"HORIZON_ITEMS": [...]` member with one adjacent comma — the one after it
+    when there is one, else the one before — so the object around it stays valid JSON."""
+    while True:
+        m = _HORIZON_KEY_RE.search(text)
+        if not m:
+            return text
+        start, end = m.start(), m.end()
+        after = _re.match(r"\s*,\s*", text[end:])
+        if after:
+            end += after.end()
+        else:
+            before = _re.search(r",\s*$", text[:start])
+            if before:
+                start = before.start()
+        text = text[:start] + text[end:]
+
+
+def _record_unparsed_horizon(agent: str, raw: str) -> None:
+    """HORIZON_BLOCK_UNPARSED — shaped like CONTEXT_BLOCK_UNPARSED: a finding block that was not
+    valid JSON, with its raw text, so it reaches DEV_BACKLOG.md through the sync. Never raises."""
+    try:
+        from tools.logger import write_quality_event as _wqe
+        _wqe(
+            event_type="HORIZON_BLOCK_UNPARSED",
+            source_agent=agent,
+            detail=(f"HORIZON_ITEMS block from {agent} was not valid JSON; its findings were not "
+                    f"filed. Raw block (first 300 chars): {str(raw).strip()[:300]}"),
+            session_id=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        )
+    except PersonaError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[horizon] could not record unparsed block: {exc}")
 
 
 def _record_reported_doses(outputs: dict, persona: str | None, user_turn: bool) -> str:
@@ -8497,6 +8570,53 @@ def _signoff_note(spec_text: str, user_input: str, is_proactive: bool) -> str:
             "done without one. Raise nothing new.")
 
 
+def _spec_bundle(outputs: dict) -> str:
+    """The specialist outputs as the Synthesizer and the sign-off veto read them (async
+    fire-and-forget excluded). One join, so the veto's copy and the Synthesizer's cannot drift."""
+    return "\n\n".join(
+        f"--- {agent} ---\n{output}"
+        for agent, output in (outputs or {}).items()
+        if "dispatched (async)" not in output
+    )
+
+
+def _lift_requests(outputs: dict, persona: str | None, nudge: bool):
+    """Stage 5 #19: lift CONSULT_NEEDED / RESEARCH_NEEDED / PROFILE_GAP into one block
+    (tools/specialist_requests.py). Never on a day-plan nudge or with no outputs — then the
+    outputs come back untouched and there is nothing to commit. Read-only; never raises."""
+    if nudge or not outputs:
+        return outputs, None
+    try:
+        from tools import specialist_requests as SR
+        with persona_scope(resolve_persona(persona)):
+            lifted = SR.lift(outputs, persona)
+        if lifted.lifted:
+            _trace(f"[REQUESTS] lifted {lifted.lifted}"
+                   + (f", profile question from {lifted.pick['agent']}" if lifted.pick else ""))
+        return lifted.outputs, lifted
+    except PersonaError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — the outputs reach the Synthesizer unlifted
+        logger.warning(f"[requests] lift failed: {type(exc).__name__}: {exc}")
+        return outputs, None
+
+
+def _commit_requests(lifted, persona: str | None) -> str:
+    """Called only once the Synthesizer will run: spend the profile question (write the queue)
+    and return the block. "" when nothing was lifted."""
+    if lifted is None:
+        return ""
+    try:
+        from tools import specialist_requests as SR
+        with persona_scope(resolve_persona(persona)):
+            SR.commit_rotation(persona, lifted.pick, lifted.losers)
+    except PersonaError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[requests] queue not committed: {type(exc).__name__}")
+    return lifted.block
+
+
 # [DB-0815-11] The system claims actions it never took. Third confirmed instance
 # 2026-08-21: "I have made a note to open sessions exactly that way going forward. I've
 # logged the instruction change so it sticks" — and the trace for that run contains no
@@ -8672,6 +8792,18 @@ def _row_backs_claim(claim: str, rows: list[tuple[str, str]]) -> bool:
         if not times or start in times:
             return True
     return False
+
+
+def _check_filler(visible: str) -> None:
+    """Stage 5 M19: count a reply that opens a sentence with a listed filler phrase
+    (tools/reply_checks.py). Detection only — the reply is never changed; never raises."""
+    try:
+        from tools.reply_checks import check_filler
+        check_filler(visible)
+    except PersonaError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[filler] check failed: {type(exc).__name__}")
 
 
 def check_false_action_claims(response: str,
@@ -9038,12 +9170,12 @@ def run_pipeline_session(user_input: str,
             has_real_user_turn(user_input, is_proactive, attachments))
         crisis_text = _crisis_bundle_line(crisis, persona)
 
+        # Stage 5 #19: the sign-off veto reads the outputs as they stood BEFORE the requests are
+        # lifted out of them; only the Synthesizer's copy is lifted. Mirrors the streaming twin.
+        veto_spec = _spec_bundle(specialist_outputs)
+        specialist_outputs, requests = _lift_requests(specialist_outputs, persona, nudge)
         # Bundle specialist outputs for Synthesizer (exclude async fire-and-forget)
-        spec_text = "\n\n".join(
-            f"--- {agent} ---\n{output}"
-            for agent, output in specialist_outputs.items()
-            if "dispatched (async)" not in output
-        )
+        spec_text = _spec_bundle(specialist_outputs)
 
         # Read-only, and built before the sign-off decision: a completion note means the
         # user's words may close a task, which only the Synthesizer records.
@@ -9057,7 +9189,7 @@ def run_pipeline_session(user_input: str,
         # User signed off ("over and out") with nothing asked or reported, and nothing
         # pressing came back from the specialists: rest without the Synthesizer pass.
         # Code's medication line is read by the veto too, so a code-raised flag vetoes the skip.
-        veto_text = f"{spec_text}\n\n{med_line}" if med_line else spec_text
+        veto_text = f"{veto_spec}\n\n{med_line}" if med_line else veto_spec
         if _signoff_skip(veto_text, user_input, is_proactive, task_hint, history):
             _close_medication_slot()
             if history is not None:
@@ -9068,6 +9200,8 @@ def run_pipeline_session(user_input: str,
             _tr.finish_request_trace(_SIGNOFF_ACK)
             return _SIGNOFF_ACK
         signoff_note = _signoff_note(veto_text, user_input, is_proactive)
+        # The Synthesizer runs: only now is a held profile question spent (Stage 5 #19).
+        requests_text = _commit_requests(requests, persona)
 
         # Pass 2: Synthesizer — integration and user-facing response.
         # The ACTIONS block goes last, closest to the response, and is always
@@ -9095,7 +9229,8 @@ def run_pipeline_session(user_input: str,
         pm_headline = "" if nudge else _pattern_headline(persona)
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
-            f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
+            + (f"{requests_text}\n\n" if requests_text else "")
+            + f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
             + (f"\n\n{know_text}" if know_text else "")
             + (f"\n\n{objects_text}" if objects_text else "")
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
@@ -9136,6 +9271,7 @@ def run_pipeline_session(user_input: str,
         # [DB-0815-11] Detection only, before anything else touches the text and while the
         # trace is still open — nothing here changes what the user sees.
         check_false_action_claims(visible)
+        _check_filler(visible)      # Stage 5 M19 — detection only. Mirrors the streaming twin.
         _capture.after_synthesizer(capture_turn, _capture_trace)
         # Only a real user turn keeps a thread alive. On a proactive session
         # `user_input` is the scheduler's own prompt, and passing that would
@@ -9376,11 +9512,10 @@ def _run_pipeline_session_stream_inner(
         specialist_outputs, persona, user_input,
         has_real_user_turn(user_input, is_proactive, attachments))
     crisis_text = _crisis_bundle_line(crisis, persona)
-    spec_text = "\n\n".join(
-        f"--- {agent} ---\n{output}"
-        for agent, output in specialist_outputs.items()
-        if "dispatched (async)" not in output
-    )
+    # Stage 5 #19: the veto reads the outputs before the lift — mirrors the non-streaming twin.
+    veto_spec = _spec_bundle(specialist_outputs)
+    specialist_outputs, requests = _lift_requests(specialist_outputs, persona, nudge)
+    spec_text = _spec_bundle(specialist_outputs)
     # Kept identical to the non-streaming twin — see _task_hint_block(). Built before the
     # sign-off decision, which reads it.
     task_hint = _task_hint_block(user_input, is_proactive, history, persona)
@@ -9390,7 +9525,7 @@ def _run_pipeline_session_stream_inner(
     readback_text = _readback_block(has_real_user_turn(user_input, is_proactive, attachments))
     # Sign-off skip — mirrors the non-streaming branch above; same veto, same ack.
     # The code medication line is read by the veto too — mirrors the non-streaming twin.
-    veto_text = f"{spec_text}\n\n{med_line}" if med_line else spec_text
+    veto_text = f"{veto_spec}\n\n{med_line}" if med_line else veto_spec
     if _signoff_skip(veto_text, user_input, is_proactive, task_hint, history):
         _close_medication_slot()
         if history is not None:
@@ -9403,6 +9538,8 @@ def _run_pipeline_session_stream_inner(
         _tr.finish_request_trace(_SIGNOFF_ACK)
         return
     signoff_note = _signoff_note(veto_text, user_input, is_proactive)
+    # The Synthesizer runs — mirrors the non-streaming twin.
+    requests_text = _commit_requests(requests, persona)
 
     _trace("[PIPELINE] synthesizer  streaming")
 
@@ -9428,7 +9565,8 @@ def _run_pipeline_session_stream_inner(
     pm_headline = "" if nudge else _pattern_headline(persona)
     synthesizer_input = (
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
-        f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
+        + (f"{requests_text}\n\n" if requests_text else "")
+        + f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
         + (f"\n\n{know_text}" if know_text else "")
         + (f"\n\n{objects_text}" if objects_text else "")
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
@@ -9638,6 +9776,7 @@ def _run_pipeline_session_stream_inner(
     # [DB-0815-11] Same detection as the non-streaming twin. The text has already reached
     # the user by this point on this path, which is exactly why it only logs.
     check_false_action_claims(visible)
+    _check_filler(visible)          # Stage 5 M19 — mirrors the non-streaming twin.
     _capture.after_synthesizer(capture_turn, _capture_trace)
     # See the note at the non-streaming call site: a scheduler prompt is not
     # the user speaking, so it must not grace an open thread.

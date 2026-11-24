@@ -142,7 +142,9 @@ def find_places(query: str, near: str, max_results: int = 5, at: str = "") -> di
         max_results: How many venues to return, 1–10 (default 5, capped at 10).
         at: When the user would be there, "YYYY-MM-DDTHH:MM" local time. When given, each
             result carries `open_at_time` (true / false / "unknown — no hours on record"),
-            at the higher SKU tier (see _HOURS_FIELDS).
+            at the higher SKU tier (see _HOURS_FIELDS) — and a result closed then moves to
+            `closed_then` (name and address only). When every result is closed, `places` is
+            omitted and `note` says so, so the list is still never empty.
 
     Returns:
         {"places": [{"name", "address", "rating", "rating_count", "open_now",
@@ -200,7 +202,23 @@ def find_places(query: str, near: str, max_results: int = 5, at: str = "") -> di
     if not places:
         return {"error": f"No {query} found near {near}."}
 
-    return {"places": [_summarize(p, at_dt) for p in places[:max_results]]}
+    summaries = [_summarize(p, at_dt) for p in places[:max_results]]
+    if at_dt is None:
+        return {"places": summaries}
+    # Stage 5 #25: with `at`, a venue shut then is separated out, never hidden — a model picking
+    # from `places` cannot pick it, and a named-place search still sees it as "closed then"
+    # rather than "not found". Unknown hours stay in `places`.
+    open_or_unknown = [s for s in summaries if s.get("open_at_time") is not False]
+    closed = [{"name": s["name"], "address": s.get("address")}
+              for s in summaries if s.get("open_at_time") is False]
+    out: dict = {}
+    if open_or_unknown:
+        out["places"] = open_or_unknown
+    else:
+        out["note"] = "Every result is closed at that time."
+    if closed:
+        out["closed_then"] = closed
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -318,8 +336,10 @@ FIND_PLACES_SCHEMA = {
                 "description": (
                     "When the user would be there, local time 'YYYY-MM-DDTHH:MM'. Pass it "
                     "whenever the suggestion is for a later time (this evening, tomorrow); "
-                    "each result then says open_at_time true, false or unknown. Omit it for "
-                    "'right now' — open_now already answers that, and this costs more."
+                    "`places` then holds only venues open then (open_at_time true) or with "
+                    "unknown hours, and anything closed then comes back separately under "
+                    "`closed_then` — never suggest one of those. Omit it for 'right now' — "
+                    "open_now already answers that, and this costs more."
                 ),
             },
         },

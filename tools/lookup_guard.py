@@ -15,8 +15,10 @@ reference number, and — `lookups.refuse_figures`, on by default — a money am
 reading, which may be the user's own (plan § 4.7: "a health/financial figure from the user's
 records"; the guard cannot tell one from a public figure, so it refuses both). A first name, an
 organisation and a public place pass: "Grace School" passes with a contact named Grace; "Grace
-Hopper", a contact's full name, does not. A refusal says which kind of detail to take out, so
-the question can be asked again without it; a refused question costs nothing.
+Hopper", a contact's full name, does not — and neither does an organisation saved as a contact
+under a two-word name (the refusal names the match, so it can be rephrased). A refusal says which
+kind of detail to take out, so the question can be asked again without it; a refused question
+costs nothing.
 
 The Research Agent runs bare (core/orchestrator.py: no personal config, no context) and answers
 from Google Search grounding — billed per search, seen by no spend meter (plan § 8, Unseen 1).
@@ -80,63 +82,112 @@ def _norm(text: str) -> str:
     return " " + re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip() + " "
 
 
-_ORG_TYPES = frozenset({"organisation", "organization", "business", "company", "school",
-                        "service", "provider", "shop", "practice", "club"})
-
-
 class _Unreadable(Exception):
     """The names could not be read — the guard then refuses everything (fail-closed, #5)."""
 
 
-def _full_names(persona: str | None) -> list[tuple[str, str]]:
-    """Every (first, last) the user's data holds: the user's own and each contact's — and a
-    partner named on a contact. A one-word name is never a full identifier, so never listed. A
-    contact recorded as an organisation is not a person's name. Raises `_Unreadable` when a store
-    exists but cannot be read: an unread name must not pass (the privacy ruling is fail-closed)."""
-    names: list[tuple[str, str]] = []
+def _capitalised(alias: str) -> bool:
+    """An alias is a name only when every word in it is capitalised: "Aunt Ruth" is, "my wife"
+    and "the dentist" are not (Stage 5 build amendment 3)."""
+    words = re.findall(r"[^\W\d_]+", alias)
+    return bool(words) and all(w[0].isupper() for w in words)
 
-    def add(full: str) -> None:
-        parts = _norm(full).split()
-        if len(parts) >= 2:
-            names.append((parts[0], parts[-1]))
 
+def _aliases(value) -> list[str]:
+    if isinstance(value, (list, tuple)):
+        return [str(v) for v in value if isinstance(v, str)]
+    return [str(value)] if isinstance(value, str) and value else []
+
+
+def _load_profile() -> dict:
     try:
         from tools.profile import _load as _profile
         prof = _profile() or {}
     except Exception as exc:  # noqa: BLE001
         raise _Unreadable("profile") from exc
-    add(str(prof.get("name") or ""))
+    return prof if isinstance(prof, dict) else {}
+
+
+def _load_contacts() -> list[dict]:
     try:
         from tools import crm
         contacts = crm._load_contacts()
     except Exception as exc:  # noqa: BLE001
         raise _Unreadable("contacts") from exc
-    for c in contacts:
-        if not isinstance(c, dict):
-            continue
-        if str(c.get("relationship_type") or "").strip().lower() in _ORG_TYPES:
-            continue
+    return [c for c in contacts or [] if isinstance(c, dict)]
+
+
+def _contact_label(c: dict) -> str:
+    full = " ".join(x for x in (str(c.get("first_name") or "").strip(),
+                                str(c.get("last_name") or "").strip()) if x)
+    return str(c.get("name") or "").strip() or full or "a saved contact"
+
+
+def _name_entries(persona: str | None) -> list[tuple[str, str, str]]:
+    """Every (first, last, whose) the user's data holds: the user's own and each contact's — and
+    a partner named on a contact. A one-word name is never a full identifier, so never listed.
+    `whose` names the match, so a refusal can say what to take out. Every contact is checked:
+    the CRM's `relationship_type` has no organisation value, so the old organisation skip never
+    matched (build amendment 2); a contact saved under an organisation-like name costs, at worst,
+    a rephrase. `referred_to_as` is read per alias, and an alias counts only when every word is
+    capitalised (amendment 3). Raises `_Unreadable` when a store exists but cannot be read: an
+    unread name must not pass (the privacy ruling is fail-closed)."""
+    names: list[tuple[str, str, str]] = []
+
+    def add(full: str, whose: str) -> None:
+        parts = _norm(full).split()
+        if len(parts) >= 2:
+            names.append((parts[0], parts[-1], whose))
+
+    add(str(_load_profile().get("name") or ""), "the user's own name")
+    for c in _load_contacts():
+        label = _contact_label(c)
         first = str(c.get("first_name") or "").strip()
         last = str(c.get("last_name") or "").strip()
         for given in (first, str(c.get("nickname") or "").strip()):
             if given and last:
-                add(f"{given} {last}")
-        for k in ("name", "spouse_name", "referred_to_as"):
-            add(str(c.get(k) or ""))
+                add(f"{given} {last}", label)
+        add(str(c.get("name") or ""), label)
+        spouse = str(c.get("spouse_name") or "").strip()
+        if spouse:
+            add(spouse, f"{spouse}, partner of {label}")
+        for alias in _aliases(c.get("referred_to_as")):
+            if _capitalised(alias):
+                add(alias, label)
     return names
 
 
-def _names_in(hay: str, names: list[tuple[str, str]]) -> bool:
-    """A full name in the question: the first and last names with at most two words between
-    ("Grace M. Hopper", "Grace Brewster Hopper"), or the last then the first ("Hopper, Grace")."""
+def _full_names(persona: str | None) -> list[tuple[str, str]]:
+    """Every (first, last) the user's data holds — see `_name_entries`."""
+    return [(f, l) for f, l, _w in _name_entries(persona)]
+
+
+def _name_at(hay: str, names: list[tuple]) -> int | None:
+    """The index of the first full name in the question: the first and last names with at most
+    two words between ("Grace M. Hopper", "Grace Brewster Hopper"), or the last then the first
+    ("Hopper, Grace")."""
     words = hay.split()
-    for first, last in names:
+    for n, entry in enumerate(names):
+        first, last = entry[0], entry[1]
         for i, w in enumerate(words):
             if w == first and last in words[i + 1:i + 4]:
-                return True
+                return n
             if w == last and i + 1 < len(words) and words[i + 1] == first:
-                return True
-    return False
+                return n
+    return None
+
+
+def _names_in(hay: str, names: list[tuple]) -> bool:
+    """A full name in the question — see `_name_at`."""
+    return _name_at(hay, names) is not None
+
+
+_NAME_KIND = "the full name of someone the user knows"
+
+
+def _name_refusal(entry: tuple) -> str:
+    # The kind first, the match in brackets: the logs split at " (" and so carry the kind only.
+    return f"{_NAME_KIND} (matched: {entry[2]} — a first name alone is fine)"
 
 
 def check(question: str, persona: str | None = None, refuse_figures: bool = True) -> str | None:
@@ -146,16 +197,141 @@ def check(question: str, persona: str | None = None, refuse_figures: bool = True
         return "nothing — the question is empty"
     hay = _norm(q)
     try:
-        names = _full_names(persona)
+        names = _name_entries(persona)
     except _Unreadable:
         return "nothing checkable right now — the user's contacts could not be read"
-    if _names_in(hay, names):
-        return "the full name of someone the user knows (a first name alone is fine)"
+    at = _name_at(hay, names)
+    if at is not None:
+        return _name_refusal(names[at])
     q = _DATES.sub(" ", q)
     for kind, hit in _KINDS + (_FIGURES if refuse_figures else ()):
         if hit(q):
             return kind
     return None
+
+
+# --- the Research check (Stage 5 #17) ----------------------------------------------------------
+#
+# Every Research call — Coordinator dispatch, run_subagent, lookup_public_fact — passes
+# `research_refusal` in core/orchestrator.py `_run_single_agent` before any provider is called.
+# Narrower than `check()` on purpose: Research legitimately asks about dosages, prices and public
+# addresses, so only the user's KNOWN identifiers are refused — a full name the records hold, and
+# the user's or a contact's stored email, phone, postcode or street. A refusal says what to take
+# out; the query is never rewritten. One reader with `check()`, fail-closed the same way.
+
+RESEARCH_REFUSED = "refused before sending:"
+UNREADABLE = "the user's records could not be read (so nothing could be checked)"
+
+_UNIT_WORDS = frozenset({"flat", "apartment", "apt", "unit", "suite", "floor", "room"})
+# A postcode that is not UK-shaped: a digit-bearing code in a later segment of the address
+# ("75001 Paris", "10115 Berlin", "D-10115", "90210-1234"). Matched whitespace- and
+# case-normalised, as its own string (build amendment 4).
+_OTHER_POSTCODE = re.compile(r"\b(?:[A-Z]{1,2}-)?\d{4,6}(?:-\d{3,4})?\b", re.I)
+
+
+def _phone_key(raw: str) -> str:
+    """Digits only, the last 9: the national number whatever the country code or leading 0."""
+    digits = re.sub(r"\D", "", str(raw or ""))
+    return digits[-9:] if len(digits) >= 7 else ""
+
+
+def _postcode_key(address: str, explicit: str = "") -> str:
+    if explicit.strip():
+        return re.sub(r"\s+", "", explicit).upper()
+    m = _POSTCODE.search(address)
+    if m:
+        return re.sub(r"\s+", "", m.group()).upper()
+    for seg in address.split(",")[1:]:
+        m = _OTHER_POSTCODE.search(seg)
+        if m:
+            return re.sub(r"\s+", "", m.group()).upper()
+    return ""
+
+
+def _street_key(address: str) -> str:
+    """The street segment: the first comma segment that holds a house number — never a bare
+    district or city. A flat or unit number on its own ("Flat 3") is not the street, so the
+    next segment is read instead."""
+    for seg in address.split(",")[:2]:
+        words = _norm(seg).split()
+        if not any(any(ch.isdigit() for ch in w) for w in words):
+            continue
+        if all(w in _UNIT_WORDS or any(ch.isdigit() for ch in w) for w in words):
+            continue
+        return _norm(seg)
+    return ""
+
+
+def _details(info: dict, whose: str) -> list[tuple[str, str, str]]:
+    """(kind, key, whose) for the email, phone, postcode and street in one contact block."""
+    if not isinstance(info, dict):
+        return []
+    out: list[tuple[str, str, str]] = []
+    for e in [info.get("email")] + list(info.get("other_emails") or []):
+        e = str(e or "").strip().lower()
+        if "@" in e:
+            out.append(("an email address", e, whose))
+    key = _phone_key(str(info.get("phone") or ""))
+    if key:
+        out.append(("a phone number", key, whose))
+    address = str(info.get("address") or "").strip()
+    explicit = str(info.get("postcode") or info.get("postal_code") or info.get("zip") or "")
+    key = _postcode_key(address, explicit)
+    if key:
+        out.append(("a postcode", key, whose))
+    key = _street_key(address)
+    if key:
+        out.append(("a street address", key, whose))
+    return out
+
+
+def _own_identifiers(persona: str | None) -> list[tuple[str, str, str]]:
+    """The user's own stored email, phone, postcode and street (profile `contact`), and each
+    contact's (CRM `contact_info`, build amendment 1), normalised for matching. Raises
+    `_Unreadable` when either store exists but cannot be read, as `_name_entries` does."""
+    out = _details(_load_profile().get("contact") or {}, "the user's own")
+    for c in _load_contacts():
+        out += _details(c.get("contact_info") or {}, f"of {_contact_label(c)}, a contact")
+    return out
+
+
+def _detail_in(kind: str, key: str, query: str) -> bool:
+    if kind == "an email address":
+        return key in query.lower()
+    if kind == "a phone number":
+        runs = re.findall(r"\d{7,}", re.sub(r"[\s.()\-+]", "", query))
+        return any(key in r for r in runs)
+    if kind == "a postcode":
+        return key in re.sub(r"\s+", "", query).upper()
+    return key in _norm(query)
+
+
+def check_research(query: str, persona: str | None = None) -> str | None:
+    """None when a Research query may leave; otherwise what must come out of it — the kind,
+    then in brackets whose it is (a trace keeps the part before " (" only). Raises nothing: an
+    unreadable store returns `UNREADABLE`, which refuses (fail-closed)."""
+    q = str(query or "")
+    try:
+        names = _name_entries(persona)
+        details = _own_identifiers(persona)
+    except _Unreadable:
+        return UNREADABLE
+    at = _name_at(_norm(q), names)
+    if at is not None:
+        return _name_refusal(names[at])
+    for kind, key, whose in details:
+        if _detail_in(kind, key, q):
+            return f"{kind} ({whose})"
+    return None
+
+
+def refusal_text(why: str) -> str:
+    """The whole reply a refused Research query gets, from `check_research`'s reason."""
+    if why == UNREADABLE:
+        return (f"{RESEARCH_REFUSED} the user's records could not be read, so nothing was sent. "
+                f"Answer without the lookup, or ask the user.")
+    return (f"{RESEARCH_REFUSED} the question carries {why}. Nothing left this device. Ask it "
+            f"again without that.")
 
 
 # --- the tool ----------------------------------------------------------------------------------
@@ -217,17 +393,30 @@ def ask_public(question: str, persona: str, source: str = "lookup_public_fact",
     except Exception as exc:  # noqa: BLE001 — a failed lookup is a question for the user
         logger.warning("[lookup] failed: %s", type(exc).__name__)
         # Nothing ran: give the place back (Fable #11).
-        with D._locked(persona):
-            st = RK.load_state(persona)
-            used = st.get("lookups") or {}
-            if used.get("day") == today and int(used.get("n") or 0) > 0:
-                st["lookups"] = {"day": today, "n": int(used["n"]) - 1}
-                RK.save_state(st, persona)
+        _refund(persona, today)
         return "the lookup did not come back — ask the user instead."
-    text = str(answer or "")
+    answer = str(answer or "")
+    if answer.startswith(RESEARCH_REFUSED):
+        # Refused by the Research check before any search: nothing was spent, so the day's
+        # place comes back, and the refusal is code's own text — not outside content.
+        _refund(persona, today)
+        return answer
+    text = answer
     if max_chars:
         text = text[:max_chars]      # cut before wrapping, so the closing tag is never lost
     return wrap_untrusted(text, source=f"research_agent:{source}")
+
+
+def _refund(persona: str | None, today: str) -> None:
+    """Give back one of today's lookups — for a lookup that never reached a search."""
+    from tools import ranking as RK
+    import tools.day_plan as D
+    with D._locked(persona):
+        st = RK.load_state(persona)
+        used = st.get("lookups") or {}
+        if used.get("day") == today and int(used.get("n") or 0) > 0:
+            st["lookups"] = {"day": today, "n": int(used["n"]) - 1}
+            RK.save_state(st, persona)
 
 
 LOOKUP_PUBLIC_FACT_SCHEMA = {

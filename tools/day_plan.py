@@ -3081,9 +3081,11 @@ def rhythm_offer(persona: str | None = None, mark: bool = False) -> str | None:
 
 def length_ask(persona: str | None, plan: dict | None, mark: bool = False) -> str | None:
     """The one task on today's plan whose length nobody has given, named for the Synthesizer to
-    ask about in passing — code-raised, because the instruction alone never fired (10-24 to
-    10-26: 0 of 59 tasks carried a length the user stated, and nothing was asked). Each task is
-    named once, ever; at most `length_asks_per_day` a day. `mark` records it as asked."""
+    estimate and record — code-raised, because the instruction alone never fired (10-24 to
+    10-26: 0 of 59 tasks carried a length, and nothing was asked). Since Stage 5 D12 the line
+    says estimate, update on evidence, ask only for a task nobody could guess: the user is no
+    longer asked how long things take. Each task is named once, ever; at most
+    `length_asks_per_day` a day. `mark` records it as named."""
     if not plan:
         return None
     persona = resolve_persona(persona)
@@ -3105,9 +3107,9 @@ def length_ask(persona: str | None, plan: dict | None, mark: bool = False) -> st
                 st = _load_state(persona)
                 st.setdefault("length_asked", {})[pick["task_id"]] = today
                 _write_json(_state_path(persona), st)
-    return (f"No length on file for {pick['title']} `{pick['task_id']}` — ask once, in passing, "
-            f"how long it usually takes, and record their answer with set_minutes as stated. "
-            f"Ask about no other task's length this turn.")
+    return (f"No length on file for {pick['title']} `{pick['task_id']}` — record your estimate "
+            f"with set_minutes as estimated, without announcing it. Ask in passing only if you "
+            f"have no basis for a guess. No other task's length this turn.")
 
 
 def _mark_rhythm(persona: str, today: date) -> None:

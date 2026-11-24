@@ -181,13 +181,37 @@ def _existing_home(added: list[str]) -> str:
         return ""
 
 
+_MODES = ("replace", "add")
+
+
+def _lines_to_add(section_body: str, content: str) -> list[str]:
+    """`add` mode: the lines of `content` not already in the section, as written — bullets
+    when there are bullets, else prose lines (the same reading as `_new_lines`)."""
+    def strip(line: str) -> str:
+        return line.strip().lstrip("-* ").strip()
+
+    existing = {strip(ln) for ln in section_body.splitlines() if strip(ln)}
+    lines = content.strip().splitlines()
+    bullets = [ln for ln in lines if ln.strip().startswith(("-", "*"))]
+    pool = bullets or [ln for ln in lines if strip(ln) and not ln.strip().startswith("#")]
+    out, seen = [], set()
+    for ln in pool:
+        key = strip(ln)
+        if key and key not in existing and key not in seen:
+            seen.add(key)
+            out.append(ln.rstrip())
+    return out
+
+
 def write_persona(section: str, content: str, source: str = _INFERRED,
-                  confirm_token: str = "") -> str | dict:
+                  confirm_token: str = "", mode: str = "replace") -> str | dict:
     """
     Add or replace a named section in the user's persona config file.
 
-    If the section already exists, its content is replaced. If it does not
-    exist, it is appended. Use for durable preferences that should persist
+    `mode="replace"` (the default): if the section already exists, its content is
+    replaced; if it does not exist, it is appended. `mode="add"` (Stage 5 M5): only the
+    lines of `content` new to the section are appended to it, and nothing already there
+    is altered or removed; a missing section is created. Use for durable preferences that should persist
     across all sessions — not for session-level context (use write_context_tracker
     for that).
 
@@ -212,12 +236,18 @@ def write_persona(section: str, content: str, source: str = _INFERRED,
                 it, is treated as inferred — the gated side.
         confirm_token: Supplied by the server when carrying out an approved write.
                  Not for the model to set.
+        mode: "replace" (default) or "add" — see above. Carried in the approval card's
+                 args, so an approved write replays the same mode.
 
     Returns:
         Confirmation string once written, an "Error: not written." string when refused,
         or a PENDING_CONFIRMATION dict.
     """
     from tools.confirm import consume, request
+
+    mode = (mode or "replace").strip().lower()
+    if mode not in _MODES:
+        return f"Error: not written. mode must be 'replace' or 'add', not {mode!r}."
 
     path = _persona_path()
     if not path.exists():
@@ -234,6 +264,10 @@ def write_persona(section: str, content: str, source: str = _INFERRED,
 
     if source != _STATED and not _inferred_write_auto_accept():
         args = {"section": section, "content": content, "source": source}
+        if mode != "replace":
+            # Only when not the default, so a card raised before `mode` existed still
+            # matches its own args on approval.
+            args["mode"] = mode
         ok, reason = consume(confirm_token or None, "write_persona", args)
         if not ok:
             if confirm_token:
@@ -248,16 +282,25 @@ def write_persona(section: str, content: str, source: str = _INFERRED,
                 ),
             )
 
-    # Build the replacement block
-    new_block = f"## {section}\n\n{content.strip()}\n"
-
     # Look for an existing section with this heading
     pattern = re.compile(
         rf'^## {re.escape(section)}\n.*?(?=^## |\Z)',
         re.MULTILINE | re.DOTALL,
     )
-    if pattern.search(text):
-        updated = pattern.sub(new_block, text)
+    found = pattern.search(text)
+    if mode == "add" and found:
+        new_lines = _lines_to_add(found.group(0), content)
+        if not new_lines:
+            return f"Persona unchanged: everything in that is already under '{section}'."
+        sep = found.group(0)[len(found.group(0).rstrip("\n")):]   # the blank line(s) kept
+        new_block = found.group(0).rstrip("\n") + "\n" + "\n".join(new_lines) + (sep or "\n")
+    else:
+        # Build the replacement block
+        new_block = f"## {section}\n\n{content.strip()}\n"
+    if found:
+        # A function, not a string, as the replacement: a backslash in the user's words
+        # ("\1") is text, never a group reference.
+        updated = pattern.sub(lambda _m: new_block, text, count=1 if mode == "add" else 0)
     else:
         updated = text.rstrip('\n') + f"\n\n{new_block}"
 
@@ -324,9 +367,11 @@ WRITE_PERSONA_SCHEMA = {
         "Use this when the user states how they want to interact "
         "or how they want responses shaped — preferences that should persist "
         "indefinitely, not just for this session. "
-        "Pass the section name (e.g. 'Interaction Preferences') and the full "
-        "updated content for that section as markdown bullet points. "
-        "Existing section content is replaced; new sections are appended. "
+        "Pass the section name (e.g. 'Interaction Preferences') and the content "
+        "as markdown bullet points. With mode 'add', pass only the new preference — "
+        "every existing line is kept; with 'replace' (the default) the section is "
+        "rewritten as given, which is how one is corrected or removed. "
+        "New sections are appended in either mode. "
         "Always set 'source'. A preference you worked out rather than being told "
         "may return PENDING_CONFIRMATION and write nothing — show the user what it "
         "would record and leave it with them. Approving it in the app is what writes "
@@ -348,10 +393,19 @@ WRITE_PERSONA_SCHEMA = {
             "content": {
                 "type": "string",
                 "description": (
-                    "Full content for the section as a markdown-formatted string. "
+                    "Content for the section as a markdown-formatted string. "
                     "Write bullet points for lists of preferences. "
-                    "This replaces the entire section, so include all existing "
-                    "preferences when updating — do not write partial updates."
+                    "With `replace`, include every preference the section should keep; "
+                    "with `add`, only the new one."
+                ),
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["replace", "add"],
+                "description": (
+                    "`add` appends only what is new and keeps every existing line; "
+                    "`replace` (the default) writes the whole section as given — use it "
+                    "to correct or remove a preference."
                 ),
             },
             "source": {

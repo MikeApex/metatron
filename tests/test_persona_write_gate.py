@@ -362,6 +362,115 @@ def test_the_weaker_class_overlap_still_only_warns():
         assert "bringing up" in fx.text(), fx.text()
 
 
+# ---------------------------------------------------------------------------
+# Stage 5 M5 — an explicit `add` mode; `replace` stays the default
+# ---------------------------------------------------------------------------
+
+_TWO = "- Never open with a pleasantry; start with the substance.\n- Use British spelling."
+
+
+def _section(text: str) -> str:
+    return text.split("## Interaction Preferences", 1)[1]
+
+
+def test_m5_add_keeps_the_old_bullets_and_appends_the_new_one():
+    with _fixture() as fx:
+        PS.write_persona(section="Interaction Preferences", content=_TWO, source="user_stated")
+        out = PS.write_persona(section="Interaction Preferences",
+                               content="- Put dates as 3 March, not 03/03.",
+                               source="user_stated", mode="add")
+        assert "Persona updated" in out, out
+        sec = _section(fx.text())
+        for line in _TWO.splitlines() + ["- Put dates as 3 March, not 03/03."]:
+            assert line in sec, fx.text()
+        assert sec.index("British spelling") < sec.index("3 March"), fx.text()
+        assert "## Identity" in fx.text() and "Lives in London" in fx.text()
+
+
+def test_m5_a_full_section_resend_with_add_duplicates_nothing():
+    with _fixture() as fx:
+        PS.write_persona(section="Interaction Preferences", content=_TWO, source="user_stated")
+        before = fx.text()
+        out = PS.write_persona(section="Interaction Preferences", content=_TWO,
+                               source="user_stated", mode="add")
+        assert "unchanged" in out and fx.text() == before, (out, fx.text())
+        PS.write_persona(section="Interaction Preferences",
+                         content=_TWO + "\n- Keep replies short.", source="user_stated",
+                         mode="add")
+        assert fx.text().count("British spelling") == 1 and "Keep replies short" in fx.text()
+
+
+def test_m5_no_mode_replaces_exactly_as_today():
+    with _fixture() as fx:
+        PS.write_persona(section="Interaction Preferences", content=_TWO, source="user_stated")
+        PS.write_persona(section="Interaction Preferences", content="- Keep replies short.",
+                         source="user_stated")
+        sec = _section(fx.text())
+        assert "Keep replies short" in sec and "British spelling" not in sec, fx.text()
+        assert fx.text().count("## Interaction Preferences") == 1
+
+
+def test_m5_replace_with_one_bullet_reworded_drops_the_old_wording():
+    with _fixture() as fx:
+        PS.write_persona(section="Interaction Preferences", content=_TWO, source="user_stated")
+        PS.write_persona(section="Interaction Preferences",
+                         content=_TWO.replace("British spelling", "British spelling and -ise"),
+                         source="user_stated", mode="replace")
+        sec = _section(fx.text())
+        assert "British spelling and -ise" in sec and "- Use British spelling.\n" not in sec, sec
+
+
+def test_m5_a_new_section_is_created_in_both_modes():
+    for mode in ("replace", "add"):
+        with _fixture() as fx:
+            out = PS.write_persona(section="Interaction Preferences", content=_TWO,
+                                   source="user_stated", mode=mode)
+            assert "Persona updated" in out, out
+            assert fx.text().count("## Interaction Preferences") == 1
+            assert "British spelling" in fx.text() and "Lives in London" in fx.text()
+
+
+def test_m5_an_inferred_write_approval_replays_mode():
+    with _fixture() as fx:
+        PS.write_persona(section="Interaction Preferences", content=_TWO, source="user_stated")
+        pending = PS.write_persona(section="Interaction Preferences",
+                                   content="- Keep replies short.", source="inferred",
+                                   mode="add")
+        assert pending["status"] == "PENDING_CONFIRMATION", pending
+        token = pending["confirm_token"]
+        assert CF.approve(token) is True
+        outcome = CF.execute(token)
+        assert outcome["status"] == "executed", outcome
+        sec = _section(fx.text())
+        assert "British spelling" in sec and "Keep replies short" in sec, fx.text()
+
+
+def test_m5_content_with_a_backslash_group_is_written_literally():
+    with _fixture() as fx:
+        PS.write_persona(section="Interaction Preferences", content=_TWO, source="user_stated")
+        PS.write_persona(section="Interaction Preferences",
+                         content=r"- File paths look like C:\1\notes, keep them as typed.",
+                         source="user_stated")
+        assert r"C:\1\notes" in fx.text(), fx.text()
+
+
+def test_m5_the_redundancy_refusal_still_fires_in_add_mode():
+    with _fixture() as fx:
+        out = PS.write_persona(section="Interaction Preferences",
+                               content=_DUPLICATE_PREFERENCE, source="user_stated", mode="add")
+        assert isinstance(out, str) and out.startswith("Error: not written."), out
+        assert fx.text() == _PERSONA_SEED
+
+
+def test_m5_the_schema_offers_both_modes_with_replace_the_default():
+    props = PS.WRITE_PERSONA_SCHEMA["input_schema"]["properties"]
+    assert props["mode"]["enum"] == ["replace", "add"], props["mode"]
+    assert "default" in props["mode"]["description"]
+    assert "mode" not in PS.WRITE_PERSONA_SCHEMA["input_schema"]["required"]
+    assert "with `replace`, include every preference" in props["content"]["description"].lower() \
+        or "With `replace`, include every preference" in props["content"]["description"]
+
+
 if __name__ == "__main__":
     failures = []
     for name, fn in sorted(globals().items()):

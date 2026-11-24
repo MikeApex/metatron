@@ -46,10 +46,11 @@ def get_tfl_status(lines: list[str]) -> dict:
             common aliases like "elizabeth line" and "crossrail" are recognized.
 
     Returns:
-        {"lines": [{"name", "status", "disrupted", "detail"}], ...} or {"error": ...}.
-        `disrupted` is False for "Good Service" and True for anything else — check it
-        before deciding whether to say anything to the user; a clean status on every
-        requested line is not worth a message.
+        {"lines": [{"name", "status", "disrupted", "detail"}], "good_service": [names]}
+        or {"error": ...}. `lines` holds only the disrupted lines (anything but "Good
+        Service"; `disrupted` stays on each, always True); the rest are named under
+        `good_service` (Stage 5 M18). An empty `lines` is a clean result, not worth a
+        message.
     """
     if not lines:
         return {"error": "No lines given."}
@@ -71,18 +72,21 @@ def get_tfl_status(lines: list[str]) -> dict:
         # TfL's own error shape, e.g. an unrecognized line id.
         return {"error": data.get("message", "TfL rejected the request — check line names.")}
 
-    out = []
+    out, good = [], []
     for line in data:
         statuses = line.get("lineStatuses") or []
         worst = min(statuses, key=lambda s: s.get("statusSeverity", 10), default=None)
         desc = (worst or {}).get("statusSeverityDescription", "Unknown")
+        if desc == "Good Service":
+            good.append(line.get("name", "?"))
+            continue
         out.append({
             "name": line.get("name", "?"),
             "status": desc,
-            "disrupted": desc != "Good Service",
+            "disrupted": True,
             "detail": (worst or {}).get("reason", ""),
         })
-    return {"lines": out}
+    return {"lines": out, "good_service": good}
 
 
 GET_TFL_STATUS_SCHEMA = {
@@ -91,8 +95,8 @@ GET_TFL_STATUS_SCHEMA = {
         "Current TfL service status for one or more London lines — tube, DLR, "
         "Elizabeth line, Overground. Use ahead of a travel day to check the lines "
         "the user usually takes, before they'd have to ask. No API key needed. "
-        "Only worth surfacing to the user when a line comes back disrupted — a "
-        "clean 'Good Service' result on every line checked does not need a message."
+        "Only disrupted lines come back under `lines`; the rest are named under "
+        "`good_service`, which needs no message."
     ),
     "input_schema": {
         "type": "object",

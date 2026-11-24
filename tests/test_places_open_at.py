@@ -80,20 +80,46 @@ class _Resp:
         return self._p
 
 
+_REPLY: dict = {}
+
+
 def _post(url, headers=None, json=None, timeout=None):
     _sent["mask"] = headers["X-Goog-FieldMask"]
-    return _Resp({"places": [{"displayName": {"text": "Arôme Bakery"},
-                              "formattedAddress": "9 Example Street", **BAKERY}]})
+    return _Resp(_REPLY.get("payload") or {"places": [
+        {"displayName": {"text": "Arôme Bakery"}, "formattedAddress": "9 Example Street",
+         **BAKERY}]})
 
+
+_ALWAYS = {"regularOpeningHours": {"periods": [{"open": {"day": 0, "hour": 0, "minute": 0}}]}}
+_MIX = {"places": [
+    {"displayName": {"text": "Arôme Bakery"}, "formattedAddress": "9 Example Street", **BAKERY},
+    {"displayName": {"text": "Night Owl Café"}, "formattedAddress": "1 Late Lane", **_ALWAYS},
+    {"displayName": {"text": "Mystery Deli"}, "formattedAddress": "3 Quiet Row"}]}
 
 _orig_post, _orig_key = requests.post, places._places_key
 requests.post = _post
 places._places_key = lambda: "test-key"
 try:
     out = places.find_places("bakery", "Marylebone", at="2026-09-08T15:00")
-    check("find_places with `at` reports open_at_time false for the closed bakery",
-          out["places"][0].get("open_at_time") is False, repr(out))
+    # Stage 5 #25: the one result is closed then — so `places` is omitted, never empty, and the
+    # bakery is reported under `closed_then` rather than hidden.
+    check("find_places with `at` puts the closed bakery under closed_then, name and address only",
+          out.get("closed_then") == [{"name": "Arôme Bakery", "address": "9 Example Street"}]
+          and "places" not in out and out.get("note") == "Every result is closed at that time.",
+          repr(out))
     check("and asks for the opening periods", "regularOpeningHours.periods" in _sent["mask"], _sent["mask"])
+    _REPLY["payload"] = _MIX
+    out = places.find_places("bakery", "Marylebone", at="2026-09-08T15:00")
+    check("Stage 5 #25: a mix of open, closed and unknown is split — open and unknown in places, "
+          "the closed one in closed_then, no note",
+          [p["name"] for p in out.get("places", [])] == ["Night Owl Café", "Mystery Deli"]
+          and [p["name"] for p in out.get("closed_then", [])] == ["Arôme Bakery"]
+          and "note" not in out, repr(out))
+    out = places.find_places("bakery", "Marylebone")
+    check("Stage 5 #25: without `at` the output is as before — all three in places, nothing split",
+          [p["name"] for p in out["places"]] == ["Arôme Bakery", "Night Owl Café", "Mystery Deli"]
+          and set(out) == {"places"}, repr(out))
+    _REPLY.clear()
     out = places.find_places("bakery", "Marylebone")
     check("without `at` the mask is unchanged — no higher-tier fields",
           "Periods" not in _sent["mask"] and "periods" not in _sent["mask"]

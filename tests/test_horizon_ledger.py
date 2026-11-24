@@ -391,6 +391,70 @@ def _():
     assert any("Gig" in r["item"]["title"] for r in ledger().values()), ledger()
 
 
+def _capture_events():
+    """Stub the quality-event writer; returns the list each event lands in."""
+    import tools.logger as LOG
+    events: list = []
+    real = LOG.write_quality_event
+    LOG.write_quality_event = lambda **k: events.append(k) or "ok"
+    return events, lambda: setattr(LOG, "write_quality_event", real)
+
+
+_REC_OBJ = {"summary": "A gig is coming up.", "follow_up": "Tickets on sale Friday.",
+            "flags": ["CONSULT_NEEDED: logistics"]}
+
+
+@check("Stage 5 #11: a Recreation-shaped output (JSON object, then a HORIZON_ITEMS: line) is "
+       "filed and stripped, and the JSON object is intact")
+def _():
+    reset()
+    import core.orchestrator as O
+    line = json.dumps([{"title": "Folk night at the Union Chapel", "date": FUTURE,
+                        "venue": "Union Chapel", "kind": "event", "detail": "Tickets on sale",
+                        "precursor": "tickets bought", "precursor_by": NEAR_BY}])
+    out = {"recreation_hobbies": json.dumps(_REC_OBJ, indent=2) + "\nHORIZON_ITEMS: " + line}
+    cleaned = O._file_horizon_items(out, persona="test")
+    assert json.loads(cleaned["recreation_hobbies"]) == _REC_OBJ, cleaned
+    assert any("Folk night" in r["item"]["title"] for r in ledger().values()), ledger()
+
+
+@check("Stage 5 #11: the key form inside the object is filed and stripped, and the object still "
+       "parses — key last, key first, key alone")
+def _():
+    import core.orchestrator as O
+    items = [{"title": "Pottery open studio", "date": FUTURE, "venue": "", "kind": "event",
+              "detail": "", "precursor": "", "precursor_by": ""}]
+    shapes = [dict(_REC_OBJ, HORIZON_ITEMS=items), {"HORIZON_ITEMS": items, **_REC_OBJ},
+              {"HORIZON_ITEMS": items}]
+    for obj in shapes:
+        for text in (json.dumps(obj), json.dumps(obj, indent=2)):
+            reset()
+            cleaned = O._file_horizon_items({"recreation_hobbies": text}, persona="test")
+            parsed = json.loads(cleaned["recreation_hobbies"])
+            assert "HORIZON_ITEMS" not in parsed, parsed
+            assert parsed == {k: v for k, v in obj.items() if k != "HORIZON_ITEMS"}, parsed
+            assert any("Pottery" in r["item"]["title"] for r in ledger().values()), ledger()
+
+
+@check("Stage 5 #11: a malformed array in either form writes one HORIZON_BLOCK_UNPARSED (agent, "
+       "first 300 chars) and never raises")
+def _():
+    import core.orchestrator as O
+    events, restore = _capture_events()
+    try:
+        reset()
+        O._file_horizon_items({"recreation_hobbies": '{"a": 1}\nHORIZON_ITEMS: [{"title": Gig}]'},
+                              persona="test")
+        O._file_horizon_items({"recreation_hobbies": '{"a": 1, "HORIZON_ITEMS": [{title: "x"}]}'},
+                              persona="test")
+    finally:
+        restore()
+    assert [e["event_type"] for e in events] == ["HORIZON_BLOCK_UNPARSED"] * 2, events
+    assert all(e["source_agent"] == "recreation_hobbies" for e in events), events
+    assert '{"title": Gig}' in events[0]["detail"] and len(events[0]["detail"]) < 450, events
+    assert ledger() == {} or not ledger(), ledger()
+
+
 @check("prose HORIZON_ITEMS are logged and dropped, never crash the turn")
 def _():
     reset()

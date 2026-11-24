@@ -1308,19 +1308,23 @@ def _():
 
 
 @check("review (phase 2) #5/#8: the guard catches a full name with a middle name or initial, "
-       "surname first, a partner's name; fails closed when the contacts cannot be read; skips an "
-       "organisation; and lets ordinary public numbers through")
+       "surname first, a partner's name; fails closed when the contacts cannot be read; refuses a "
+       "contact saved under an organisation's name, naming it (Stage 5 build amendment 2: the CRM "
+       "has no organisation type, so the skip never matched); and lets ordinary public numbers "
+       "through")
 def _():
     import tools.lookup_guard as LG
     d = _fresh("guard2")
     (d / "crm").mkdir(exist_ok=True)
     (d / "crm" / "contacts.json").write_text(json.dumps([
         {"id": "c1", "first_name": "Grace", "last_name": "Hopper", "spouse_name": "Vincent Foster"},
-        {"id": "c2", "name": "Oak Tree Dental", "relationship_type": "business"}]))
+        {"id": "c2", "name": "Oak Tree Dental", "relationship_type": "other"}]))
     for q in ("Is Grace M. Hopper on the board?", "Grace Brewster Hopper's office hours",
               "Hopper, Grace — school governor?", "Where does Vincent Foster work?"):
         assert LG.check(q) and "full name" in LG.check(q), q
-    for q in ("Is Oak Tree Dental open on Saturdays?", "When does the 2025-2026 school term start?",
+    why = LG.check("Is Oak Tree Dental open on Saturdays?")
+    assert why and "full name" in why and "Oak Tree Dental" in why, why
+    for q in ("When does the 2025-2026 school term start?",
               "Is the tip open 0900-1700 on Sundays?", "Form 1040 2025 deadline",
               "What is the 23 kg baggage allowance on easyJet?", "Is 100 ml the liquid limit?",
               "How long to roast a 10 lb turkey?"):

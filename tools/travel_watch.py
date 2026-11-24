@@ -232,7 +232,7 @@ def check_travel_events(events: list[dict]) -> list[dict]:
     Fails soft per check: a flight lookup that errors must not suppress the transit
     check for the same trip, and neither must take down the scheduler job.
     """
-    from tools.flights import get_flight_status
+    from tools.flights import get_flight_status, is_disrupted
     from tools.tfl_status import get_tfl_status
 
     findings = []
@@ -245,12 +245,9 @@ def check_travel_events(events: list[dict]) -> list[dict]:
             if "error" in result:
                 continue
             for f in result.get("flights", []):
-                dep, arr = f.get("departure", {}), f.get("arrival", {})
-                status = (f.get("status") or "").lower()
-                problem = dep.get("delayed") or arr.get("delayed") or status in (
-                    "cancelled", "canceled", "diverted",
-                )
-                if not problem:
+                dep = f.get("departure", {})
+                # The rule has one home, in tools/flights.py (Stage 5 M18).
+                if not is_disrupted(f):
                     continue
                 findings.append({
                     "kind": "flight",
