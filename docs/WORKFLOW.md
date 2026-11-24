@@ -214,8 +214,8 @@ Some files are riskier to change than others, so who is allowed to change them d
 | Tier | Roughly | What happens |
 |---|---|---|
 | **Green** | tests, scripts, docs, comments, logging | done without asking you |
-| **Amber** | most tool and core code, the app front-end, non-routing config | done without asking you |
-| **Red** | agent instruction files, routing config, the router/persona/scheduler/spend-guard code, `./deploy.sh`, `git push` | **you are asked, every time** |
+| **Amber** | most tool and core code, the app front-end, non-routing config, agent instruction files (since 2026-11-24; still never handed to a worker) | done without asking you |
+| **Red** | routing config, the router/persona/scheduler/spend-guard code, `./deploy.sh`, `git push` | **you are asked, every time** |
 | **Denied** | the constitution, your persona files, your data, credentials | blocked outright until you lift it explicitly |
 
 **Why Red is drawn where it is:** those files are where a wrong change is *quiet*. A broken

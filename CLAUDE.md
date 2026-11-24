@@ -95,8 +95,8 @@ copy here would go stale and the stale copy would keep being read. Read it there
 
 | Tier | Roughly | Behaviour |
 |---|---|---|
-| **Green / Amber** | `tests/`, `scripts/`, `docs/`, `tools/`, most of `core/` | applied without a prompt |
-| **Red** | `config/agents/*.md`, `routing*.yaml`, `core/{router,persona,scheduler,spend_guard}.py`, `git push` | prompts every time — **except `git push`, see below** |
+| **Green / Amber** | `tests/`, `scripts/`, `docs/`, `tools/`, most of `core/`, `config/agents/*.md` (Amber since 2026-11-24) | applied without a prompt |
+| **Red** | `routing*.yaml`, `core/{router,persona,scheduler,spend_guard}.py`, `git push` | prompts every time — **except `git push`, see below** |
 | **Denied** | `config/constitution.md`, `config/personas/mike*`, `data/personas/**`, `.env`, `vertex-key.json`, **`./deploy.sh`** | blocked; must be lifted explicitly |
 
 > **`ask` is honoured for `Edit` rules here and ignored for `Bash` ones** (measured in both
@@ -111,8 +111,8 @@ copy here would go stale and the stale copy would keep being read. Read it there
 
 The Denied row turns two standing prose rules into mechanism: the constitution is Tier 0, and
 **the VM owns live persona config** ([`.claude/rules/personas.md`](.claude/rules/personas.md)).
-Red is also the line for *who builds*: Red-tier work is not delegated to a subagent, because
-there the judgement is the work.
+Red is also the line for *who builds*: Red-tier work — **and agent files, though Amber since
+11-24** — is not delegated to a subagent, because there the judgement is the work.
 
 > **Nothing about this project leaves this machine without Mike saying so first (2026-08-18).**
 > `Artifact`, `WebFetch` and `WebSearch` are **Denied**. A session published a full backlog
