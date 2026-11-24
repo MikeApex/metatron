@@ -103,14 +103,35 @@ def owners() -> set[str]:
 # zone and day boundary, read from the same-date file and both neighbours. A field with no write
 # time (written before stamps existed) keeps its file's date.
 
-def ledger_day(now: datetime) -> date:
-    """The persona's ledger day for a persona-local moment (tools.obligations' own reckoning:
-    its `day_starts` boundary applied). Never raises."""
+def _day_offset() -> timedelta:
+    """The bound persona's `day_starts` boundary (tools.obligations), or midnight."""
     try:
-        from tools.obligations import _ledger_day
-        return _ledger_day(now.replace(tzinfo=None))
+        from tools.obligations import _day_starts
+        return _day_starts()
+    except Exception:  # noqa: BLE001
+        return timedelta(0)
+
+
+def ledger_day(now: datetime, offset: timedelta | None = None) -> date:
+    """The persona's ledger day for a persona-local moment (tools.obligations' own reckoning:
+    its `day_starts` boundary applied). `offset` is that boundary, resolved once by a caller
+    placing many fields. Never raises."""
+    try:
+        off = _day_offset() if offset is None else offset
+        return (now.replace(tzinfo=None) - off).date()
     except Exception:  # noqa: BLE001
         return now.date()
+
+
+def _placement(cache: dict | None) -> tuple:
+    """(zone, day_starts offset) for the bound persona, resolved ONCE per block (kept in the
+    block's cache), never per field."""
+    if cache is not None and "_placement" in cache:
+        return cache["_placement"]
+    got = (_persona_zone(), _day_offset())
+    if cache is not None:
+        cache["_placement"] = got
+    return got
 
 
 def _persona_zone():
@@ -125,20 +146,28 @@ def _persona_zone():
     return None
 
 
-def _place(stamp: Any, zone) -> date | None:
-    """The persona's ledger day of a `_written_at` stamp. The stamp is the server's local time
-    (write_log's `datetime.now()`), so it is read as such and converted to the persona's zone."""
+def _place(stamp: Any, file_day: date, zone, offset: timedelta) -> date:
+    """The persona's ledger day of a field in `file_day`'s file.
+
+    Placed by its `_written_at` stamp ONLY when the stamp's server-calendar date is the file's
+    own date — a default-date write, filed under whatever day the server's clock said. A write
+    whose file date differs from its stamp was given an explicit `log_date` (a backfill: "I
+    slept badly on Tuesday"), and its file date is the day it is about. No stamp: the file's
+    date. The stamp is the server's local time (write_log's `datetime.now()`), converted to the
+    persona's zone."""
     if not stamp:
-        return None
+        return file_day
     try:
         dt = datetime.fromisoformat(str(stamp))
     except ValueError:
-        return None
+        return file_day
+    if dt.date() != file_day:
+        return file_day
     if dt.tzinfo is None:
         dt = dt.astimezone()                     # the server's own zone
     if zone is not None:
         dt = dt.astimezone(zone)
-    return ledger_day(dt)
+    return ledger_day(dt, offset)
 
 
 def _read_file(d: date, cache: dict | None) -> dict:
@@ -169,11 +198,12 @@ def _set_path(node: dict, path: str, value: Any) -> None:
 
 def day_entry(d: date, cache: dict | None = None) -> dict:
     """The persona's day `d` as one log entry: every field from the files dated d−1, d and d+1
-    whose write time falls on `d` in the persona's zone and day boundary (a field with no write
-    time counts for its file's date). The latest write of a field wins. Carries its own
+    that `_place` puts on `d` — a default-date write by its write time in the persona's zone and
+    day boundary, a backdated write or an unstamped field by its file's date. The latest write
+    of a field wins. Carries its own
     `_written_on` / `_written_at` maps, so provenance reads exactly as on a day file."""
     from tools.logger import _WRITTEN_AT_KEY, _leaf_paths
-    zone = _persona_zone()
+    zone, offset = _placement(cache)
     best: dict[str, tuple] = {}
     for off in (-1, 0, 1):
         file_day = d + timedelta(days=off)
@@ -184,7 +214,7 @@ def day_entry(d: date, cache: dict | None = None) -> dict:
         origins = entry.get(_WRITTEN_ON) if isinstance(entry.get(_WRITTEN_ON), dict) else {}
         for path in _leaf_paths(entry):
             stamp = stamps.get(path)
-            if (_place(stamp, zone) or file_day) != d:
+            if _place(stamp, file_day, zone, offset) != d:
                 continue
             rank = (str(stamp or ""), off)
             if path not in best or rank > best[path][0]:

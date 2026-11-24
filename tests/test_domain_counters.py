@@ -441,6 +441,27 @@ def _():
 
 
 # --- Fable review 3: the persona's day, not the server's file date ---------------------------
+# The server's clock is pinned (TZ + tzset) so a file is named, and stamped, exactly as
+# write_log would name and stamp it on a server in that zone.
+
+import contextlib  # noqa: E402
+
+
+@contextlib.contextmanager
+def _server_tz(name: str):
+    import time
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = name
+    time.tzset()
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old
+        time.tzset()
+
 
 def _tz_sandbox(sb, tz="America/Los_Angeles"):
     import yaml
@@ -448,56 +469,126 @@ def _tz_sandbox(sb, tz="America/Los_Angeles"):
     return ZoneInfo(tz)
 
 
-def _server(dt: datetime) -> str:
-    """`dt` as write_log stamps it: the server's local wall time."""
-    return dt.astimezone().replace(tzinfo=None).isoformat(timespec="seconds")
-
-
-def _file(sb, file_day: date, content: dict, stamps: dict, origin="user"):
+def _server_write(sb, moment: datetime, content: dict, origin="user", file_day: date | None = None):
+    """A day file as write_log leaves it for a write at `moment`: named by the server's date
+    (or `file_day`, an explicit log_date) and stamped with the server's wall time."""
+    stamp = moment.astimezone().replace(tzinfo=None)
+    fd = file_day or stamp.date()
     logs = sb["data"] / "logs"
     logs.mkdir(parents=True, exist_ok=True)
-    entry = {**content, "date": file_day.isoformat(), "_written_at": stamps,
-             "_written_on": {p: origin for p in stamps}}
-    (logs / f"{file_day.isoformat()}.json").write_text(json.dumps(entry))
+    path = logs / f"{fd.isoformat()}.json"
+    entry = json.loads(path.read_text()) if path.exists() else {"date": fd.isoformat()}
+    for leaf in _leaves(content):
+        node = entry
+        parts = leaf.split(".")
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        val = content
+        for part in parts:
+            val = val[part]
+        node[parts[-1]] = val
+        entry.setdefault("_written_at", {})[leaf] = stamp.isoformat(timespec="seconds")
+        entry.setdefault("_written_on", {})[leaf] = origin
+    path.write_text(json.dumps(entry))
+    return fd
 
 
-@check("R3a. SLEEP_ACUTE: a night logged on the persona's today that the server filed under the "
-       "next date counts; one stamped on the persona's tomorrow does not")
+@check("R3a. SLEEP_ACUTE: a night the server (UTC) filed under the next date, written on the "
+       "persona's today (Los Angeles), counts; one written on the persona's tomorrow does not")
 def _():
-    with sandbox() as sb:
+    with _server_tz("UTC"), sandbox() as sb:
         la = _tz_sandbox(sb)
-        now = datetime(2026, 11, 20, 18, 0, tzinfo=la)
-        _file(sb, date(2026, 11, 21), {"health": {"sleep_hours": 3.0}},
-              {"health.sleep_hours": _server(datetime(2026, 11, 20, 7, 30, tzinfo=la))})
+        now = datetime(2026, 11, 20, 20, 0, tzinfo=la)
+        fd = _server_write(sb, datetime(2026, 11, 20, 19, 30, tzinfo=la),
+                           {"health": {"sleep_hours": 3.0}})
+        assert fd == date(2026, 11, 21)                     # the server's date ran ahead
         assert "SLEEP_ACUTE — 3 h" in signals(now=now)
-    with sandbox() as sb:
+    with _server_tz("UTC"), sandbox() as sb:
         la = _tz_sandbox(sb)
-        now = datetime(2026, 11, 20, 18, 0, tzinfo=la)
-        _file(sb, date(2026, 11, 20), {"health": {"sleep_hours": 3.0}},
-              {"health.sleep_hours": _server(datetime(2026, 11, 21, 7, 30, tzinfo=la))})
+        now = datetime(2026, 11, 20, 20, 0, tzinfo=la)
+        _server_write(sb, datetime(2026, 11, 21, 7, 30, tzinfo=la),
+                      {"health": {"sleep_hours": 3.0}})
         assert "SLEEP_ACUTE" not in signals(now=now)
 
 
-@check("R3b. food: food_logged the server filed under yesterday's date but written on the "
-       "persona's today counts as today, before and after dispatch alike")
+@check("R3b. food: food_logged the server (UTC) filed under yesterday's date, written on the "
+       "persona's today (Tokyo), counts as today before and after dispatch")
 def _():
-    with sandbox() as sb:
-        la = _tz_sandbox(sb)
-        now = datetime(2026, 11, 20, 16, 0, tzinfo=la)
-        _file(sb, date(2026, 11, 19), {"health": {"food_logged": True}},
-              {"health.food_logged": _server(datetime(2026, 11, 20, 12, 15, tzinfo=la))})
+    with _server_tz("UTC"), sandbox() as sb:
+        tokyo = _tz_sandbox(sb, "Asia/Tokyo")
+        now = datetime(2026, 11, 20, 16, 0, tzinfo=tokyo)
+        fd = _server_write(sb, datetime(2026, 11, 20, 8, 0, tzinfo=tokyo),
+                           {"health": {"food_logged": True}})
+        assert fd == date(2026, 11, 19)                     # the server's date ran behind
         assert "FOOD_NOT_LOGGED" not in signals(now=now)
         assert "food logged today: yes" in DC.evidence_block("physical_health", date(2026, 11, 20))
 
 
-@check("R3c. sleep evidence: last logged is placed by write time, not file name")
+@check("R3c. sleep evidence: 'last logged' is placed by write time, not by file name")
 def _():
-    with sandbox() as sb:
+    with _server_tz("UTC"), sandbox() as sb:
         la = _tz_sandbox(sb)
-        _file(sb, date(2026, 11, 18), {"health": {"sleep_hours": 7.0}},
-              {"health.sleep_hours": _server(datetime(2026, 11, 17, 23, 30, tzinfo=la))})
+        fd = _server_write(sb, datetime(2026, 11, 17, 23, 30, tzinfo=la),
+                           {"health": {"sleep_hours": 7.0}})
+        assert fd == date(2026, 11, 18)
         got = DC.evidence_block("physical_health", date(2026, 11, 20))
     assert "SLEEP_MISSING evidence: sleep last logged 3 days ago" in got, got
+
+
+@check("R3d. a backdated write (log_date = yesterday, stamped today) counts on yesterday and "
+       "never overrides today's value")
+def _():
+    from tools.logger import write_log
+    with sandbox():
+        today = date.today()
+        write_log({"health": {"sleep_hours": 7.5}})                       # today's night
+        write_log({"health": {"sleep_hours": 3.0}},
+                  log_date=(today - timedelta(days=1)).isoformat())       # yesterday's, told now
+        got_today = DC.day_entry(today)
+        got_yday = DC.day_entry(today - timedelta(days=1))
+    assert got_today["health"]["sleep_hours"] == 7.5, got_today
+    assert got_yday["health"]["sleep_hours"] == 3.0, got_yday
+
+
+@check("R3e. a write 5 days back counts on its file date")
+def _():
+    from tools.logger import write_log
+    with sandbox():
+        today = date.today()
+        with T.turn_scope(user_turn=True):
+            write_log({"health": {"exercise": {"type": "swim"}}},
+                      log_date=(today - timedelta(days=5)).isoformat())
+        got = DC.evidence_block("physical_health", today)
+    assert "EXERCISE_GAP evidence: exercise last logged 5 days ago" in got, got
+
+
+@check("R3f. two personas interleaved each keep their own day boundary (per-persona cache)")
+def _():
+    import tools.obligations as O
+    from core.persona import persona_scope
+    from datetime import time as dtime
+    with sandbox() as sb:
+        root = sb["root"]
+        for name, starts in (("zz_early_riser", "00:00"), ("zz_night_owl", "04:00")):
+            (root / "config" / "personas" / name).mkdir(parents=True, exist_ok=True)
+            (root / "data" / "personas" / name).mkdir(parents=True, exist_ok=True)
+            with persona_scope(name):
+                O.open_task("water the plants", kind="habit", every="day", times=1,
+                            new_instance=True)
+                path = O._store_path()
+                import yaml
+                doc = yaml.safe_load(path.read_text()) or {}
+                doc.setdefault("settings", {})["day_starts"] = starts
+                path.write_text(yaml.safe_dump(doc))
+        late = datetime.combine(date(2026, 11, 20), dtime(1, 30))
+        seen = []
+        for _ in range(3):
+            for name in ("zz_early_riser", "zz_night_owl"):
+                with persona_scope(name):
+                    seen.append((name, DC.ledger_day(late), O._ledger_day(late)))
+    for name, mine, theirs in seen:
+        expect = date(2026, 11, 20) if name == "zz_early_riser" else date(2026, 11, 19)
+        assert mine == theirs == expect, seen
 
 
 # --- Fable review 4: no false gap, and the caveat covers the whole span -----------------------

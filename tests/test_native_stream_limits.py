@@ -389,11 +389,7 @@ def _():
     assert f"{O._SYNTH_MAX_ROUNDS}-round tool limit" in detail and "probe_tool" in detail, detail
 
 
-# Stage 4 Step 0 changed 1b: the final round now runs after a last round that spoke beside its
-# calls (that text may be only a preamble), told to reply with nothing if the user is already
-# answered. 1b's final round therefore runs (calls = cap + 1); it returns empty here, and the
-# output is still exactly the answer, which is what 1b protects.
-@check("#10.1b round-4 answer beside a call, then the cap: event written, empty final round dropped")
+@check("#10.1b round-4 text beside a call, then the cap: event written, NO final round")
 def _():
     _reset()
     _as_agent("synthesizer")
@@ -401,15 +397,15 @@ def _():
         rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
                   + [lambda: [_Chunk([_text("Friday is booked; Saturday I could not check."),
                                       _call("probe_tool")])]]
-                  + [lambda: [_Chunk([_text("   ")])]])
+                  + [lambda: [_Chunk([_text("SHOULD NOT RUN")])]])
         client = _FakeClient(rounds)
         with _Events() as ev:
             out, hist = _run(client)
     finally:
         _TR._set_current_agent(None)
     assert ev.kinds() == ["CHAIN_LIMIT_REACHED"]
-    assert client.models.calls == O._SYNTH_MAX_ROUNDS + 1, client.models.calls
-    assert out == "Friday is booked; Saturday I could not check.", repr(out)
+    assert client.models.calls == O._SYNTH_MAX_ROUNDS, client.models.calls
+    assert out == "Friday is booked; Saturday I could not check.", out
     assert hist[-1]["content"] == out
 
 
@@ -426,45 +422,7 @@ def _last_user_text(contents):
     return "".join(getattr(p, "text", "") or "" for p in (c.parts or []))
 
 
-@check("Step0.1 preamble beside calls at the cap: final round runs, follows after a blank line")
-def _():
-    _reset()
-    _as_agent("synthesizer")
-    try:
-        rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
-                  + [lambda: [_Chunk([_text("Let me check Saturday."), _call("probe_tool")])]]
-                  + [lambda: [_Chunk([_text("Saturday is still unchecked.")])]])
-        client = _FakeClient(rounds)
-        seen = _capture_contents(client)
-        with _Events():
-            out, hist = _run(client)
-    finally:
-        _TR._set_current_agent(None)
-    assert client.models.calls == O._SYNTH_MAX_ROUNDS + 1, client.models.calls
-    assert out == "Let me check Saturday.\n\nSaturday is still unchecked.", repr(out)
-    assert hist[-1]["content"] == out
-    final_prompt = _last_user_text(seen[-1])
-    assert final_prompt == O._FINAL_REPLY_PROMPT + O._FINAL_REPLY_IF_ANSWERED, final_prompt
-
-
-@check("Step0.1 answer beside calls at the cap, empty final reply: output is just the answer")
-def _():
-    _reset()
-    _as_agent("synthesizer")
-    try:
-        rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
-                  + [lambda: [_Chunk([_text("All three are booked."), _call("probe_tool")])]]
-                  + [lambda: []])
-        client = _FakeClient(rounds)
-        with _Events():
-            out, hist = _run(client)
-    finally:
-        _TR._set_current_agent(None)
-    assert out == "All three are booked.", repr(out)
-    assert hist[-1]["content"] == out
-
-
-@check("Step0.1 a silent last round's final round carries the plain prompt (no answered clause)")
+@check("Step0.1 a silent last round's final round carries the plain B4 prompt")
 def _():
     _reset()
     client = _FakeClient(_calls_only(O._SYNTH_MAX_ROUNDS) + [lambda: [_Chunk([_text("Done.")])]])
@@ -474,7 +432,8 @@ def _():
     assert _last_user_text(seen[-1]) == O._FINAL_REPLY_PROMPT
 
 
-@check("Step0.2 whitespace-only text beside calls counts as no text: plain final round, no blank-line prefix")
+@check("Step0.2 a whitespace-only last round said nothing: the final round runs, with no "
+       "blank-line prefix after whitespace")
 def _():
     _reset()
     rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
@@ -483,64 +442,21 @@ def _():
     client = _FakeClient(rounds)
     seen = _capture_contents(client)
     out, _ = _run(client)
+    assert client.models.calls == O._SYNTH_MAX_ROUNDS + 1, client.models.calls
     assert _last_user_text(seen[-1]) == O._FINAL_REPLY_PROMPT
     assert out == "  \nHere it is.", repr(out)    # the whitespace was already streamed; no "\n\n"
 
 
-@check("Step0.2 whitespace-only text and an empty final reply: the fixed line, never a blank reply")
+@check("Step0.2b a whitespace-only last round and an empty final reply: the fixed line, never a "
+       "blank reply")
 def _():
     _reset()
     rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
               + [lambda: [_Chunk([_text("   "), _call("probe_tool")])]]
-              + [lambda: []])
+              + [lambda: [_Chunk([_text("  ")])]])
     out, hist = _run(_FakeClient(rounds))
     assert out == "   " + O._NO_REPLY_LINE, repr(out)
     assert hist[-1]["content"] == O._NO_REPLY_LINE
-
-
-@check("Step0.3 a final reply that repeats or pads what was shown is dropped; one that extends "
-       "a preamble into the answer is kept")
-def _():
-    shown = "All three are booked for Friday."
-    for final, dropped in (("All three are booked for Friday.", True),       # a repeat
-                           ("all three are BOOKED — for Friday", True),      # normalised repeat
-                           ("booked for Friday", True),                      # contained in it
-                           ("All three are booked for Friday. Done.", True),  # pads it
-                           ("(Nothing further.)", True), ("nothing", True), ("—", True),
-                           ("All three are booked for Friday. Saturday could not be checked "
-                            "because the calendar did not answer.", False),  # a real addition
-                           ("Saturday is still unchecked.", False)):
-        _reset()
-        rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
-                  + [lambda: [_Chunk([_text(shown), _call("probe_tool")])]]
-                  + [lambda f=final: [_Chunk([_text(f)])]])
-        out, hist = _run(_FakeClient(rounds))
-        # A kept reply that restates the shown text contributes only what follows it.
-        tail = ("Saturday could not be checked because the calendar did not answer."
-                if final.startswith(shown) else final)
-        expect = shown if dropped else f"{shown}\n\n{tail}"
-        assert out == expect, (final, out)
-        assert hist[-1]["content"] == out
-    # A reply that restates the shown preamble and goes on: only the new part is appended.
-    for shown2, final, expect in (
-            ("Let me check.", "Let me check. Saturday is free.",
-             "Let me check.\n\nSaturday is free."),
-            ("Let me check.", "let me CHECK — Saturday is free from two o'clock.",
-             "Let me check.\n\nSaturday is free from two o'clock."),
-            ("Let me check.", "Saturday is free, as I said: let me check the rest.",
-             "Let me check.\n\nSaturday is free, as I said: let me check the rest.")):
-        _reset()
-        rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
-                  + [lambda s2=shown2: [_Chunk([_text(s2), _call("probe_tool")])]]
-                  + [lambda f=final: [_Chunk([_text(f)])]])
-        out, hist = _run(_FakeClient(rounds))
-        assert out == expect, (final, out)
-        assert hist[-1]["content"] == out
-    # Nothing shown and a no-content final reply: the fixed line, never "nothing".
-    _reset()
-    out, _ = _run(_FakeClient(_calls_only(O._SYNTH_MAX_ROUNDS)
-                              + [lambda: [_Chunk([_text("(nothing further)")])]]))
-    assert out == O._NO_REPLY_LINE, out
 
 
 @check("Step0.4 a round with no call whose only text is whitespace counts as no text: the "

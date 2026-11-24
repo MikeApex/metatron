@@ -218,7 +218,11 @@ def _now() -> datetime:
 # behaviour before it existed. Stored in tasks.yaml under `settings`, set by
 # update_task(task_id="settings", action="day_starts", note="04:00").
 _DAY_STARTS_MAX = (6, 0)
-_DAY_STARTS_CACHE: dict = {"key": None, "value": timedelta(0)}
+# Keyed by the persona's store path, each entry (mtime_ns, boundary), under a lock: one slot
+# shared by every persona would let two interleaved users read each other's boundary (Fable
+# review of Stage 4). A legacy `_DAY_STARTS_CACHE.update(key=None)` (tests' reset) still clears it.
+_DAY_STARTS_CACHE: dict = {}
+_DAY_STARTS_LOCK = threading.Lock()
 
 
 def _parse_hhmm(raw) -> tuple[int, int] | None:
@@ -236,11 +240,15 @@ def _day_starts(persona: str | None = None) -> timedelta:
     or a malformed value is midnight, which is the old behaviour."""
     try:
         path = _store_path(persona)
-        key = (str(path), path.stat().st_mtime_ns)
+        mtime = path.stat().st_mtime_ns
     except Exception:  # noqa: BLE001 — no store, or no persona bound: midnight, as before
         return timedelta(0)
-    if _DAY_STARTS_CACHE["key"] == key:
-        return _DAY_STARTS_CACHE["value"]
+    with _DAY_STARTS_LOCK:
+        if "key" in _DAY_STARTS_CACHE:          # the legacy reset
+            _DAY_STARTS_CACHE.clear()
+        hit = _DAY_STARTS_CACHE.get(str(path))
+        if hit is not None and hit[0] == mtime:
+            return hit[1]
     value = timedelta(0)
     try:
         doc = yaml.safe_load(path.read_text()) or {}
@@ -250,7 +258,8 @@ def _day_starts(persona: str | None = None) -> timedelta:
             value = timedelta(hours=hm[0], minutes=hm[1])
     except Exception:  # noqa: BLE001
         value = timedelta(0)
-    _DAY_STARTS_CACHE.update(key=key, value=value)
+    with _DAY_STARTS_LOCK:
+        _DAY_STARTS_CACHE[str(path)] = (mtime, value)
     return value
 
 

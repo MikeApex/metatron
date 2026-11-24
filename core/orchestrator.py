@@ -4678,11 +4678,6 @@ _FINAL_REPLY_PROMPT = ("Your tool budget for this turn is spent. Reply to the us
                        "to check or do is still not done, say so in one plain sentence — what "
                        "is still unchecked or undone, never why, and never how you work.")
 
-# Added to the final round's prompt when the last round already said something beside its
-# calls (Stage 4 Step 0): that text may be the whole answer, and a second one would double it.
-_FINAL_REPLY_IF_ANSWERED = (" If what you already said this turn answers the user, reply with "
-                            "nothing at all — an empty reply.")
-
 
 def _note_round_cap(max_iterations: int, last_calls: list) -> None:
     """Record that the round cap ended a Synthesizer reply (Stage 2 #10). Names the last
@@ -5225,30 +5220,20 @@ def _run_gemini_native_stream(client, model_name: str,
     # (CHAIN_LIMIT_REACHED, Synthesizer only). Build-time amendment 3: `result` used to carry an
     # earlier round's text — often a "let me check" line streamed beside a call — and that
     # skipped the final round, so the B4 sentence about what is still unchecked never came. The
-    # final round now runs when the LAST round said nothing (cap or deadline alike). Final text
-    # after text already shown is set apart by a blank line, and history records exactly what
-    # the user saw.
+    # final round now runs when the LAST round said nothing (cap or deadline alike); a last
+    # round that spoke beside its calls already answered, and a second reply would double it
+    # (Fable diff review). Final text after text already shown is set apart by a blank line,
+    # and history records exactly what the user saw.
     #
-    # Stage 4 Step 0 (Stage 2 final review residual): a last round that spoke beside its calls
-    # may have been a preamble ("let me check") rather than the answer, so the final round runs
-    # there too, told to say nothing if the user is already answered; an empty or whitespace
-    # final reply is dropped, so an answer is never doubled. Whitespace-only text counts as no
-    # text throughout. (A last round with text and NO calls returned inside the loop: that text
-    # is the answer and no final round runs.)
+    # Stage 4 Step 0: "said nothing" is whitespace-insensitive — a last round of only
+    # whitespace said nothing, so the final round runs. Whether a last round's text was the
+    # answer or only a preamble is NOT guessed by code (driver's ruling): a preamble beside
+    # the round that hit the cap stays as it was before this build.
     if not ended_on_deadline:
         _note_round_cap(max_iterations, last_calls)
     already = "".join(shown_rounds)
-    final = _final_reply_round(
-        client, model_name, contents, config, types,
-        prompt=(_FINAL_REPLY_PROMPT + _FINAL_REPLY_IF_ANSWERED) if last_round_text.strip()
-        else _FINAL_REPLY_PROMPT)
-    final = (final or "").strip()
-    if _final_adds_nothing(final, already):
-        final = ""
-    elif final:
-        # The shown text is already on screen (streamed): a reply that restates it and goes on
-        # contributes only what follows it.
-        final = _final_tail(final, already)
+    final = ("" if last_round_text.strip()
+             else (_final_reply_round(client, model_name, contents, config, types) or "").strip())
     if final:
         sep = "\n\n" if already.strip() else ""
         yield sep + final
@@ -5261,66 +5246,7 @@ def _run_gemini_native_stream(client, model_name: str,
     _finish(result)
 
 
-# A final-round reply that says "I have nothing to add" in some form. Compared after
-# _norm_reply (case, punctuation and whitespace removed), so "(Nothing further.)" and "—" match.
-_EMPTY_FINAL_REPLIES = frozenset({
-    "", "nothing", "nothing further", "nothing more", "nothing to add", "nothing else",
-    "none", "na", "empty", "no reply", "no further reply", "no response", "empty reply",
-})
-# How much new text (normalised) a final reply that CONTAINS what was shown must add to be kept.
-# Only the added part is appended (_final_tail), so the test is on that part alone: "Done." or
-# "OK" after a restated answer is padding; "Saturday is free." after "Let me check." is the
-# answer, and dropping it would leave the user with only the preamble.
-_FINAL_EXTENSION_MIN_CHARS = 8
-
-
-def _norm_reply(text: str) -> str:
-    import unicodedata
-    text = unicodedata.normalize("NFKC", str(text or "")).casefold()
-    text = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in text)
-    return " ".join(text.split())
-
-
-def _final_adds_nothing(final: str, already: str) -> bool:
-    """True when the final round's reply would only repeat or pad what the user already saw
-    (Fable review of Stage 4 Step 0): a no-content token, or — normalised — contained in the
-    shown text, or containing it with too little added to be an answer of its own."""
-    nf = _norm_reply(final)
-    if nf in _EMPTY_FINAL_REPLIES:
-        return True
-    na = _norm_reply(already)
-    if not na:
-        return False
-    if nf in na:
-        return True
-    if na not in nf:
-        return False
-    added = nf.replace(na, " ", 1).strip()
-    return added in _EMPTY_FINAL_REPLIES or len(added) < _FINAL_EXTENSION_MIN_CHARS
-
-
-def _final_tail(final: str, already: str) -> str:
-    """`final` with a leading restatement of `already` removed, when the normalised reply starts
-    with the normalised shown text (located by the longest raw prefix that normalises to it).
-    Anything else — the shown text in the middle, or not there at all — returns `final` whole."""
-    na = _norm_reply(already)
-    if not na or not _norm_reply(final).startswith(na):
-        return final
-    cut = None
-    for i in range(1, len(final) + 1):
-        n = _norm_reply(final[:i])
-        if n == na:
-            cut = i
-        elif cut is not None or len(n) > len(na):
-            break
-    if cut is None:
-        return final
-    tail = final[cut:].strip()
-    return tail or final
-
-
-def _final_reply_round(client, model_name: str, contents: list, config, types,
-                       prompt: str | None = None) -> str:
+def _final_reply_round(client, model_name: str, contents: list, config, types) -> str:
     """One last round that may only speak. Tools cannot be switched off on a cached request
     (they are baked into the cache), so the instruction carries it and any call the model
     returns anyway is ignored, not run. No retry: if this fails, the caller says
@@ -5329,8 +5255,7 @@ def _final_reply_round(client, model_name: str, contents: list, config, types,
     # function responses with text as "Requests ending with a model turn are not supported"
     # (probed 2026-10-26 on gemini-3.8-flash — merged 400s, a separate user turn answers). Until
     # then every round-cap or soft-deadline exit ended in _NO_REPLY_LINE.
-    contents = contents + [types.Content(role="user", parts=[types.Part(
-        text=prompt or _FINAL_REPLY_PROMPT)])]
+    contents = contents + [types.Content(role="user", parts=[types.Part(text=_FINAL_REPLY_PROMPT)])]
     # [DB-1026-01] A smaller thinking target than the round that led here: this round is
     # often reached BECAUSE thinking ran to the ceiling, and on the same config it can run
     # out again. Thinking rides the request, not the cache, so this cannot split a cache

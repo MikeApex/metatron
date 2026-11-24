@@ -614,32 +614,42 @@ def _():
     assert "[medication: testamine]" in got["physical_health"], got["physical_health"]
 
 
-@check("3c. 'today's log' is the persona's day: a field in the server's next-date file, written "
-       "on the persona's today, is shown; one written on its tomorrow is not")
+@check("3c. 'today's log' is the persona's day: with the server on UTC and the user in Los "
+       "Angeles, a field the server filed under the next date but written on the user's today is "
+       "shown; one written on the user's tomorrow is not")
 def _():
+    import time as _time
     from zoneinfo import ZoneInfo
     import yaml
     la = ZoneInfo("America/Los_Angeles")
-    with sandbox() as sb:
-        (sb["config"] / "profile.yaml").write_text(yaml.safe_dump(
-            {"location": {"timezone": "America/Los_Angeles"}}))
-        logs = sb["data"] / "logs"
-        logs.mkdir(parents=True, exist_ok=True)
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = "UTC"
+    _time.tzset()
+    try:
+        with sandbox() as sb:
+            (sb["config"] / "profile.yaml").write_text(yaml.safe_dump(
+                {"location": {"timezone": "America/Los_Angeles"}}))
+            logs = sb["data"] / "logs"
+            logs.mkdir(parents=True, exist_ok=True)
 
-        def server(dt):
-            return dt.astimezone().replace(tzinfo=None).isoformat(timespec="seconds")
-        today_local = datetime(2026, 11, 20, 18, 0, tzinfo=la)
-        tomorrow_local = datetime(2026, 11, 21, 9, 0, tzinfo=la)
-        (logs / "2026-11-21.json").write_text(json.dumps({
-            "date": "2026-11-21", "health": {"energy": "low"},
-            "_written_at": {"health.energy": server(today_local)},
-            "_written_on": {"health.energy": "user"}}))
-        (logs / "2026-11-20.json").write_text(json.dumps({
-            "date": "2026-11-20", "health": {"symptoms": "sore throat"},
-            "_written_at": {"health.symptoms": server(tomorrow_local)},
-            "_written_on": {"health.symptoms": "user"}}))
-        ctx = {"cap": 6000, "today": date_(2026, 11, 20), "now": today_local, "timeout": 4}
-        _, text, _ = PF._read_log_field("physical_health", {"field": "health"}, ctx)
+            def server(dt):
+                return dt.astimezone().replace(tzinfo=None).isoformat(timespec="seconds")
+            today_local = datetime(2026, 11, 20, 18, 0, tzinfo=la)       # 02:00 UTC on the 21st
+            tomorrow_local = datetime(2026, 11, 21, 9, 0, tzinfo=la)     # 17:00 UTC on the 21st
+            assert server(today_local).startswith("2026-11-21")
+            (logs / "2026-11-21.json").write_text(json.dumps({
+                "date": "2026-11-21", "health": {"energy": "low", "symptoms": "sore throat"},
+                "_written_at": {"health.energy": server(today_local),
+                                "health.symptoms": server(tomorrow_local)},
+                "_written_on": {"health.energy": "user", "health.symptoms": "user"}}))
+            ctx = {"cap": 6000, "today": date_(2026, 11, 20), "now": today_local, "timeout": 4}
+            _, text, _ = PF._read_log_field("physical_health", {"field": "health"}, ctx)
+    finally:
+        if old is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old
+        _time.tzset()
     assert '"energy": "low"' in text, text
     assert "sore throat" not in text, text
 
