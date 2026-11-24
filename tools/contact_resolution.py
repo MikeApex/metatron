@@ -52,6 +52,22 @@ DEFAULT_UPCOMING_DAYS = 14
 
 _POSSESSIVE_RE = re.compile(r"'s$", re.IGNORECASE)
 
+# First names that are also ordinary English words. A lone one of these is never enough to say a
+# piece of text is ABOUT a person (tools/recipient_context.py): "I will", "mark the date", "a rose
+# bush", "may be late". Resolution itself does not need it — it already requires a capital that
+# is not starting a sentence — but free text such as a stored fact or a past entry has no such
+# guarantee. Shared here so both modules use one list.
+COMMON_WORD_NAMES = frozenset({
+    "will", "mark", "rose", "bill", "may", "june", "april", "august", "grace", "hope", "faith",
+    "joy", "amber", "ruby", "pearl", "holly", "ivy", "lily", "iris", "daisy", "dawn", "summer",
+    "autumn", "winter", "sky", "rain", "storm", "sunny", "sandy", "penny", "pat", "frank",
+    "rich", "sue", "don", "art", "jack", "bob", "gene", "ray", "rob", "chase", "hunter", "max",
+    "guy", "victor", "drew", "lane", "dale", "glen", "cliff", "brook", "heath", "faye", "major",
+    "earl", "duke", "king", "prince", "reed", "rusty", "red", "nick", "sly", "wade", "miles",
+    "page", "carol", "harmony", "melody", "honey", "candy", "cherry", "ginger", "jasmine",
+    "violet", "hazel", "olive", "sage", "jade", "crystal", "destiny", "patience", "trinity",
+})
+
 
 # --- the words a contact answers to -----------------------------------------------------------
 
@@ -77,13 +93,27 @@ def _phrases(c: dict) -> set[tuple[str, ...]]:
     return {p for p in out if all(p)}
 
 
+def first_word(c: dict) -> str:
+    """The first name a contact goes by: `first_name`, else the first token of a multi-word
+    `name` (a record saved as "Sam Hale" with no first_name is a Sam for ambiguity too)."""
+    w = _words(c.get("first_name"))
+    if len(w) == 1:
+        return w[0]
+    if w:
+        return w[0]
+    name = _words(c.get("name"))
+    return name[0] if name else ""
+
+
 def _singles(c: dict) -> set[str]:
     """The one-word keys a contact answers to. Never `last_name` (rule 1)."""
     out: set[str] = set()
-    for field in ("first_name", "nickname"):
-        w = _words(c.get(field))
-        if len(w) == 1:
-            out.add(w[0])
+    first = first_word(c)
+    if first:
+        out.add(first)
+    w = _words(c.get("nickname"))
+    if len(w) == 1:
+        out.add(w[0])
     for value in [c.get("name")] + list(c.get("referred_to_as") or []):
         w = _words(value)
         if len(w) == 1:
@@ -117,9 +147,10 @@ def _archived_survivors(contacts: list[dict]) -> list[tuple[dict, dict]]:
     return out
 
 
-def _index(contacts: list[dict]) -> tuple[dict, dict]:
+def _index(contacts: list[dict], cache: dict | None = None) -> tuple[dict, dict]:
     """key → [live contacts]. A merged-away record's keys are added only where no live contact
-    carries the same key, pointing at its survivor."""
+    carries the same key, pointing at its survivor. `cache` (the request's) memoises the archive
+    scan, so a second build in one request does not re-read every archived record."""
     phrases: dict[tuple, list[dict]] = {}
     singles: dict[str, list[dict]] = {}
 
@@ -134,7 +165,17 @@ def _index(contacts: list[dict]) -> tuple[dict, dict]:
         for w in _singles(c):
             add(singles, w, c)
     live_p, live_s = set(phrases), set(singles)
-    for rec, survivor in _archived_survivors(contacts):
+    archived = None
+    key = None
+    if cache is not None:
+        from core.persona import current_persona
+        key = ("contact_resolution.archived", current_persona(), len(contacts))
+        archived = cache.get(key)
+    if archived is None:
+        archived = _archived_survivors(contacts)
+        if cache is not None:
+            cache[key] = archived
+    for rec, survivor in archived:
         for p in _phrases(rec):
             if p not in live_p:
                 add(phrases, p, survivor)
@@ -154,11 +195,14 @@ def _two_token_hits(text: str, phrases: dict) -> tuple[list[tuple[str, list[dict
         return [], []
     toks = [(m.start(), m.end(), _POSSESSIVE_RE.sub("", m.group(0)).strip("'-").lower())
             for m in _TOKEN_RE.finditer(text or "")]
+    # A phrase never runs across punctuation: "Sam, Lee and Jo" names nobody called Sam Lee.
+    joined = [bool(re.fullmatch(r"[ \t]+", text[toks[j][1]:toks[j + 1][0]]))
+              for j in range(len(toks) - 1)]
     lengths = sorted({len(p) for p in phrases}, reverse=True)
     hits, spans, i = [], [], 0
     while i < len(toks):
         for n in lengths:
-            if i + n > len(toks):
+            if i + n > len(toks) or not all(joined[i:i + n - 1]):
                 continue
             key = tuple(t[2] for t in toks[i:i + n])
             if key in phrases:
@@ -180,7 +224,8 @@ def _uncovered(word: str, text: str, spans: list) -> bool:
     return False
 
 
-def resolve(texts: list[str], contacts: list[dict] | None = None) -> dict:
+def resolve(texts: list[str], contacts: list[dict] | None = None,
+            cache: dict | None = None) -> dict:
     """Who the texts name, exactly. Returns
     {"resolved": [contact, …] (first-named first, unique by id),
      "ambiguous": [(word, [contact, …]), …],
@@ -193,7 +238,7 @@ def resolve(texts: list[str], contacts: list[dict] | None = None) -> dict:
         contacts = CRM._load_contacts() if contacts is None else contacts
         if not contacts:
             return out
-        phrases, singles = _index(contacts)
+        phrases, singles = _index(contacts, cache)
         known = _known_words(contacts)
         seen_ids: set[str] = set()
         seen_keys: set[str] = set()
@@ -234,7 +279,7 @@ def resolve(texts: list[str], contacts: list[dict] | None = None) -> dict:
                         or len(out["prefix"]) >= MAX_PREFIX):
                     continue
                 for c in contacts:
-                    first = (_words(c.get("first_name")) or _words(c.get("name")) or [""])[0]
+                    first = first_word(c)
                     if len(first) > len(low) and first.startswith(low):
                         prefix_seen.add(low)
                         out["prefix"].append((word, c))
@@ -343,15 +388,16 @@ def upcoming_lines(contacts: list[dict], today: date, days: int) -> list[str]:
 
 
 def people_block(directive: str, user_text: str, today: date,
-                 upcoming_days: int = DEFAULT_UPCOMING_DAYS) -> tuple[str, str, list[dict]]:
+                 upcoming_days: int = DEFAULT_UPCOMING_DAYS, contacts: list[dict] | None = None,
+                 cache: dict | None = None) -> tuple[str, str, list[dict]]:
     """The `people` prefetch text in two parts — who is named (records, ask-which, prefixes) and
     the overdue/upcoming lists — and the resolved contacts (for #16's block, which goes between
     them so a cut at the cap loses the lists first). ("", "", []) on any failure — a hint, never
     a cost."""
     from tools import crm as CRM
     try:
-        contacts = CRM._load_contacts()
-        got = resolve([directive, user_text], contacts)
+        contacts = CRM._load_contacts() if contacts is None else contacts
+        got = resolve([directive, user_text], contacts, cache)
         permitted = CRM._tone_profiles_permitted()
         parts: list[str] = []
         people = got["resolved"][:MAX_PEOPLE]
@@ -401,7 +447,8 @@ _PROFILE_FIELDS = ("name", "email", "phone", "address", "occupation", "city")
 def _norm(kind: str, value) -> str:
     text = " ".join(str(value or "").split())
     if kind == "phone":
-        return re.sub(r"\D", "", text)
+        from tools.crm import _normalize_phone_digits
+        return _normalize_phone_digits(text)
     return text.casefold()
 
 
@@ -498,6 +545,7 @@ def readback_block(trace, user_turn: bool) -> str:
         stored_profile = snap.get("profile")
         items: list[str] = []
         said: set = set()
+        created: dict[str, str] = {}      # a contact made this turn: its new id → who it is
         for rec in _walk_agents(list(trace.pipeline)):
             for turn in rec.turns:
                 for tc in turn.tool_calls:
@@ -506,16 +554,28 @@ def readback_block(trace, user_turn: bool) -> str:
                     args = tc.args if isinstance(tc.args, dict) else {}
                     if tc.name in CONTACT_WRITERS and stored_contacts is not None:
                         cid = str(args.get("contact_id") or "")
-                        before = stored_contacts.get(cid) if cid else None
-                        values = (before or {}).get("values", set())
-                        who = str(args.get("name") or "").strip() or (before or {}).get(
-                            "display") or "the contact"
+                        if cid and cid in created:
+                            # Created earlier this turn and now enriched: the same person, so
+                            # what was already read back is not read back again.
+                            before, values, who, ident = None, set(), created[cid], cid
+                        else:
+                            before = stored_contacts.get(cid) if cid else None
+                            values = (before or {}).get("values", set())
+                            who = str(args.get("name") or "").strip() or (before or {}).get(
+                                "display") or "the contact"
+                            ident = cid
+                            if not cid:
+                                new_id = str(tc.result_preview or "").split("\n", 1)[0].strip()
+                                ident = new_id or who.casefold()
+                                if new_id:
+                                    created[new_id] = who
+                        announce = not cid
                         for kind, value in _contact_values(args):
-                            key = (cid or who.casefold(), kind, _norm(kind, value))
+                            key = (ident, kind, _norm(kind, value))
                             if (kind, _norm(kind, value)) in values or key in said:
                                 continue
                             said.add(key)
-                            items.append(f"new contact {who}" if (kind == "name" and not before
+                            items.append(f"new contact {who}" if (kind == "name" and announce
                                                                   and value == who)
                                          else f"{who} — {kind}: {value}")
                     elif tc.name in PROFILE_WRITERS and stored_profile is not None:

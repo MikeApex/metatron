@@ -17,14 +17,21 @@ The rules, each tested in tests/test_recipient_context.py:
    subject of a message is the model's judgement. Nothing here blocks or edits a send.
 2. **No trigger words.** It runs on every Relationships call that resolves someone — the first
    draft's draft/send word list was withdrawn as a fuzzy relevance test.
-3. **Never widens a grant.** Each source is read only when the agent holds the tool that reads
-   it (`read_data_object`, `list_tasks`, `read_wisdom`, `search_memory`); the lists in the user's
-   logs also pass the data-object read rule for that agent.
-4. **A memory hit counts only if it contains the name literally** (local FAISS search, no model).
-5. **Empty means nothing is appended; any error gives "".** It never costs a turn.
+3. **Only text that names THIS person.** Case-sensitive, capitalised. The full name (first +
+   last, either order) always counts. The first name or nickname alone counts only when no other
+   contact shares it and it is not also an ordinary word (`contact_resolution.COMMON_WORD_NAMES`:
+   Will, Mark, Rose, May, …). Stored facts: the relationships domain by that rule, any other
+   domain only by full name.
+4. **Grants.** The user's lists pass the data-object read rule for the agent; stored facts and
+   past entries are read only when the agent holds `read_wisdom` / `search_memory`. Open tasks
+   are read by code, read-only, for the task's wording and due date only — never a medication
+   link or any other field (driver ruling, review of 56cce4f item 4).
+5. **Never slows the records down.** Built after the records, overdue and dates parts; the past-
+   entry searches share one budget of `MEMORY_BUDGET_S` for the whole block, in parallel.
+6. **Empty means nothing is appended; any error gives "".** It never costs a turn.
 
-Caps: 3 people, 6 lines each, 160 characters a line. Cost: one local FAISS search per resolved
-person (~0.5 s, run in parallel), ≈400 tokens on a call that has hits.
+Caps: 3 people, 6 lines each (all sources together), 160 characters a line. Cost: one local
+FAISS search per resolved person, together ≤1.5 s; ≈400 tokens on a call that has hits.
 """
 
 from __future__ import annotations
@@ -32,6 +39,8 @@ from __future__ import annotations
 import contextlib
 import logging
 import re
+import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
@@ -42,23 +51,81 @@ MAX_PEOPLE = 3
 MAX_LINES = 6
 LINE_CHARS = 160
 MEMORY_HITS = 3
+MEMORY_BUDGET_S = 1.5
 _MEMORY_K = 6
-_MEMORY_TIMEOUT_S = 3.0
+_RELATIONSHIPS_DOMAIN = "relationships"
 
 
-def _names(contact: dict) -> list[str]:
-    out = []
-    for k in ("name", "first_name", "nickname"):
-        v = " ".join(str(contact.get(k) or "").split())
-        if v and v.casefold() not in {x.casefold() for x in out}:
-            out.append(v)
+# --- who a piece of text is about (rule 3) ----------------------------------------------------
+
+def _cap_words(value) -> list[str]:
+    return [w for w in re.findall(r"[A-Za-z][A-Za-z'\-]*", str(value or ""))]
+
+
+def _full_patterns(contact: dict) -> list[re.Pattern]:
+    first = _cap_words(contact.get("first_name"))
+    last = _cap_words(contact.get("last_name"))
+    name = _cap_words(contact.get("name"))
+    if not (first and last) and len(name) >= 2:
+        first, last = name[:1], name[-1:]
+    seqs = []
+    if first and last:
+        seqs += [first + last, last + first]
+    if len(name) >= 2:
+        seqs.append(name)
+    out, seen = [], set()
+    for seq in seqs:
+        key = tuple(seq)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(re.compile(r"(?<![A-Za-z])" + r"\s+".join(re.escape(w) for w in seq)
+                              + r"(?![A-Za-z])"))
     return out
 
 
-def _names_in(text: str, names: list[str]) -> bool:
-    text = str(text or "")
-    return any(re.search(rf"(?<![A-Za-z]){re.escape(n)}(?![A-Za-z])", text, re.IGNORECASE)
-               for n in names if len(n) >= 2)
+def _single_names(contact: dict, counts: Counter) -> list[str]:
+    """The one-word names that are safe to match alone for this contact (rule 3)."""
+    from tools.contact_resolution import COMMON_WORD_NAMES
+    out = []
+    for raw in (contact.get("first_name") or (_cap_words(contact.get("name")) or [""])[0],
+                contact.get("nickname")):
+        words = _cap_words(raw)
+        if len(words) != 1:
+            continue
+        w = words[0]
+        low = w.lower()
+        if len(w) < 2 or low in COMMON_WORD_NAMES or counts.get(low, 0) != 1:
+            continue
+        out.append(w[0].upper() + w[1:])
+    return out
+
+
+def matcher(contact: dict, contacts: list[dict]):
+    """(names_full, names_single) → a function text -> bool telling whether text names this
+    contact under rule 3, and a function for full-name-only matching."""
+    from tools.contact_resolution import _singles
+    counts: Counter = Counter()
+    for c in contacts or [contact]:
+        for w in _singles(c):
+            counts[w] += 1
+    full = _full_patterns(contact)
+    singles = [re.compile(rf"(?<![A-Za-z]){re.escape(w)}(?![A-Za-z])")
+               for w in _single_names(contact, counts)]
+
+    def by_full(text) -> bool:
+        return any(p.search(str(text or "")) for p in full)
+
+    def by_rule(text) -> bool:
+        t = str(text or "")
+        return by_full(t) or any(p.search(t) for p in singles)
+    return by_rule, by_full
+
+
+def _label(contact: dict) -> str:
+    return " ".join(str(contact.get("name") or "").split()) or " ".join(
+        x for x in (contact.get("first_name"), contact.get("last_name")) if x) or str(
+        contact.get("nickname") or contact.get("id") or "")
 
 
 def _line(text: str) -> str:
@@ -90,6 +157,8 @@ def _holds(granted: set[str] | None, tool: str) -> bool:
     return granted is None or tool in granted
 
 
+# --- the sources --------------------------------------------------------------------------------
+
 def _list_entries(contact: dict, agent: str) -> list[str]:
     from tools.data_objects import entries_for_contact
     with _as_agent(agent):
@@ -105,35 +174,39 @@ def _list_entries(contact: dict, agent: str) -> list[str]:
     return out
 
 
-def _task_lines(contact: dict, names: list[str]) -> list[str]:
+def _task_lines(names_it) -> list[str]:
+    """Open tasks whose wording names the person — the wording and the due date only. Read-only
+    (tools/obligations.py is never written from here)."""
     from tools import obligations as O
     out = []
     for t in (O._norm(t) for t in O._load()):
-        if t.get("status") != "open":
+        if t.get("status") != "open" or not names_it(t.get("what")):
             continue
-        if _names_in(t.get("what"), names) or _names_in(t.get("notes") or t.get("note"), names):
-            out.append(f"open task {t['id']}: {t['what']}")
+        due = str(t.get("due") or "").strip()
+        out.append(f"open task: {t['what']}" + (f" (due {due[:10]})" if due else ""))
     return out
 
 
-def _wisdom_lines(names: list[str]) -> list[str]:
+def _wisdom_lines(by_rule, by_full) -> list[str]:
     from tools.wisdom import _all_entries
     out = []
     for e in _all_entries():
-        if not isinstance(e, dict) or e.get("retired"):
+        if not isinstance(e, dict):
             continue
-        if _names_in(e.get("key"), names) or _names_in(e.get("value"), names):
-            out.append(f"on file ({e.get('key')}): {e.get('value')}")
+        text = f"{e.get('key') or ''} {e.get('value') or ''}"
+        in_domain = str(e.get("domain") or "").lower() == _RELATIONSHIPS_DOMAIN
+        if (by_rule(text) if in_domain else by_full(text)):
+            out.append(f"on file: {e.get('value')}")
     return out
 
 
-def _memory_lines(contact: dict, names: list[str]) -> list[str]:
+def _memory_lines(contact: dict, names_it) -> list[str]:
     from core.memory import search_memory
-    hits = search_memory(names[0], k=_MEMORY_K) or []
+    hits = search_memory(_label(contact), k=_MEMORY_K) or []
     out = []
     for h in hits:
         text = str((h or {}).get("text") or "")
-        if not _names_in(text, names):          # rule 4: the name, literally
+        if not names_it(text):          # the name, literally, by rule 3
             continue
         when = str(h.get("date") or "")[:10]
         out.append(f"past entry{f' ({when})' if when else ''}: {text}")
@@ -142,46 +215,56 @@ def _memory_lines(contact: dict, names: list[str]) -> list[str]:
     return out
 
 
-def on_file_block(resolved: list[dict], agent: str = "relationships") -> str:
-    """The ON FILE block for the resolved people, or "" when nothing is on file (or on error)."""
+def on_file_block(resolved: list[dict], agent: str = "relationships",
+                  contacts: list[dict] | None = None) -> str:
+    """The ON FILE block for the resolved people, or "" when nothing is on file (or on error).
+    `contacts`: the whole contact list, for "does anyone else share this first name"; loaded
+    when not given."""
     try:
-        people = [c for c in (resolved or []) if isinstance(c, dict)][:MAX_PEOPLE]
+        people = [c for c in (resolved or []) if isinstance(c, dict) and c.get("id")][:MAX_PEOPLE]
         if not people:
             return ""
+        if contacts is None:
+            from tools import crm as CRM
+            contacts = CRM._load_contacts()
         granted = _granted(agent)
+        match = {str(c["id"]): matcher(c, contacts) for c in people}
         from core.persona import current_persona, persona_scope
         persona = current_persona()
 
+        # Rule 5: every past-entry search starts now, in parallel, under one shared budget.
         futures = {}
+        deadline = time.monotonic() + MEMORY_BUDGET_S
         if _holds(granted, "search_memory"):
             def _search(c):
                 with (persona_scope(persona) if persona else contextlib.nullcontext()):
-                    return _memory_lines(c, _names(c))
+                    return _memory_lines(c, match[str(c["id"])][0])
             pool = ThreadPoolExecutor(max_workers=len(people), thread_name_prefix="on-file")
-            futures = {str(c.get("id")): pool.submit(_search, c) for c in people if _names(c)}
+            futures = {str(c["id"]): pool.submit(_search, c) for c in people}
             pool.shutdown(wait=False)
 
         sections = []
         for c in people:
-            names = _names(c)
-            if not names:
-                continue
+            by_rule, by_full = match[str(c["id"])]
             lines: list[str] = []
-            for source, wanted in ((lambda: _list_entries(c, agent), "read_data_object"),
-                                   (lambda: _task_lines(c, names), "list_tasks"),
-                                   (lambda: _wisdom_lines(names), "read_wisdom")):
-                if not _holds(granted, wanted):
+            sources = [("lists", lambda: _list_entries(c, agent), True),
+                       ("tasks", lambda: _task_lines(by_rule), True),
+                       ("facts", lambda: _wisdom_lines(by_rule, by_full),
+                        _holds(granted, "read_wisdom"))]
+            for label, source, allowed in sources:
+                if not allowed:
                     continue
                 try:
                     lines += source()
                 except Exception as exc:  # noqa: BLE001 — one source failing loses only it
-                    logger.warning(f"[recipient_context] {wanted} source skipped: {exc}")
-            fut = futures.get(str(c.get("id")))
+                    logger.warning(f"[recipient_context] {label} source skipped: {exc}")
+            fut = futures.get(str(c["id"]))
             if fut is not None:
                 try:
-                    lines += fut.result(timeout=_MEMORY_TIMEOUT_S)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(f"[recipient_context] memory search skipped: {exc}")
+                    lines += fut.result(timeout=max(0.0, deadline - time.monotonic()))
+                except Exception as exc:  # noqa: BLE001 — a slow search loses only itself
+                    logger.warning(f"[recipient_context] past-entry search skipped: "
+                                   f"{type(exc).__name__}: {exc}")
             seen, kept = set(), []
             for ln in lines:
                 ln = _line(ln)
@@ -189,7 +272,7 @@ def on_file_block(resolved: list[dict], agent: str = "relationships") -> str:
                     seen.add(ln.casefold())
                     kept.append(ln)
             if kept:
-                sections.append(f"{names[0]} ({c.get('id')}):\n"
+                sections.append(f"{_label(c)} ({c.get('id')}):\n"
                                 + "\n".join(f"- {x}" for x in kept[:MAX_LINES]))
         if not sections:
             return ""

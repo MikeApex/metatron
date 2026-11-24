@@ -93,6 +93,11 @@ def actions_from(agent_rec) -> dict[str, list[dict]]:
                 for k in ("title", "start"):
                     if a.get(k):
                         row[k] = _short(a.get(k))
+                # What this update changed — so two different updates to one event are two rows.
+                changed = {k: _short(v) for k, v in sorted(a.items())
+                           if k != "uid" and v not in (None, "", [], {})}
+                if changed:
+                    row["changed"] = changed
                 out["events_scheduled"].append(row)
             elif tc.name == "write_schedule":
                 when = (a.get("at") or (f"{a.get('day')} {a.get('time')}".strip()
@@ -107,7 +112,16 @@ def actions_from(agent_rec) -> dict[str, list[dict]]:
     return out
 
 
-_NONE_WORDS = {"none", "n/a", "na", "nothing", "no", "omit", "-"}
+_NONE_WORDS = {"none", "n/a", "na", "nothing", "no", "omit", "-", "nil"}
+# "None identified", "None at this time", "Nothing to coordinate", "N/A for now", "No
+# opportunities" — a model's way of saying there is nothing is not an opportunity.
+_NONE_RE = re.compile(r"^\W*(none|nothing|nil|n/?a|no\s+(coordination|opportunit|cross)\w*|omit)"
+                      r"(\b|\W|$)", re.IGNORECASE)
+
+
+def _is_none(text: str) -> bool:
+    t = str(text or "").strip().strip("[]()").strip()
+    return not t or t.lower().strip(".") in _NONE_WORDS or bool(_NONE_RE.match(t))
 
 
 def coordination_from(output: str) -> list[dict]:
@@ -118,22 +132,23 @@ def coordination_from(output: str) -> list[dict]:
     first, _, rest = text.split("COORDINATION_OPPORTUNITIES:", 1)[1].partition("\n")
     items: list[str] = []
     head = first.strip().strip("[]").strip()
-    if head and head.lower().strip(".") not in _NONE_WORDS:
+    if not _is_none(head):
         items.append(head)
     for raw in rest.splitlines():
         line = raw.strip()
         if not line.startswith("- "):
             break
         body = line[2:].strip()
-        if body and body.lower().strip(".") not in _NONE_WORDS:
+        if not _is_none(body):
             items.append(body)
     return [{"text": _short(x)} for x in items[:MAX_COORDINATION]]
 
 
 def _key(list_name: str, row: dict) -> tuple:
     if list_name == "events_scheduled":
+        changed = row.get("changed") if isinstance(row.get("changed"), dict) else {}
         return (row.get("tool"), row.get("uid") or str(row.get("title") or "").casefold(),
-                row.get("start") or "")
+                row.get("start") or "", tuple(sorted((k, str(v)) for k, v in changed.items())))
     if list_name == "reminders_set":
         return (row.get("tool"), str(row.get("name") or "").casefold(), row.get("when") or "")
     if list_name == "horizon_items":
@@ -224,7 +239,16 @@ def read_calendar_reverified(start_date: str, end_date: str) -> dict:
                 continue
             pending.append(r)
         pending.sort(key=lambda r: str(r.get("start") or ""))
-        pending = pending[:MAX_REVERIFY]
+        # One per event: a recurring series' occurrences share a uid, and two occurrences of one
+        # event must not use up both slots (review of 56cce4f, item 6).
+        by_uid, unique = set(), []
+        for r in pending:
+            uid = str(r.get("uid") or "")
+            if uid and uid in by_uid:
+                continue
+            by_uid.add(uid)
+            unique.append(r)
+        pending = unique[:MAX_REVERIFY]
         if not pending:
             return result
         from core.trace import get_trace
@@ -237,15 +261,16 @@ def read_calendar_reverified(start_date: str, end_date: str) -> dict:
         with _REVERIFY_LOCK:
             for r in pending:
                 uid = str(r.get("uid") or "")
-                if uid and uid in cache:
-                    check = cache[uid]
+                ckey = (uid, str(r.get("start") or ""))
+                if uid and ckey in cache:
+                    check = cache[ckey]
                 else:
                     check = check_calendar_conflicts(
                         str(r.get("start") or ""), str(r.get("end") or ""),
                         str(r.get("title") or ""), location=str(r.get("location") or ""),
                         exclude_uid=uid)
                     if uid:
-                        cache[uid] = check
+                        cache[ckey] = check
                 out.append({"uid": uid, "start": r.get("start"), "end": r.get("end"),
                             "reverify": check})
         result = dict(result)

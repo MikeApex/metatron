@@ -8060,12 +8060,18 @@ def _dispatch_from_coordinator(
     # shapeless or older than 14 days. Same recipients as the flags.
     _headline = _pattern_headline(persona)
 
+    # Stage 4 #12: names are resolved from the Coordinator's own directive and the user's words
+    # only — never from the blocks code appends below (knowledge, logs, PROACTIVE_FLAGS), which
+    # name other people (review of 56cce4f, item 1).
+    own_directives: dict[str, str] = {}
     for spec in specialists:
         if not isinstance(spec, dict):
             continue
         agent = spec.get("agent", "")
         agent = _normalize_agent(agent)
         directive = spec.get("directive", "")
+        if agent and isinstance(directive, str):
+            own_directives.setdefault(agent, directive)
         mode = spec.get("mode", "")
         is_ff = spec.get("fire_and_forget", False) or agent == "diarist"
         complexity: str | None = mode if mode in ("quick", "deep") else None
@@ -8167,7 +8173,8 @@ def _dispatch_from_coordinator(
                         try:
                             from core import prefetch as _prefetch
                             pre = _prefetch.build(
-                                agent_name, directive, user_text, persona, user_turn,
+                                agent_name, own_directives.get(agent_name, directive),
+                                user_text, persona, user_turn,
                                 calendar_future=(calendar_future
                                                  if agent_name == "logistics" else None))
                         except Exception as exc:  # noqa: BLE001

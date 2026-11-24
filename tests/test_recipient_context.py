@@ -104,13 +104,16 @@ def _():
         assert "2026-11-02" not in block and "recital" not in block, block
 
 
+NAMES = ["Alder", "Birch", "Cedar", "Dahlia", "Elm"]
+
+
 @check("4. the caps hold: 3 people, 6 lines each, 160 characters a line")
 def _():
     with sandbox():
-        people = [{"id": f"c{i}", "name": f"Person{i} Last", "first_name": f"Person{i}"}
-                  for i in range(5)]
+        people = [{"id": f"c{i}", "name": f"{n} Last", "first_name": n, "last_name": "Last"}
+                  for i, n in enumerate(NAMES)]
         _seed(people)
-        hits = [{"text": f"Person{i} note {j} " + "x" * 300} for i in range(5) for j in range(8)]
+        hits = [{"text": f"{n} note {j} " + "x" * 300} for n in NAMES for j in range(8)]
 
         def search(query, k=5):
             return [h for h in hits if h["text"].startswith(query.split()[0] + " ")][:k]
@@ -120,12 +123,38 @@ def _():
         heads = [ln for ln in block.splitlines()[1:] if ln.endswith("):")]
         assert len(heads) == 3, block
         assert all(len(ln) <= RC.LINE_CHARS + 2 for ln in block.splitlines()[1:]), block
-        for i in range(3):
+        for n in NAMES[:3]:
             assert sum(1 for ln in block.splitlines()
-                       if ln.startswith(f"- past entry: Person{i} ")) == RC.MAX_LINES, block
+                       if ln.startswith(f"- past entry: {n} ")) == RC.MAX_LINES, block
 
 
-@check("5. a broken contacts file gives \"\" (and never fails the dispatch)")
+@check("4b. the cap is across ALL sources together: lists + tasks + facts + past entries → 6")
+def _():
+    import tools.obligations as O
+    with sandbox():
+        _seed([SAM])
+        for i in range(2):
+            DO.archive_write(DO.get("gift_ideas"), {"title": f"gift {i}", "for": "Sam"})
+        O.open_task("Book a table for Sam Lee's birthday", kind="deadline", due="2026-12-01",
+                    new_instance=True)
+        O.open_task("Return the book Sam Lee lent me", kind="deadline", due="2026-12-02",
+                    new_instance=True)
+        WIS._wisdom_path().parent.mkdir(parents=True, exist_ok=True)
+        WIS._wisdom_path().write_text(json.dumps([
+            {"key": f"k{i}", "value": f"Sam Lee fact {i}", "domain": "relationships"}
+            for i in range(2)]))
+        hits = [{"text": f"Sam Lee memory {i}", "date": f"2026-11-0{i + 1}"} for i in range(3)]
+        with patched([(MEM, "search_memory", _memory(hits))]):
+            block = RC.on_file_block([SAM], contacts=[SAM])
+        body = [ln for ln in block.splitlines() if ln.startswith("- ")]
+        assert len(body) == RC.MAX_LINES, block
+        assert sum(ln.startswith("- in your") for ln in body) == 2, block
+        assert sum(ln.startswith("- open task: ") for ln in body) == 2, block
+        assert sum(ln.startswith("- on file: ") for ln in body) == 2, block
+        assert not any(ln.startswith("- past entry") for ln in body), "cut at the cap"
+
+
+@check("5. a broken contacts file gives no block, and never fails the dispatch")
 def _():
     with sandbox():
         p = CRM._crm_path()
@@ -135,8 +164,8 @@ def _():
             block = PF.build("relationships", "Message Sam Lee.", "", PERSONA, now=NOW)
         assert RC.HEADING not in block, block
         assert RC.on_file_block([{"no": "id"}]) == "" and RC.on_file_block(None) == ""
-        with patched([(RC, "_names", lambda c: 1 / 0)]):
-            assert RC.on_file_block([SAM]) == ""
+        with patched([(RC, "matcher", lambda c, cs: 1 / 0)]):
+            assert RC.on_file_block([SAM], contacts=[SAM]) == ""
 
 
 @check("6. the prefetch-is-None door (a run_subagent follow-up) carries the block")
@@ -162,17 +191,88 @@ def _():
         assert RC.HEADING not in seen["system"], "in the USER message, never the system prompt"
 
 
-@check("7. a source the agent is not granted is never read (list_tasks for Relationships)")
+SAM2 = {"id": "c_sam2", "name": "Sam Ortiz", "first_name": "Sam", "last_name": "Ortiz"}
+
+
+@check("8. two Sams: a fact saying only 'Sam' is attributed to neither; 'Sam Lee' (either "
+       "order) to Sam Lee only")
 def _():
     with sandbox():
+        _seed([SAM, SAM2])
+        WIS._wisdom_path().parent.mkdir(parents=True, exist_ok=True)
+        WIS._wisdom_path().write_text(json.dumps([
+            {"key": "a", "value": "Sam loves jazz", "domain": "relationships"},
+            {"key": "b", "value": "Sam Lee is planning a surprise", "domain": "relationships"},
+            {"key": "c", "value": "Lee Sam prefers calls", "domain": "relationships"}]))
+        hits = [{"text": "Sam said the surprise is on", "date": "2026-11-01"}]
+        with patched([(MEM, "search_memory", _memory(hits))]):
+            block = RC.on_file_block([SAM, SAM2], contacts=[SAM, SAM2])
+        assert "Sam Lee is planning a surprise" in block and "Lee Sam prefers calls" in block
+        assert "jazz" not in block and "surprise is on" not in block, block
+        assert "c_sam2" not in block, block
+
+
+WILL = {"id": "c_will", "name": "Will Turner", "first_name": "Will", "last_name": "Turner"}
+BIRCH = {"id": "c_birch", "name": "Birch Moss", "first_name": "Birch", "last_name": "Moss"}
+
+
+@check("9. a contact named Will: facts containing 'will' or a lone 'Will' are not about him; "
+       "'Will Turner' is; another domain needs the full name")
+def _():
+    with sandbox():
+        _seed([WILL, BIRCH])
+        WIS._wisdom_path().parent.mkdir(parents=True, exist_ok=True)
+        WIS._wisdom_path().write_text(json.dumps([
+            {"key": "a", "value": "The user will travel in May", "domain": "relationships"},
+            {"key": "b", "value": "Will said the plan is fine", "domain": "relationships"},
+            {"key": "c", "value": "Will Turner's party is a surprise", "domain": "relationships"},
+            {"key": "d", "value": "Birch is allergic to nuts", "domain": "food"},
+            {"key": "e", "value": "Birch likes handwritten cards", "domain": "relationships"}]))
+        with patched([(MEM, "search_memory", _memory([]))]):
+            block = RC.on_file_block([WILL, BIRCH], contacts=[WILL, BIRCH])
+        assert "Will Turner's party is a surprise" in block, block
+        assert "travel in May" not in block and "plan is fine" not in block, block
+        assert "handwritten cards" in block and "allergic" not in block, block
+
+
+@check("10. _task_lines: open tasks naming the person, wording and due date only — never a "
+       "medication link or other fields")
+def _():
+    import tools.obligations as O
+    with sandbox():
+        _seed([SAM, SAM2])
+        O.open_task("Buy flowers for Sam Lee", kind="deadline", due="2026-12-05",
+                    new_instance=True)
+        O.open_task("Call Sam about the trip", kind="deadline", due="2026-12-06",
+                    new_instance=True)
+        O.open_task("Renew the car insurance", kind="deadline", due="2026-12-07",
+                    new_instance=True)
+        doc = O._load_doc()
+        for t in doc.get("tasks", []):
+            if t.get("what") == "Buy flowers for Sam Lee":
+                t["medication"] = "a medicine name"
+                t["notes"] = "private note"
+        O._save_doc(doc)
+        by_rule, _ = RC.matcher(SAM, [SAM, SAM2])
+        lines = RC._task_lines(by_rule)
+        assert lines == ["open task: Buy flowers for Sam Lee (due 2026-12-05)"], lines
+
+
+@check("11. a slow past-entry search never costs the records; the block waits ≤1.5 s for it")
+def _():
+    import time as _time
+    with sandbox():
         _seed([SAM])
-        called = []
-        with patched([(MEM, "search_memory", _memory([])),
-                      (RC, "_task_lines", lambda c, n: called.append(1) or ["open task t1: x"])]):
-            RC.on_file_block([SAM], "relationships")
-        from core.router import get_allowed_tools
-        if "list_tasks" not in (get_allowed_tools("relationships") or []):
-            assert called == [], "list_tasks is not granted to Relationships — never read"
+
+        def slow(query, k=5):
+            _time.sleep(5)
+            return [{"text": "Sam Lee late hit"}]
+        with patched([(MEM, "search_memory", slow)]):
+            t0 = _time.monotonic()
+            block = PF.build("relationships", "Draft a note to Sam Lee.", "", PERSONA, now=NOW)
+            took = _time.monotonic() - t0
+        assert '"id": "c_sam"' in block and "overdue for contact" in block, block
+        assert "late hit" not in block and took < 3.0, (took, block)
 
 
 if __name__ == "__main__":

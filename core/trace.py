@@ -193,6 +193,9 @@ class RequestTrace:
         # Stage 4 M14: calendar uids whose [VERIFY] conflict check code re-ran this request, and
         # the result — re-used, never re-run, by a second read. Never serialised.
         self.reverified: dict = {}
+        # Request-scoped memo for code that would otherwise repeat a read within one request
+        # (Stage 4: the CRM archive scan behind contact resolution). Never serialised.
+        self.request_cache: dict = {}
         self.start_mono = time.monotonic()
         self._lock = threading.Lock()  # guards pipeline/subagent list mutations from worker threads
 

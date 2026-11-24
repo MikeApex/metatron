@@ -406,6 +406,67 @@ def _():
             assert "### people named here" in s.last("relationships"), s.last("relationships")
 
 
+@check("R1. names come from the Coordinator's own directive and the user's words — never from a "
+       "block code appended (knowledge, PROACTIVE_FLAGS)")
+def _():
+    with sandbox():
+        _seed()
+        spec = {"agent": "relationships", "directive": "Help the user call Will Turner."}
+        coord = coordinator_package([spec]) + "\nPROACTIVE_FLAGS:\n- Rose Patel seemed low\n"
+        s = Script({"relationships": "ok"})
+        with patched([(RC, "_memory_lines", lambda c, n: []),
+                      (ORC, "_knowledge_block", lambda *a, **k: "KNOWN: Mark Ellis plays golf")]), \
+                pipeline(s), T.turn_scope(user_turn=True):
+            ORC._dispatch_from_coordinator(coord, persona=PERSONA, provider="openai",
+                                           knowledge=[{"key": "k"}], user_turn=True,
+                                           user_text="Can you help me with a call")
+        got = s.last("relationships")
+        assert "KNOWN: Mark Ellis plays golf" in got, "the appended block still reaches it"
+        assert '"id": "c_will"' in got, got
+        assert '"id": "c_mark"' not in got and '"id": "c_rose"' not in got, got
+
+
+@check("R3. a contact saved by full name only ('Sam Hale', no first_name) counts as a Sam: "
+       "'Sam' then asks which")
+def _():
+    with sandbox():
+        people = [_c("c_a", "Sam Lee", "Sam", "Lee"), {"id": "c_h", "name": "Sam Hale"}]
+        _seed(people)
+        ids, got = _ids("I need to ask Sam today")
+        assert ids == [] and {c["id"] for c in got["ambiguous"][0][1]} == {"c_a", "c_h"}, got
+        assert _ids("Then ask Sam Hale today")[0] == ["c_h"]
+
+
+@check("R9. a two-word name never matches across punctuation ('Sam, Lee and Jo')")
+def _():
+    phrases, _ = CR._index([_c("c_sl", "Sam Lee", "Sam", "Lee")])
+    for text in ("invite Sam, Lee and Jo", "ask Sam. Lee will come", "Sam; Lee"):
+        hits, _ = CR._two_token_hits(text, phrases)
+        assert hits == [], (text, hits)
+    hits, _ = CR._two_token_hits("invite Sam Lee and Jo", phrases)
+    assert [w for w, _ in hits] == ["Sam Lee"], hits
+
+
+@check("R7. M1: a contact created then enriched in one turn is read back once; phones compare "
+       "by crm._normalize_phone_digits")
+def _():
+    with sandbox():
+        _seed([dict(CONTACTS[1], contact_info={"phone": "020 7946 0000"})])
+        t, rec = _trace_with([
+            ("write_contact", {"name": "Kate Lowe", "contact_info": {"email": "kate@mail.test"}},
+             "c_new", True),
+            ("write_contact", {"contact_id": "c_new", "name": "Kate Lowe", "contact_info": {
+                "email": "kate@mail.test", "phone": "07700 900 555"}}, "c_new", True),
+            ("write_contact", {"contact_id": "c_mark", "contact_info": {
+                "phone": "(020) 7946-0000"}}, "c_mark", True)])
+        CR.take_snapshot(t, True, False)
+        t.pipeline.append(rec)
+        block = CR.readback_block(t, True)
+        items = [ln for ln in block.splitlines() if ln.startswith("- ")]
+        assert items == ["- new contact Kate Lowe", "- Kate Lowe — email: kate@mail.test",
+                         "- Kate Lowe — phone: 07700 900 555"], items
+
+
 if __name__ == "__main__":
     for name, ok, detail in _results:
         print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"\n        {detail}" if detail else ""))

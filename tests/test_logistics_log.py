@@ -307,6 +307,82 @@ def _():
         TR.set_trace(None)
 
 
+@check("R6. M14: occurrences of one recurring event are one re-check (de-duplicated by uid "
+       "before the cap); the cache is keyed by (uid, start)")
+def _():
+    occ1 = {**_F1, "uid": "series", "start": "2026-11-20T12:30", "end": "2026-11-20T13:30"}
+    occ2 = {**_F1, "uid": "series", "start": "2026-11-21T12:30", "end": "2026-11-21T13:30"}
+    with _calendar(occ1, occ2, _F3) as (checks, writes):
+        got, t = _read("logistics")
+        assert [c[2] for c in checks] == ["series", "v3"], checks
+        assert set(t.reverified) == {("series", "2026-11-20T12:30"),
+                                     ("v3", "2026-11-21T17:30")}, t.reverified
+        assert writes == []
+        TR.set_trace(None)
+
+
+@check("R8. M13: two different updates to one event are two rows; 'None identified' and the "
+       "like are not opportunities")
+def _():
+    with sandbox():
+        LL.record_run(_rec("logistics", [
+            ("update_calendar_event", {"uid": "u-1", "location": "Room 4"}, _event_ok("u-1"),
+             True),
+            ("update_calendar_event", {"uid": "u-1", "alarm_minutes_before": 30},
+             _event_ok("u-1"), True)]), "", user_turn=True)
+        rows = _code_part()["events_scheduled"]
+        assert len(rows) == 2 and rows[0]["changed"] == {"location": "Room 4"}, rows
+        for nothing in ("None identified", "None at this time.", "n/a", "N/A for now",
+                        "[none]", "No coordination opportunities today", "Nothing to note"):
+            assert LL.coordination_from(f"COORDINATION_OPPORTUNITIES: {nothing}\n") == [], nothing
+            assert LL.coordination_from(f"COORDINATION_OPPORTUNITIES:\n- {nothing}\n") == []
+        assert LL.coordination_from("COORDINATION_OPPORTUNITIES: Nonna's shop is near the "
+                                    "dentist\n") == [{"text": "Nonna's shop is near the dentist"}]
+
+
+@check("R10. M13 from REAL tool result shapes, through dispatch_tool: a created event, a real "
+       "write_schedule and record_horizon_item, and a refused duplicate")
+def _():
+    import tools.horizon as HZ
+    import tools.schedule as SC
+
+    def fake_write_event(title, start, end, **kw):
+        # The success shape tools/caldav.write_calendar_event returns.
+        return {"success": True, "uid": "abc-123@ai-life-manager", "title": title,
+                "start": start, "end": end, "url": "https://cal.example.test/a/abc-123.ics",
+                "conflict_check": {"status": "ok", "evidence": {"day_digest": ["x"]}}}
+
+    def fake_duplicate(title, start, end, **kw):
+        return {"error": "duplicate_event", "message": "An identical event already exists",
+                "existing_event": {"uid": "old"}}
+    with sandbox():
+        t = TR.start_request_trace("u", PERSONA)
+        rec = TR.push_agent("logistics", "", "")
+        try:
+            h = {"write_calendar_event": fake_write_event, "write_schedule": SC.write_schedule,
+                 "record_horizon_item": HZ.record_horizon_item}
+            ORC.dispatch_tool("write_calendar_event", {"title": "Dentist", "start":
+                              "2026-11-21T09:00:00", "end": "2026-11-21T10:00:00"}, h,
+                              _agent_rec=rec)
+            out = ORC.dispatch_tool("write_schedule", {"name": "bins", "prompt": "Put the bins "
+                                    "out", "at": "2099-01-01T19:00:00"}, h, _agent_rec=rec)
+            hz = ORC.dispatch_tool("record_horizon_item", {"title": "Passport renewal",
+                                   "date": "2099-03-01"}, h, _agent_rec=rec)
+            ORC.dispatch_tool("write_calendar_event", {"title": "Dentist", "start":
+                              "2026-11-21T09:00:00", "end": "2026-11-21T10:00:00"},
+                              {"write_calendar_event": fake_duplicate}, _agent_rec=rec)
+        finally:
+            TR.pop_agent(rec)
+            TR.set_trace(None)
+        LL.record_run(rec, "", user_turn=True)
+        part = _code_part()
+        assert [(e["uid"], e["title"]) for e in part["events_scheduled"]] == [
+            ("abc-123@ai-life-manager", "Dentist")], (part, out)
+        assert [r["name"] for r in part["reminders_set"]] == ["bins"], (part, out)
+        assert [x["title"] for x in part["horizon_items"]] == ["Passport renewal"], (part, hz)
+        _ = t
+
+
 if __name__ == "__main__":
     for name, ok, detail in _results:
         print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"\n        {detail}" if detail else ""))

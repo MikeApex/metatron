@@ -398,9 +398,18 @@ def _read_people(agent: str, e: dict, ctx: dict) -> tuple[str, str, bool]:
         days = int(e.get("upcoming_days") or DEFAULT_UPCOMING_DAYS)
     except (TypeError, ValueError):
         days = DEFAULT_UPCOMING_DAYS
+    from tools.crm import _load_contacts
+    try:
+        contacts = _load_contacts()
+    except Exception as exc:  # noqa: BLE001 — people_block reports and degrades on its own
+        logger.warning(f"[prefetch] contacts unreadable: {exc}")
+        contacts = None
+    # Records, overdue and dates first; #16's block after, under its own time budget, so a slow
+    # past-entry search can never cost the records (review of 56cce4f, item 5).
     named, lists, resolved = people_block(ctx.get("directive") or "",
-                                          ctx.get("user_text") or "", ctx["today"], days)
-    on_file = on_file_block(resolved, agent) if resolved else ""
+                                          ctx.get("user_text") or "", ctx["today"], days,
+                                          contacts=contacts, cache=ctx.get("request_cache"))
+    on_file = on_file_block(resolved, agent, contacts) if resolved else ""
     body = "\n\n".join(x for x in (named, on_file, lists) if x)
     return ("people named here, overdue contacts and upcoming dates (matched exactly by code)",
             _cap(body, ctx["cap"]), False)
@@ -504,7 +513,10 @@ def build(agent: str, directive: str = "", user_text: str = "", persona: str | N
         with persona_scope(p):
             now = now or _local_now()
             today = _today(now)
-        ctx = {"cap": int(cfg.get("cap_chars") or 6000),
+        from core import trace as _tr
+        _t = _tr.get_trace()
+        ctx = {"request_cache": getattr(_t, "request_cache", None) if _t is not None else None,
+               "cap": int(cfg.get("cap_chars") or 6000),
                "timeout": float(cfg.get("read_timeout_s") or 4),
                "now": now, "today": today, "calendar_future": calendar_future,
                "directive": directive, "user_text": user_text}
