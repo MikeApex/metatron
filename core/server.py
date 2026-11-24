@@ -611,6 +611,23 @@ async def _interview_history(persona: str) -> list[dict]:
     return pairs
 
 
+async def _goal_talk_history(persona: str, channel: str) -> list[dict]:
+    """One goal talk's turns so far (goal network plan § 18) — the Interviewer's history while
+    it lasts, as the first interview's is. A resumed talk is the same channel, so it picks up."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT user, assistant FROM exchanges WHERE persona=? AND channel=? ORDER BY id ASC",
+            (persona, channel),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    pairs: list[dict] = []
+    for row in rows:
+        pairs.append({"role": "user", "content": row["user"] or _APP_STARTED_TURN})
+        pairs.append({"role": "assistant", "content": row["assistant"]})
+    return pairs
+
+
 def _row_with_attachments(row) -> dict:
     """Decode an exchange row's attachment JSON into the list the client expects."""
     out = dict(row)
@@ -909,6 +926,10 @@ def _refuse_side_door(request: Request, persona: str, agent: str) -> None:
         raise HTTPException(status_code=403, detail="Not available to this account.")
     if interview_mod.status(persona) == "active":
         raise HTTPException(status_code=409, detail="Finish or pause setting up first.")
+    # A goal talk (goal network plan § 18) is a conversation on /ws too (Fable L11).
+    from tools import goal_talk
+    if goal_talk.active(persona):
+        raise HTTPException(status_code=409, detail="Finish or pause the talk first.")
 
 
 # Background tasks the server starts and nobody awaits. asyncio keeps only a weak reference to
@@ -1108,6 +1129,39 @@ async def _interview_proactive_turn(persona: str, prompt: str, opening: bool = F
         "proactive": True,
     })
     await _broadcast_interview_status(persona)
+
+
+async def _goal_talk_opening(persona: str) -> None:
+    """The Interviewer opens a goal talk the user just said yes to (§ 18), as a proactive turn
+    right after Synth's one-line hand-over — saved on the talk's channel, broadcast like the
+    first interview's opening, never rendered as something the user said."""
+    from tools import goal_talk
+    loop = asyncio.get_running_loop()
+    # Claimed atomically (Fable L1): if her own next message got there first, it opened the talk
+    # and this stands down — never two Interviewer replies, never two lookups.
+    talk = await loop.run_in_executor(None, goal_talk.claim_opening, persona)
+    if not talk:
+        return
+    chan = goal_talk.channel(talk)
+    try:
+        history = await _goal_talk_history(persona, chan)
+        prompt = goal_talk.opening_prompt(persona)
+        reply = await loop.run_in_executor(
+            None, lambda: goal_talk.run_turn(persona, prompt, history, proactive=True))
+    except Exception:
+        # The talk stays active and unopened: the user's next message reaches the Interviewer
+        # anyway, which opens it from there.
+        logger.exception(f"[goal_talk] opening failed for {persona}")
+        return
+    exchange_id = f"goaltalk-{uuid.uuid4().hex[:12]}"
+    new_id = await _save_exchange(persona, exchange_id, "", reply, proactive=True, channel=chan)
+    _log_conversation("", reply, goal_talk.AGENT, persona, proactive=True)
+    _after_interview_turn(persona, "", reply)
+    await manager.broadcast(persona, {
+        "type": "message", "id": new_id, "exchange_id": exchange_id, "user": "",
+        "assistant": reply, "ts": datetime.utcnow().isoformat() + "Z", "attachments": [],
+        "proactive": True,
+    })
 
 
 class InterviewRequest(BaseModel):
@@ -1466,6 +1520,15 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                                   and interview_mod.status(persona_key) == "active")
                 interview_history = (await _interview_history(persona_key)
                                      if interview_mode else None)
+                # A goal talk (goal network plan § 18, behind `goal_talk`): her own messages go
+                # to the Goals Interviewer about that one goal, with the talk so far as history,
+                # until it is settled or she stops. Never a proactive turn — scheduled sessions
+                # run as usual around it.
+                from tools import goal_talk as _goal_talk
+                talk = (None if proactive or interview_mode else _goal_talk.active(persona_key))
+                talk_channel = _goal_talk.channel(talk) if talk else None
+                talk_history = (await _goal_talk_history(persona_key, talk_channel)
+                                if talk else None)
 
                 # Notify other devices that a new exchange is starting
                 if not nudge:
@@ -1493,6 +1556,10 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                             # receipt-checked inside run_turn before it gets here.
                             reply = interview_mod.run_turn(persona_orch, user_input,
                                                            interview_history)
+                            asyncio.run_coroutine_threadsafe(queue.put(reply), loop).result()
+                            return
+                        if talk:
+                            reply = _goal_talk.run_turn(persona_orch, user_input, talk_history)
                             asyncio.run_coroutine_threadsafe(queue.put(reply), loop).result()
                             return
                         for chunk in run_pipeline_session_stream(
@@ -1596,14 +1663,22 @@ async def websocket_endpoint(websocket: WebSocket, persona: str | None = None) -
                         new_id = await _save_exchange(persona_key, exchange_id, user_input,
                                                       full_response, proactive=proactive,
                                                       attachments=attached,
-                                                      channel="interview" if interview_mode else None)
+                                                      channel=("interview" if interview_mode
+                                                               else talk_channel))
                         await _bind_attachments([a["id"] for a in attached], exchange_id)
                         _log_conversation(user_input, full_response,
-                                          interview_mod.AGENT if interview_mode else "coordinator",
+                                          interview_mod.AGENT if interview_mode or talk
+                                          else "coordinator",
                                           persona_orch, proactive=proactive)
                         if interview_mode:
                             _after_interview_turn(persona_key, user_input, full_response)
                             await _broadcast_interview_status(persona_key)
+                        elif talk:
+                            _after_interview_turn(persona_key, user_input, full_response)
+                        elif not proactive and _goal_talk.needs_opening(persona_key):
+                            # Synth's turn just started a talk (update_goal action=talk): the
+                            # Interviewer opens it now, so she is not left to prompt it.
+                            _spawn(_goal_talk_opening(persona_key))
                         await manager.broadcast(persona_key, {
                             "type": "message",
                             "id": new_id,

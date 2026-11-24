@@ -1565,8 +1565,10 @@ def register_tools() -> tuple[list[dict], dict]:
     # Granted in Stage B — synthesizer all three, goals_interviewer set_day_shape.
     from tools.day_shape import set_day_shape, SET_DAY_SHAPE_SCHEMA
     # The first interview in the app (multi-user plan § 4.7): the interviewer's own two tools.
-    from core.interview import (pause_interview, finish_interview,
-                                PAUSE_INTERVIEW_SCHEMA, FINISH_INTERVIEW_SCHEMA)
+    from core.interview import (pause_interview, finish_interview, pause_schema,
+                                FINISH_INTERVIEW_SCHEMA)
+    # With `goal_talk` on it also pauses a talk about one goal, and takes the day to carry on.
+    PAUSE_INTERVIEW_SCHEMA = pause_schema()
     # Pause/resume for the user's own routines (archive/plans/routine_pause_plan_2026-10-26.md).
     from tools.routines import (
         pause_routine, resume_routine, list_routines,
@@ -1581,6 +1583,9 @@ def register_tools() -> tuple[list[dict], dict]:
     # Ranking Part B phase 3 (§ 4.13, R8): what the user says about how it is going, kept in their
     # words for the monthly review. Granted to the synthesizer in both routing files.
     from tools.ranking_review import record_signal, RECORD_SIGNAL_SCHEMA
+    # Goal network phase 3 part B (§ 18): looked forward to vs turned out, kept per class.
+    # Granted to the synthesizer in both routing files; answers "not switched on" while off.
+    from tools.satisfaction import note_expectation, NOTE_EXPECTATION_SCHEMA
     # The whole day on request (archive/plans/synth_now_next_plan_2026-10-30.md § 3.3).
     from tools.day_plan import read_day_plan, READ_DAY_PLAN_SCHEMA
     # The project planner (goal–task network plan § 10 R8): plan_project only queues; read_plan is
@@ -1653,6 +1658,10 @@ def register_tools() -> tuple[list[dict], dict]:
         OPEN_TASK_SCHEMA, UPDATE_TASK_SCHEMA, LIST_TASKS_SCHEMA,
         SET_DAY_SHAPE_SCHEMA, REQUEST_REPLAN_SCHEMA, ANSWER_EVENT_SCHEMA, READ_DAY_PLAN_SCHEMA,
         ANSWER_ASK_SCHEMA, LOOKUP_PUBLIC_FACT_SCHEMA, RECORD_SIGNAL_SCHEMA,
+        # Registered always, like lookup_public_fact (the grant check requires a schema for a
+        # granted tool); its description confines it to turns whose context carries the block,
+        # which exists only while `satisfaction_gap` is on (Fable S6).
+        NOTE_EXPECTATION_SCHEMA,
         PLAN_PROJECT_SCHEMA, READ_PLAN_SCHEMA,
         PAUSE_INTERVIEW_SCHEMA, FINISH_INTERVIEW_SCHEMA,
         PAUSE_ROUTINE_SCHEMA, RESUME_ROUTINE_SCHEMA, LIST_ROUTINES_SCHEMA,
@@ -1762,6 +1771,7 @@ def register_tools() -> tuple[list[dict], dict]:
         "answer_ask": answer_ask,
         "lookup_public_fact": lookup_public_fact,
         "record_signal": record_signal,
+        "note_expectation": note_expectation,
         "read_day_plan": read_day_plan,
         "plan_project": plan_project,
         "read_plan": read_plan,
@@ -6478,7 +6488,15 @@ def _finance_block(persona: str | None) -> str:
     try:
         from tools.finance_totals import finance_figures_block
         with persona_scope(resolve_persona(persona)) as _p:
-            return finance_figures_block(_p)
+            block = finance_figures_block(_p)
+            # Part B (§ 18, Mike: spending "sits first and foremost with Finance and Synth"):
+            # how purchases land for this user, beside the figures. "" while off.
+            try:
+                from tools.satisfaction import finance_line
+                extra = finance_line(_p)
+            except Exception:  # noqa: BLE001
+                extra = ""
+            return "\n\n".join(b for b in (block, extra) if b)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[finance] figures block failed: {exc}")
         return ""
@@ -7463,6 +7481,13 @@ def _horizon_block(persona: str | None = None, session: str | None = None,
                 blocks.append(weekly_block(persona, session, weekly=weekly, user_turn=user_turn))
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"[ranking] weekly block failed: {exc}")
+            # Goal network part B (§ 18): the one anticipation/experience question this week,
+            # when one is due and targeted. "" while `satisfaction_gap` is off.
+            try:
+                from tools.satisfaction import context_block as _sat_block
+                blocks.append(_sat_block(persona, user_turn=user_turn))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"[satisfaction] block failed: {exc}")
         return "\n\n".join(b for b in blocks if b)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[horizon] block failed: {exc}")

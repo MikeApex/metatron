@@ -813,7 +813,11 @@ def open_plan(steps: list[dict], persona: str | None = None, created_by: str = "
                     return {"ok": False, "error": f"step {c['key']!r} is part of {po!r}, which is "
                                                   f"already {target.get('status')}"}
                 goal = None if (target is not None or po in keys.values()) else _goal_index().get(po)
-                if goal is not None and str(goal.get("status") or "active") not in (
+                # The one exception: a goal's talk-through task (goal network plan § 18) — the talk
+                # IS the vetting of a goal being considered, not a decomposition of it.
+                talk_step = (str(goal.get("status") or "") == "proposed" if goal else False) and \
+                    str(c["entry"].get("source_id") or "").startswith("goal_talk:")
+                if goal is not None and not talk_step and str(goal.get("status") or "active") not in (
                         "active", "not_started", "at_risk"):
                     # Only a goal that has been taken on is decomposed (§ 4.2) — a proposed one
                     # is still being considered, a parked or declined one is not wanted now.
@@ -2852,6 +2856,14 @@ def update_task(task_id: str, action: str, evidence: str | None = None,
             return (f"{tid} was already {status} at {t.get('closed_at', 'unknown')} — "
                     f"nothing to do, and no second record made.")
 
+        # A goal's talk-through task (goal network plan § 18) is done by having the talk — its
+        # verdict closes it, in code. A tap or a "done" never does; skipping it still can.
+        if (action == "done" and str(t.get("source_id") or "").startswith("goal_talk:")
+                and not getattr(_USER_ACT, "code", False) and _talk_on()):
+            # Worded for the user too — the app shows this text when a tap is refused (Fable L3).
+            return ("error: this one is done by talking it through — say \"let's talk it "
+                    "through\" in a message to start. Nothing was changed.")
+
         refusal = _close_refusal(t, doc["tasks"], today)
         if refusal:
             return refusal
@@ -3383,6 +3395,20 @@ def _named_by(t: dict, text: str, prev: str, others: list[dict], stop: frozenset
             return True, ""
     return False, ("they could mean more than one task" if tie
                    else "their words don't name this task")
+
+
+def _talk_on() -> bool:
+    try:
+        from tools.day_plan_config import flag
+        return flag("goal_talk")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _is_talk_row(t: dict) -> bool:
+    """A goal's talk-through task (goal network plan § 18): it has no Done button — the talk's
+    verdict closes it — while `goal_talk` is on."""
+    return str(t.get("source_id") or "").startswith("goal_talk:") and _talk_on()
 
 
 def _close_refusal(t: dict, tasks: list[dict], today: date) -> str | None:
@@ -3987,6 +4013,7 @@ def today_items(persona: str | None = None, as_of: date | None = None) -> list[d
                     "what": t["what"], "label": v["text"][len(t["what"]):].lstrip(" —"),
                     "state": v["state"], "sort": list(v["sort"]),
                     "actions": (["done", "skipped"] if t["kind"] in ("habit", "interval")
+                                else ["dismissed"] if _is_talk_row(t)
                                 else ["done", "done_with_followup", "dismissed"]),
                     **({"stops": stops[t["id"]][:3]} if stops.get(t["id"]) else {})})
     out.sort(key=lambda i: i["sort"])

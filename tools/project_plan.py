@@ -158,11 +158,16 @@ def _end(part_of: str, persona: str | None = None) -> dict | None:
             "status": str(g.get("status") or "active"), "size": str(g.get("size") or "").upper(),
             "what": str(g.get("shareable_what") or "")[:300], "vetted": bool(g.get("vetted")),
             "pass": vetted.get("pass"), "weekly_minutes": wm,
-            "goal_kind": str(g.get("kind") or "goal")}
+            "goal_kind": str(g.get("kind") or "goal"),
+            # What the goal talk recorded (part B, § 18) — present only once one has.
+            **{k: g[k] for k in ("done_means", "starting_point", "effort_hours") if g.get(k)}}
 
 
 def _open_steps(end_id: str, persona: str | None = None) -> list[dict]:
-    return [t for t in _O()._load(persona) if t.get("part_of") == end_id and t.get("status") == "open"]
+    # A goal's talk-through task (§ 18) is not a plan step: it never makes a goal "already
+    # planned", never takes its weekly time away, and is never adopted (Fable S4).
+    return [t for t in _O()._load(persona) if t.get("part_of") == end_id and t.get("status") == "open"
+            and not str(t.get("source_id") or "").startswith("goal_talk:")]
 
 
 def _end_usable(end: dict | None) -> str | None:
@@ -426,7 +431,8 @@ def _adoptable(end: dict, persona: str) -> list[dict]:
     out = []
     for t in (O._norm(x) for x in O._load(persona)):
         if (t.get("status") != "open" or t.get("kind") not in O._ONE_OFF or t["id"] == end["id"]
-                or (t.get("part_of") and t.get("part_of") != end["id"]) or t.get("prep_for")):
+                or (t.get("part_of") and t.get("part_of") != end["id"]) or t.get("prep_for")
+                or str(t.get("source_id") or "").startswith("goal_talk:")):
             continue
         if t.get("goal_id") == end["id"] or etoks & O._task_tokens(t["what"]):
             out.append({"id": t["id"], "what": t["what"], "due": t.get("due"),
@@ -458,6 +464,19 @@ def _payload(req: dict, persona: str) -> dict:
         "open_tasks": _adoptable(end, persona) if end.get("title") else [],
         "playbook": _playbook(str(end.get("title") or ""), str(end.get("what") or "")),
     }
+    # Part B (§ 18): what the talk-through settled, and what it started from when there was no
+    # playbook — the realistic shape the planner paces milestones to. Absent until a talk is had.
+    for k in ("done_means", "starting_point", "effort_hours"):
+        if end.get(k):
+            out["end_state"][k] = end[k]
+    if end.get("kind") == "goal" and not out["playbook"]:
+        try:
+            from tools.goal_talk import last_shape
+            shape = last_shape(str(end.get("id")), persona)
+        except Exception:  # noqa: BLE001
+            shape = None
+        if shape and shape.get("source") == "research" and shape.get("text"):
+            out["researched"] = shape["text"]
     if req.get("size") == "L":
         out["wave"] = _wave_payload(req)
         if req.get("expand"):
@@ -836,6 +855,13 @@ def sweep_unplanned(persona: str | None = None) -> int:
     """A goal taken on as M, with a date ahead, no open steps and never planned, is queued — the
     "verified goal with no plan" sweep (§ 4.3). Once per goal: a goal whose plan was made and
     finished is not re-planned behind the user's back."""
+    # Part B (§ 18): an L goal still to be talked through gets its talk task (once per goal) —
+    # its own flag, before the planner's, since the talk is not a plan. Never costs the sweep.
+    try:
+        from tools.goal_talk import sweep as _talk_sweep
+        _talk_sweep(persona)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[project_plan] talk sweep failed: %s", exc)
     if not _flag():
         return 0
     persona = resolve_persona(persona)

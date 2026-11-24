@@ -417,8 +417,11 @@ def mark_late_said(r: dict, stamp: str) -> None:
 
 def _steps_of(gid: str, tasks: list[dict]) -> list[dict]:
     O = _O()
+    # The talk-through task (part B, § 18) is not a step the user is failing to do: it cannot be
+    # ticked off, so its daily slips must never read as "this goal keeps slipping" (Fable S4).
     return [t for t in tasks if t.get("kind") in O._ONE_OFF
-            and (t.get("part_of") == gid or t.get("goal_id") == gid)]
+            and (t.get("part_of") == gid or t.get("goal_id") == gid)
+            and not str(t.get("source_id") or "").startswith("goal_talk:")]
 
 
 def _slip_days(s: dict) -> set[date]:

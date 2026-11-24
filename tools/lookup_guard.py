@@ -168,7 +168,14 @@ def _cfg(persona: str | None) -> dict:
 def lookup_public_fact(question: str) -> str:
     """Ask the Research Agent one public fact, through the guard and under the daily cap."""
     from core.persona import current_persona
-    persona = current_persona()
+    return ask_public(question, current_persona())
+
+
+def ask_public(question: str, persona: str, source: str = "lookup_public_fact",
+               max_chars: int | None = None) -> str:
+    """The one guarded path out (shared by `lookup_public_fact` and the goal talk's research,
+    goal network plan § 18): the guard, the daily cap, the bare Research Agent, the wrap. Every
+    refusal or failure is a sentence that starts "refused", "not available" or "the lookup"."""
     lc = _cfg(persona)
     if not lc.get("enabled"):
         # Off until Mike has checked the grounding price and ruled on figures (Fable #1: the
@@ -217,7 +224,10 @@ def lookup_public_fact(question: str) -> str:
                 st["lookups"] = {"day": today, "n": int(used["n"]) - 1}
                 RK.save_state(st, persona)
         return "the lookup did not come back — ask the user instead."
-    return wrap_untrusted(str(answer or ""), source="research_agent:lookup_public_fact")
+    text = str(answer or "")
+    if max_chars:
+        text = text[:max_chars]      # cut before wrapping, so the closing tag is never lost
+    return wrap_untrusted(text, source=f"research_agent:{source}")
 
 
 LOOKUP_PUBLIC_FACT_SCHEMA = {

@@ -121,6 +121,20 @@ flags:
   # 2026-11-24), at most one goal a week — as a question, never a verdict. Detection is code.
   # The asking and the answer are kept in ranking_signals.jsonl for the monthly review.
   revet: false
+  # GOAL–TASK NETWORK PHASE 3, PART B (2026-11-24; plan § 18). Both OFF; each off restores part A.
+  # `goal_talk`: a large goal gets a talk-through with the Goals Interviewer, and the talk is the
+  # first task of its project (Mike). Synth offers it once; a yes starts it there and then — the
+  # user's messages go to the Interviewer about that one goal until it is settled or they stop.
+  # It starts from what Metatron already knows of the goal (a playbook), else one guarded lookup
+  # of what it realistically takes; code does the arithmetic. Its verdict is the only path to the
+  # full pass that `rolling_wave` plans from. Off: no talk task, no talk, part A unchanged.
+  goal_talk: false
+  # `satisfaction_gap`: how much the user looked forward to something against how it turned out,
+  # per class (a purchase, an outing, …) — heard in passing, asked rarely and only where it is
+  # targeted, kept in ranking_signals.jsonl; the gap is told to Synth (and Finance, for
+  # purchases) as evidence, and to the user now and then as a question, good or bad. Off: nothing
+  # is recorded, asked or said.
+  satisfaction_gap: false
 
 # Goal–task network phase 3, part A — one home for its tuning (plan § 17). Here, not a new file,
 # because the project planner's limits already live in `limits:` below and the loader re-reads
@@ -155,6 +169,41 @@ goal_network:
     # reviews is let go.
     per_week: 1
     max_shows: 3
+  # Part B (plan § 18). The talk-through task: its length (minutes), how long it has (days), and
+  # how long a quiet talk stays open before the next message goes back to the usual conversation
+  # (hours). Heuristic.
+  talk:
+    task_minutes: 30
+    due_days: 14
+    idle_hours: 6
+    # The verdict that takes an L goal on (and lets rolling wave plan it) needs this many of the
+    # user's own messages in the talk first — a real talk, not an opening line (Fable S2).
+    min_user_turns: 4
+  # Anticipated vs experienced (plan § 18, Mike: "holistic, and targeted"). Heard in passing costs
+  # nothing; ASKING costs attention, so: at most `asks_per_week` questions a week, both kinds
+  # together; "how was it?" asked `after_days` after (a purchase `after_days_purchase`); a class's
+  # gap is evidence once it has `evidence_pairs` pairs and is told to the user, as a question,
+  # once it has `lesson_pairs` with a consistent gap of at least `lesson_gap` points — at most
+  # once every `lesson_every_days` days in all. Classes are targeted (asked about) when a current
+  # goal's title carries one of their words, or when their pairs already show a gap. Heuristic.
+  satisfaction:
+    asks_per_week: 1
+    # An invitation to ask, shown on the user's own turn, is stamped by day; after this many days
+    # in a week no more are shown, whether or not one was asked or answered (Fable S8).
+    invite_days: 2
+    after_days: 1
+    after_days_purchase: 3
+    evidence_pairs: 3
+    lesson_pairs: 4
+    lesson_gap: 1.0
+    lesson_every_days: 30
+    targets:
+      purchase: [spend, spending, budget, money, saving, savings, debt, shopping]
+      activity: [exercise, swim, gym, strength, run, running, fitness, yoga, walk, sport]
+      social: [friends, social, friendship, community]
+      outing: [outings, concert, theatre, evenings]
+      trip: [travel, trip, holiday]
+      commitment: [volunteer, commitment, commitments]
 
 replaces_jobs: [companion_checkin]
 

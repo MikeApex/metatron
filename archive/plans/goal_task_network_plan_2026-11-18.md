@@ -699,3 +699,161 @@ whether Synth says a finish alert once and in its own words; whether a goal chec
 question; the real pace on `mike`'s tax plan; and, after part B, a real L goal over two weeks.
 **Not built (part B):** the Goals Interviewer's re-interview, trigger 3, the `mike` goals
 walkthrough — `archive/handoffs/2026-11-24-goal-network-phase-3b-build-prompt.md`.
+
+## 18. Phase 3, part B built — a large goal talked through properly, and how things turn out against how they were looked forward to (2026-11-24)
+
+Built in one Opus 5.5 session from `archive/handoffs/2026-11-24-goal-network-phase-3b-build-prompt.md`.
+**Both new behaviours are behind their own flag, OFF; nothing deployed.**
+
+**Mike's rulings this session (2026-11-24), asked before any code:**
+1. **How a talk starts:** *"As rec. The talk itself is the first task within the project."* Synth
+   offers it once when a goal is sized L ("now, or whenever you say?"); a yes starts it in the turn.
+   The talk is a task under the goal, placed and nudged like any step — so a "later" is never lost,
+   and no scheduled job is used (six-job cap).
+2. **What the talk records:** *"Five fields is a good start, but the facts can't all be user
+   generated. The goal itself should be developed and research by Metatron so that the rendering of
+   the goal is realistic."* Then, on the design: *"the goal might already have a shape within
+   Metatron (taxes, language learning) to start from."* So: `displaces`, `priority`,
+   `weekly_minutes`, optional `due`, `done_means`, plus `starting_point` and `effort_hours`; the
+   talk starts from a playbook when one applies, else one guarded public lookup; code does the
+   arithmetic.
+3. **Depth:** *"Focused to start. If more is needed then a continuation can be offered, or a second
+   talk scheduled with user."* About 8–15 turns; a second talk is the same task re-dated to the day
+   the user picks.
+4. **Trigger 3:** *"This isn't just a long term metric. Example: someone whose spending is out of
+   control can benefit from the realization that the anticipation of buying something, even if only
+   an hour, and the let down after receiving it are a mismatch. This needs to be a holistic, and
+   targeted approach that is both metric for Metatron and occasionally lesson for the user - good or
+   bad."* And: *"Spending was just an example, and sits first and foremost with Finance and Synth."*
+   — no wellbeing routing. *"Proceed as written."*
+
+**Built.**
+1. **The talk task** (`goal_talk`; `tools/goal_talk.py`). A goal sized L by Synth (add, update or
+   its short-pass vet) gets one task under it — *"Talk through: <goal>"*: `part_of` the goal, 30 min,
+   flexible, due in 14 days, `missable`, `source_id: goal_talk:<id>`. The daily sweep (inside
+   `sweep_unplanned`) gives an existing L goal its task once (`mike`'s `q4` predates the build); a
+   skipped one is not reopened. **A Done tap or a "done" never closes it** — its verdict does, in
+   code (`tools/obligations.py`); skipping still works. The one exception to phase 2's "a proposed
+   goal is never decomposed" is this task: the talk is the vetting.
+2. **The talk** (`update_goal action=talk`, Synth). State in `data/personas/{p}/interview/goal_talk.json`,
+   apart from the first interview's `state.json`, so nothing that reads that file sees it. While
+   active, the user's own messages on `/ws` go to the Goals Interviewer with that talk's turns as
+   history (`core/server.py`, channel `goal_talk:<talk id>`); right after Synth's one-line hand-over
+   the Interviewer opens it as a proactive turn. Scheduled sessions run as usual. One talk at a time;
+   a second goal's talk pauses the first. `pause_interview()` pauses a talk (the Safety section and
+   "let's stop" reach it with no new grant); a talk quiet for 6 h lapses on read; saying yes again
+   resumes the same talk. Each turn carries a code-built **GOAL TALK** block: the goal, what is
+   recorded, what is still to settle, the arithmetic, the user's week (aspirational baseline, day
+   shape windows and routines), and what the talk started from.
+3. **Realistic** — the starting shape, made once per talk: the playbook when `_playbook` matches,
+   else one lookup through `tools/lookup_guard.py` `ask_public` (now the one guarded path, shared
+   with `lookup_public_fact` — same guard, same 5-a-day cap), asking only a generic subject code
+   picks from fixed lists — never the user's words (review S5). **Arithmetic is code** (`realism`): the effort
+   at the weekly time, and the minutes a week the date needs.
+4. **The verdict** (`vet_goal`). In a talk, the Interviewer's `active` needs `weekly_minutes` and
+   `done_means` and at least 4 of the user's own messages in the talk (review S2); it stores them
+   with `starting_point`, `effort_hours` and `due`, writes `pass: full` (the talk alone licenses
+   it, whatever `rolling_wave` is), ends the talk and closes its task done. Parked or declined
+   carries the old pass. Synth's vet
+   never writes `full`, even mid-talk. The planner's payload gains `done_means`, `starting_point`,
+   `effort_hours` and, when no playbook, the looked-up text as `researched`
+   (`config/agents/project_planner.md`, one bullet). Then part A's sweep plans it in waves.
+5. **Anticipated vs experienced** (`satisfaction_gap` and `ranking_signals`; `tools/satisfaction.py`,
+   tool `note_expectation`, granted to the synthesizer in both routing files). Classes: purchase,
+   outing, trip, social, activity, commitment. **Heard first**: what the user volunteers is kept at
+   no cost. **Asked rarely**: one question a week across both kinds, only for a targeted class — one a
+   current goal's title names, purchases while a budget is over, or a class whose pairs already
+   lean; "how was it?" the day after (a purchase 3 days after), offered on two days at most. **Metric**:
+   per class, n, average before/after, gap, consistency — in the tool's result as evidence from 3
+   pairs, and to Finance beside its figures for purchases (`HOW PURCHASES LAND`). **Lesson**: at 4
+   consistent pairs (gap ≥ 1 point), when the next one in that class comes up, Synth puts it once as
+   a question, good or bad; at most once every 30 days. Rows: `satisfaction_anticipated`,
+   `satisfaction_experienced`, `satisfaction_lesson` in `ranking_signals.jsonl`, `source:
+   goal_network` — ids, class, scores and the user's own words only.
+
+**Agent files** (all edited in this session, none delegated): `goals_interviewer.md` § Talking one
+goal through (new) and two tool lines; `synthesizer.md` — the L row's offer sentence and one tool
+bullet; `project_planner.md` — one bullet. Routing (Red): `note_expectation` to the synthesizer,
+both files.
+
+**Config:** `goal_talk` and `satisfaction_gap` flags; `goal_network.talk` and
+`goal_network.satisfaction` tuning in `config/modules/day_plan.yaml` (code carries the same
+defaults).
+
+**Tests.** `tests/test_goal_network_phase3b.py` 31/31 after review and verify (fixture personas; the Interviewer's model,
+the lookup, the planner and every other meter stubbed). Part A 41/41, phase 1 38/38, phase 2 36/36,
+`test_ranking_v2.py` 58/58, `test_task_ranking.py` 21/21, the fixture runner 7/7, QA sweep 12/12.
+Known clean-HEAD failures unchanged: round-2 F8, `task_ledger_consult`'s dated event, the
+multi-user push `KeyError`. **Not tested offline:** the `/ws` routing and the proactive opening in
+`core/server.py` (exercised by the walkthrough's step 3).
+
+**Costs.**
+- *Build:* this session (Opus 5.5, high) ~$50–90, a little over the prompt's $40–80 for the research
+  step and the broader trigger 3; the Fable review and verify ~$15–30.
+- *Run:* a talk — one Interviewer session per L goal, ~8–15 reasoning-tier turns (~$0.05–0.15), plus
+  at most one grounded lookup (~$0.01–0.04, inside the existing 5-a-day cap; none when a playbook
+  applies); rare. Trigger 3 — zero model calls; its block adds ~40–90 tokens to Synth's input while
+  on, the purchase line ~40 to Finance's.
+- *Ancillary:* one small state file per user per feature; one task row per L goal; a few signal rows
+  a week.
+- *Unseen:* attention — a talk is long by design (bounded: one offer, a skippable task, one goal,
+  focus); trigger 3's questions (bounded: one a week, targeted, a lesson a month at most). No meter
+  reports either.
+- *What persists:* `goal_talk.json` (finished talks move to `past`, capped at 20) and
+  `satisfaction_state.json` (offer days, the last lesson date) — both owned by their module, inert
+  with the flags off, nothing billed by time.
+
+**Inert with both flags off, but not byte-identical to part A:** `lookup_public_fact`'s wrap now
+reads its source from a parameter (same value); `pause_interview`'s schema description names a goal
+talk; `vet_goal` and `update_goal` take new optional parameters that are ignored while off.
+
+**Fable 5.2 diff review — 8 structural, 12 local; all checked against the code, all accepted and
+fixed** (13 reproduced by the reviewer, 7 reasoned; one check per finding in
+`tests/test_goal_network_phase3b.py`, now 26/26):
+
+| # | What a user would see | Fix |
+|---|---|---|
+| S1 | Saying yes to a talk got no opening, then every message came back as an error for up to six hours — the server's threads bind no persona | every talk read binds the persona; a check runs a turn on an unbound thread |
+| S2 | A large goal planned onto their days without being talked through — a talk parked at its first message, or an Interviewer "yes" in the opening line, wrote the full pass | `full` only on `active` in an active talk after `min_user_turns` (4) of the user's own messages; parked/declined carry the old pass |
+| S3 | Held in a talk about a goal that no longer exists; a scheduled turn could start a talk with no yes | a talk ends when its goal is closed, removed or made smaller; `talk` needs the user's own turn |
+| S4 | The goal's weekly time vanished, "is this still wanted?" within a week (the talk task cannot be ticked off, so it "slipped" daily), and a goal resized to M could never be planned | the talk task is not a plan step to `has_plan`, the sweep, adoption or trigger 1; a goal that stops being one to talk through closes it; the Done refusal is flag-gated |
+| S5 | The user's own goal wording went to search grounding ("…before my daughter's wedding" passes the identifier guard) | the lookup asks a generic subject code picks from fixed lists (a language, an instrument, a few kinds of training) — nothing else is looked up |
+| S6 | Flags off, Synth could still spend a tool round on a tool that only says "not switched on" | the tool's description confines it to turns carrying the block, which exists only while on (schema kept registered: the grant check requires it — `lookup_public_fact` is the precedent); `pause_interview`'s schema is part A's when off |
+| S7 | "We'll carry on Thursday" and nothing happened Thursday | `pause_interview(resume_on)` brings the talk task back that day |
+| S8 | "One question a week" held only if the user answered and the model labelled it | invitations stamped by day on the user's own turns; after 2 days in a week, listen only |
+| L1 | A quick reply after the yes got two Interviewer answers and two paid lookups | the opening is claimed atomically; the shape is claimed before the lookup |
+| L2 | Starting a second goal's talk wiped the first | paused talks are kept per goal and resumed with their history |
+| L3 | Tapping Done showed a tool name in the app | user-worded refusal; the talk row has no Done button |
+| L4 | Synth told to offer the talk on every result | offered only when the task first appears |
+| L5 | A long lookup lost its closing outside-content tag, leaving the user's message inside it | cut before wrapping |
+| L6 | "10,000 hours" read as 10 — "weeks away" | separators, ranges and hour units parsed |
+| L7 | "How it turned out" paired with the wrong thing (one shared word, another class, a future trip) | same class, already happened, most distinctive words; else kept unpaired |
+| L8 | The Interviewer waited for a shortfall line that never came | the arithmetic says whether their time reaches their date |
+| L9 | Flags off, one result sentence differed from part A | gated |
+| L10 | "Let's stop" in the first interview could pause a goal talk instead | the first interview is checked first |
+| L11 | Messages over REST during a talk went to Synth | 409 while a talk is active |
+| L12 | A due "how did it turn out?" could expire unasked, stamped by a scheduled build | stamped only on user turns |
+
+**Fable verify pass (same reviewer, re-ran its reproductions):** 16 of 20 fixed, 4 partly, 5 new
+from the fixes — all fixed except where stated:
+
+| # | What a user would see | Fix |
+|---|---|---|
+| S2′ | Mid-talk, the Interviewer vetting a *different* L goal gave it the full pass (rolling wave on) | while `goal_talk` is on, the talk is the only route to `full` |
+| S8′/N3 | The ask budget was spent on the first chat days of each week, so a purchase's "how was it?" waited five days; or a question could repeat on the first day | only a specific "how did it turn out?" spends the budget (by day, user turns only); the standing "you may ask when one comes up" line spends nothing |
+| L1′ | A message typed while the opening was generating got a reply that ignored the opening | talk turns are serialised per user; the later one is given the opening as history |
+| N1 | The looked-up guidance about the wrong thing ("Polish my CV" → learning Polish; "run my own business" → marathon training) | a subject only as the object of a learning verb or in a fixed phrase; "English speaker" dropped |
+| N2 | Bulgarian's swept talk task sat on the list with nobody offering the talk | Synth offers it when a *Talk through: …* task comes up in the day |
+| N4 | A momentary unreadable goals file ended a talk for good | goals written atomically; an empty or unreadable read is "unknown", never "removed" |
+| N5 | "3–4 months at 5 hours a week" read as 3–4 hours of effort | a range counts only in hours or alone; hours *a week* is a pace, not effort |
+
+**Accepted as residual (prompt-level, recorded):** `note_expectation` stays in Synth's tool list
+with the flags off — the grant check requires a registered schema for a granted tool, as for
+`lookup_public_fact` — confined by its own description to turns carrying the block, which exists
+only while on; the agent-file edits are unconditional text that applies only when its block or
+result is present. The standing "you may ask" line's cap is the recorded asks plus the
+instruction. Tests: `tests/test_goal_network_phase3b.py` 31/31; every other suite and the QA sweep
+unchanged.
+
+**Not built:** the language playbook (its own Mike-led chat); the `mike` goals walkthrough is
+prepared, not run — `archive/handoffs/2026-11-24-goal-network-mike-goals-walkthrough-prompt.md`.

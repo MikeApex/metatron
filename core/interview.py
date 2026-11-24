@@ -331,10 +331,20 @@ def coverage_block(persona: str, capture_lines: str = "") -> str:
 # The two tools the interviewer holds (registered in core/orchestrator.py)
 # ---------------------------------------------------------------------------
 
-def pause_interview() -> str:
+def pause_interview(resume_on: str = "") -> str:
     """She wants to stop for now. Nothing is lost; the app offers *Continue setting up*."""
     from core.persona import resolve_persona
     persona = resolve_persona()
+    # The first interview first — the server routes to it ahead of a goal talk, so a "let's stop"
+    # in it must stop it (Fable L10). Then a goal talk (goal network plan § 18), which stops
+    # through the same tool: the Safety section and "let's stop" reach it with no second grant.
+    if status(persona) != "active":
+        try:
+            from tools import goal_talk
+            if goal_talk.active(persona):
+                return goal_talk.pause_tool(persona, resume_on)
+        except Exception:  # noqa: BLE001
+            pass
     if pause(persona):
         return ("Paused. Everything saved so far is kept; the user can pick this up from the "
                 "app's 'Continue setting up' button whenever they like.")
@@ -361,6 +371,27 @@ PAUSE_INTERVIEW_SCHEMA = {
                     "Everything saved is kept and they can resume from the app."),
     "input_schema": {"type": "object", "properties": {}, "required": []},
 }
+
+def pause_schema() -> dict:
+    """PAUSE_INTERVIEW_SCHEMA as models should see it: with `goal_talk` on, it also pauses a talk
+    about one goal and takes the day to carry on (Fable S7). Off, the constant, unchanged."""
+    try:
+        from tools.goal_talk import on
+        talk = on()
+    except Exception:  # noqa: BLE001
+        talk = False
+    if not talk:
+        return PAUSE_INTERVIEW_SCHEMA
+    import copy
+    s = copy.deepcopy(PAUSE_INTERVIEW_SCHEMA)
+    s["description"] = ("Pause this conversation — the first one, or a talk about one goal — "
+                        "because the user wants to stop for now. Everything saved is kept.")
+    s["input_schema"]["properties"]["resume_on"] = {
+        "type": "string",
+        "description": "In a talk about one goal: YYYY-MM-DD the user picked to carry on, if they "
+                       "picked one. The talk comes back on their list that day."}
+    return s
+
 
 FINISH_INTERVIEW_SCHEMA = {
     "name": "finish_interview",

@@ -13,8 +13,10 @@ full pass**. Part B builds that. So:
 
 - **Stage 1 — after part A is deployed (any time):** projected finish and the re-vet, on goals
   `mike` already has. ~20 min with Mike, then two weekly reviews of watching.
-- **Stage 2 — after part B is deployed and `q4` Bulgarian has had its re-interview:** one real L
-  goal planned in waves over two weeks, plus a deliberately ignored step that triggers a re-vet.
+- **Stage 2 — after part B is deployed and `q4` Bulgarian has been talked through** (the goals
+  walkthrough, `archive/handoffs/2026-11-24-goal-network-mike-goals-walkthrough-prompt.md`, step 3 —
+  with the language playbook in place first): one real L goal planned in waves over two weeks,
+  plus a deliberately ignored step that triggers a re-vet.
 
 ## Before Stage 1
 
@@ -52,14 +54,17 @@ full pass**. Part B builds that. So:
 
 ## Stage 2 — Bulgarian in waves (after part B)
 
-1. Confirm `q4` shows `size: L`, `vetted.pass: full`, `weekly_minutes` set (Mike pastes the
-   entry — `config/personas/**` is not readable from the Mac).
+1. Confirm `q4` shows `size: L`, `vetted.pass: full`, `weekly_minutes` and `done_means` set — the
+   walkthrough's step 4 read, which Mike pastes (`config/personas/**` is not readable from the
+   Mac). Part B (plan § 18) is the only path to `full`: the Interviewer's verdict at the end of
+   that talk. `goal_talk` stays on.
 2. Mike flips `rolling_wave: true`, commits, deploys.
 3. **Next tick:** `projects.json` → `requests.q4` is `planned` with `milestones` (first `current`,
    the rest `pending`) and `ids` for the first milestone's steps only. **Pass:** the task list holds
    only those steps (none of the later milestones); the first step appears on a day with room; the
    brief says once that it is planned and names the first step; `read_plan q4` (ask Synth for the
-   whole map) lists the later milestones as outlines.
+   whole map) lists the later milestones as outlines. The milestones run from the talk's
+   `starting_point` to its `done_means`, and their minutes roughly add up to its `effort_hours`.
 4. **Over two weeks:** steps are fed one at a time; `d1` Bulgarian Vocabulary keeps its own weekly
    time; at day 14 a `time` re-vet fires and the weekly review asks how it is going.
 5. **The deliberately ignored step:** Mike ignores one Bulgarian step on 4 of 7 days. **Pass:** a

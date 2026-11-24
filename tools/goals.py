@@ -147,6 +147,7 @@ def _iso(value: str) -> str | None:
 def _close_steps(goal_id: str, status: str) -> None:
     """A task part_of a goal that is declined, parked or completed is closed with that reason
     (§ 4.1). The ledger owns the write; a failure never blocks the goal change."""
+    _end_talk(goal_id, f"goal_{status}")
     try:
         from tools.obligations import close_plan_of
         close_plan_of(goal_id, f"its goal was {status}")
@@ -158,7 +159,9 @@ _VET_PRIORITIES = ("high", "normal", "low")
 
 
 def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", priority: str = "",
-             revisit_on: str = "", by: str = "", kind: str = "") -> str:
+             revisit_on: str = "", by: str = "", kind: str = "", weekly_minutes=None,
+             done_means: str = "", starting_point: str = "", effort_hours=None,
+             due: str = "") -> str:
     """Record a vetting verdict on one goal (§ 4.2, § 10 R3). Depth is the size Synth gave it in
     the turn: S needs nothing beyond the ledger; M needs a date it is feasible by and a priority
     against what is open; L is vetted by the Goals Interviewer's re-interview, which is phase 3 —
@@ -204,6 +207,30 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
             if not str(priority or "").strip():
                 return ("Error: say where it ranks against what is already open (`priority`). "
                         "Nothing was changed.")
+    # Part B (§ 18): the Goals Interviewer's verdict at the end of a goal talk records what the
+    # planner plans from — the time a week and what "done" means (Mike: five fields), with where
+    # they are now and the effort it realistically takes when known. Off, none of this is read.
+    talk = _talk_on_goal(str(g.get("id")))
+    extra = _talk_fields(weekly_minutes, done_means, starting_point, effort_hours, due) \
+        if _talk_flag() else {}
+    if isinstance(extra, str):
+        return extra
+    if talk and verdict == "active" and size == "L":
+        # A real talk, not an opening line (Fable S2): the full pass needs the user to have
+        # spoken in it several times. Parking or declining needs no minimum.
+        need = _talk_min_turns()
+        if _talk_user_turns(str(g.get("id"))) < need:
+            return ("Error: this has hardly been talked through yet — keep going with them; the "
+                    "verdict comes once what done looks like, the time a week and the trade-off "
+                    "are theirs. Nothing was changed.")
+        have_wm = extra.get("weekly_minutes") or g.get("weekly_minutes")
+        have_dm = extra.get("done_means") or g.get("done_means")
+        missing = [n for n, v in (("weekly_minutes", have_wm), ("done_means", have_dm)) if not v]
+        if missing:
+            return ("Error: before it is taken on, settle with them " + " and ".join(
+                {"weekly_minutes": "the time a week it gets (`weekly_minutes`)",
+                 "done_means": "what done looks like, in a line (`done_means`)"}[m]
+                for m in missing) + ". Nothing was changed.")
     if verdict == "parked":
         when = _iso(revisit_on)
         if not when:
@@ -220,8 +247,11 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
     prev = g.get("vetted") if isinstance(g.get("vetted"), dict) else {}
     depth_pass = None
     if size == "L" and verdict == "active":
+        # While `goal_talk` is on, the talk is the only way to a full pass (verify S2): an
+        # Interviewer vet of some OTHER goal mid-talk stays short. Off, part A's rule stands.
         depth_pass = ("full" if prev.get("pass") == "full" or (
-            _calling_agent() == "goals_interviewer" and _wave_on()) else "short")
+            _calling_agent() == "goals_interviewer"
+            and (talk or (_wave_on() and not _talk_flag()))) else "short")
     elif verdict in ("parked", "declined"):
         depth_pass = prev.get("pass")
     # The re-vet clock's anchor (Fable S6): when the goal was TAKEN ON — set on a fresh take-on,
@@ -232,6 +262,7 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
         if not was_current or not g.get("taken_on"):
             g["taken_on"] = (prev.get("date") if was_current and prev.get("date")
                              else datetime.now().strftime("%Y-%m-%d"))
+    g.update(extra)
     g["status"] = verdict
     if size in _SIZES:
         g["size"] = size
@@ -251,6 +282,19 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
         note_answer(str(g["id"]), verdict)
     except Exception:  # noqa: BLE001
         pass
+    ended = offer = False
+    if talk:
+        try:
+            from tools.goal_talk import on_vet
+            ended = on_vet(str(g["id"]), verdict)
+        except Exception:  # noqa: BLE001
+            pass
+    elif verdict == "active" and size == "L" and depth_pass != "full":
+        # Synth's short pass takes it on with weekly time; the proper talk is its first task.
+        offer = (_talk_task(str(g["id"]), by="short_pass")
+                 and _calling_agent() != "goals_interviewer")
+    elif verdict in ("parked", "declined"):
+        _end_talk(str(g["id"]), f"goal_{verdict}")
     if verdict in ("parked", "declined"):
         _close_steps(str(g["id"]), verdict)
     elif verdict == "active":
@@ -266,8 +310,107 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
             "declined": "declined (kept on record)"}[verdict]
     tail = (" Ask plan_project to break it into steps." if verdict == "active" and size == "M"
             else " It is given regular time each week, not steps." if verdict == "active"
+            and size == "L" and depth_pass != "full" else
+            " It will be planned out of sight, a stage at a time." if verdict == "active"
+            and size == "L" and _talk_flag() else
+            " It is given regular time each week, not steps." if verdict == "active"
             and size == "L" else "")
-    return f"{h} goal {g['id']} {word}.{tail}"
+    if offer:
+        tail += _OFFER
+    if ended:
+        tail += (" The talk is over: thank them in a sentence and say what happens next — their "
+                 "next message is the usual conversation.")
+    calc = _realism_line(g) if _talk_flag() else ""
+    return f"{h} goal {g['id']} {word}.{tail}" + (f" Arithmetic: {calc}" if calc else "")
+
+
+def _talk_flag() -> bool:
+    try:
+        from tools.goal_talk import on
+        return on()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _talk_on_goal(goal_id: str) -> bool:
+    """Is the Goals Interviewer, right now, in an ACTIVE goal talk about this goal? Read from the call
+    trace and the talk's own state — never from an argument a model fills in."""
+    if not _talk_flag() or _calling_agent() != "goals_interviewer":
+        return False
+    try:
+        from core.persona import resolve_persona
+        from tools.goal_talk import current
+        talk = current(resolve_persona(None))
+        return bool(talk and talk.get("goal_id") == goal_id and talk.get("status") == "active")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _talk_user_turns(goal_id: str) -> int:
+    try:
+        from core.persona import resolve_persona
+        from tools.goal_talk import user_turns
+        return user_turns(resolve_persona(None), goal_id)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _talk_min_turns() -> int:
+    try:
+        from tools.goal_talk import _cfg
+        return int(_cfg().get("min_user_turns") or 4)
+    except Exception:  # noqa: BLE001
+        return 4
+
+
+def _end_talk(goal_id: str, reason: str) -> None:
+    """The goal stopped being one to talk through (closed, removed, made smaller): any talk about
+    it ends and its task closes (Fable S3/S4). Off: nothing."""
+    if not _talk_flag():
+        return
+    try:
+        from tools.goal_talk import end
+        end(goal_id, reason)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _talk_fields(weekly_minutes, done_means, starting_point, effort_hours, due) -> dict | str:
+    """The talk's fields, checked; an `Error:` string when one is unreadable. Empty ones skipped."""
+    out: dict = {}
+    if weekly_minutes not in (None, ""):
+        try:
+            wm = int(round(float(weekly_minutes)))
+        except (TypeError, ValueError):
+            return "Error: `weekly_minutes` is a number of minutes a week. Nothing was changed."
+        if not 10 <= wm <= 3000:
+            return "Error: `weekly_minutes` is between 10 and 3000. Nothing was changed."
+        out["weekly_minutes"] = wm
+    for name, val, cap in (("done_means", done_means, 300), ("starting_point", starting_point, 200)):
+        v = " ".join(str(val or "").split())
+        if v:
+            out[name] = v[:cap]
+    if effort_hours not in (None, "", []):
+        from tools.goal_talk import parse_effort
+        eff = parse_effort(effort_hours)
+        if not eff:
+            return ("Error: `effort_hours` is hours, or a range like \"200-300\". Nothing was "
+                    "changed.")
+        out["effort_hours"] = eff
+    if str(due or "").strip():
+        iso = _iso(due)
+        if not iso:
+            return "Error: due is YYYY-MM-DD."
+        out["due"] = iso
+    return out
+
+
+def _realism_line(g: dict) -> str:
+    try:
+        from tools.goal_talk import realism
+        return realism(g.get("weekly_minutes"), g.get("effort_hours"), g.get("due"))
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def prompt_view(data: dict) -> str:
@@ -319,6 +462,10 @@ def update_goal(
     displaces: str = "",
     priority: str = "",
     revisit_on: str = "",
+    weekly_minutes: int | None = None,
+    done_means: str = "",
+    starting_point: str = "",
+    effort_hours: str | None = None,
 ) -> str:
     """
     Add, edit, complete or remove a single goal.
@@ -341,11 +488,18 @@ def update_goal(
         Confirmation, or an explanatory refusal.
     """
     action = str(action).strip().lower()
-    if action not in ("add", "update", "complete", "remove", "vet"):
-        return "Error: action must be one of add, update, complete, remove, vet."
+    actions = ("add", "update", "complete", "remove", "vet") + (("talk",) if _talk_flag() else ())
+    if action not in actions:
+        return f"Error: action must be one of {', '.join(actions)}."
+    if action == "talk":
+        # Part B (§ 18): the user said yes to talking this goal through properly, now.
+        from tools.goal_talk import start
+        return start(goal_id)
     if action == "vet":
         return vet_goal(goal_id, verdict, size=size, displaces=displaces, priority=priority,
-                        revisit_on=revisit_on, kind=kind)
+                        revisit_on=revisit_on, kind=kind, weekly_minutes=weekly_minutes,
+                        done_means=done_means, starting_point=starting_point,
+                        effort_hours=effort_hours, due=due)
 
     data = read_goals()
     fields = {k: v for k, v in (
@@ -367,6 +521,11 @@ def update_goal(
         fields["kind"] = str(kind).strip().lower()
     if fields.get("due") and not _iso(fields["due"]):
         return "Error: due is YYYY-MM-DD."
+    if _talk_flag():
+        extra = _talk_fields(weekly_minutes, done_means, starting_point, effort_hours, "")
+        if isinstance(extra, str):
+            return extra
+        fields.update(extra)
     # § 10 R6: a goal stated in chat is written `proposed`, in code, whatever status the model
     # sent — and only a vetting verdict (action=vet) takes it on. The Goals Interviewer authors
     # vetted goals and keeps its default.
@@ -402,10 +561,13 @@ def update_goal(
         new.setdefault("status", "active")
         bucket.append(new)
         _write(data)
+        has_task = new.get("size") == "L" and _talk_task(new["id"])
+        offer = _OFFER if has_task and from_synth else ""
         if new["status"] == "proposed":
             return (f"Added {horizon} goal {new['id']} as being considered: {new['title']}. "
-                    f"Size it and check it with the user (action=vet) before it is taken on.")
-        return f"Added {horizon} goal {new['id']}: {new['title']}"
+                    f"Size it and check it with the user (action=vet) before it is taken on."
+                    + offer)
+        return f"Added {horizon} goal {new['id']}: {new['title']}" + offer
 
     if not str(goal_id).strip():
         return f"Error: goal_id is required to {action} a goal. Use read_goals to find it."
@@ -421,6 +583,7 @@ def update_goal(
                 if action == "remove":
                     bucket.pop(i)
                     _write(data)
+                    _end_talk(goal_id, "goal_removed")
                     return (f"Removed {h} goal {goal_id}: {g.get('title', '')}. "
                             f"Use action 'complete' instead when a goal was "
                             f"achieved — that keeps the record.")
@@ -438,6 +601,10 @@ def update_goal(
                 _write(data)
                 if fields.get("status") in ("parked", "declined", "completed"):
                     _close_steps(goal_id, fields["status"])
+                offer = (_OFFER if fields.get("size") == "L" and from_synth
+                         and _talk_task(goal_id) else "")
+                if fields.get("size") and fields["size"] != "L":
+                    _end_talk(goal_id, "not_large")
                 if fields.get("due"):
                     # A new date is how an obligation's re-vet is answered ("is the date still
                     # right?") — recorded like a vet's verdict (Fable L10). Never blocks.
@@ -447,18 +614,39 @@ def update_goal(
                     except Exception:  # noqa: BLE001
                         pass
                 return (f"Updated {h} goal {goal_id}: "
-                        f"{', '.join(sorted(fields))} changed.")
+                        f"{', '.join(sorted(fields))} changed." + offer)
 
     known = ", ".join(str(g.get("id", "?")) for h in HORIZONS for g in (data.get(h) or []))
     return f"Error: no goal with id '{goal_id}'. Existing ids: {known or 'none'}."
 
 
+_OFFER = (" It deserves a proper talk: offer it once, in your words — now, or whenever they say; "
+          "on a yes, update_goal action=talk.")
+
+
+def _talk_task(goal_id: str, by: str = "sized") -> bool:
+    """A goal sized L gets its talk-through task — the project's first task (§ 18). True only when
+    it was opened by this call (so the result says to offer the talk once). Off: none, False."""
+    if not _talk_flag():
+        return False
+    try:
+        from tools.goal_talk import opened_task
+        return opened_task(goal_id, by=by)      # True only when opened now — offered once (L4)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _write(data: dict) -> None:
+    """Atomic (temp file + rename): a reader mid-write never sees an empty goals file — which a
+    goal talk would read as "the goal was removed" (goal network § 18, verify N4)."""
+    import tempfile
     path = _goals_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    fd, tmp = tempfile.mkstemp(prefix=".goals.", dir=str(path.parent))
+    with os.fdopen(fd, "w") as f:
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-    os.chmod(path, 0o600)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
 
 
 # Tool schemas — registered in orchestrator.register_tools()
@@ -551,15 +739,28 @@ def goal_schemas() -> tuple[dict, dict]:
     try:
         from tools.day_plan_config import flag
         exposed = flag("ledger_fields")
+        talk = flag("goal_talk")
     except Exception:  # noqa: BLE001
-        exposed = False
-    if not exposed:
+        exposed = talk = False
+    if not exposed and not talk:
         return READ_GOALS_SCHEMA, UPDATE_GOAL_SCHEMA
     import copy
     upd = copy.deepcopy(UPDATE_GOAL_SCHEMA)
-    upd["input_schema"]["properties"]["essential"] = {
-        "type": "boolean",
-        "description": "True for a goal that must not slip — one the user has said matters "
-                       "more than the rest. Its tasks are protected when the day is planned.",
-    }
+    props = upd["input_schema"]["properties"]
+    if exposed:
+        props["essential"] = {
+            "type": "boolean",
+            "description": "True for a goal that must not slip — one the user has said matters "
+                           "more than the rest. Its tasks are protected when the day is planned.",
+        }
+    if talk:
+        # Part B (§ 18): the talk-through. Off, the schema is part A's exactly.
+        props["action"]["description"] = "add | update | complete | remove | vet | talk"
+        upd["description"] += (
+            "\n\n'talk': the user said yes to talking a large goal (size L) through properly, "
+            "now — from their next message the conversation is about that one goal.")
+        props["weekly_minutes"] = {"type": "integer", "description": "Minutes a week the user will give it, in their words. For update or vet."}
+        props["done_means"] = {"type": "string", "description": "What done looks like, in one line of theirs. For update or vet."}
+        props["starting_point"] = {"type": "string", "description": "Where they are with it now, in a line. For update or vet."}
+        props["effort_hours"] = {"type": "string", "description": "Hours it realistically takes from where they are to done, e.g. \"200-300\" — from what is known about goals like this, not a guess. For update or vet."}
     return READ_GOALS_SCHEMA, upd

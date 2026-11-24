@@ -78,7 +78,12 @@ agents:
     # standing fact — and it is the fallback for turns the Coordinator's KNOWLEDGE_TO_LOAD did
     # not predict. Without the read grant the pre-fetch is the ONLY path to the store and a
     # mid-conversation turn toward a subject has no way to reach it.
-    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_task, update_task, list_tasks, read_wisdom, write_wisdom, teach_intake, record_wisdom_response, pause_routine, resume_routine, list_routines, set_day_shape, request_replan, answer_event, answer_ask, lookup_public_fact, record_signal, read_day_plan, plan_project, read_plan, list_data_objects, read_data_object, amend_data_object]
+    # note_expectation granted 2026-11-24 (goal network plan § 18, part B): what the user looked
+    # forward to and how it turned out, kept per class. The Synthesizer holds the conversation,
+    # so it is the one writer (Mike: spending "sits first and foremost with Finance and Synth" —
+    # Finance reads the result beside its figures, it does not write). Inert while
+    # `satisfaction_gap` is off.
+    allowed_tools: [run_subagent, run_model_conference, write_persona, write_profile, read_profile, write_config, write_wishes, read_wishes, generate_emergency_card, write_quality_event, write_schedule, list_schedules, delete_schedule, update_goal, open_task, update_task, list_tasks, read_wisdom, write_wisdom, teach_intake, record_wisdom_response, pause_routine, resume_routine, list_routines, set_day_shape, request_replan, answer_event, answer_ask, lookup_public_fact, record_signal, note_expectation, read_day_plan, plan_project, read_plan, list_data_objects, read_data_object, amend_data_object]
 
   # ── Data and analysis ────────────────────────────────────────────────────────
 
