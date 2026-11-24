@@ -355,6 +355,33 @@ def _():
         RK._OVERRIDE = None
 
 
+@check("the goal talk's research (ask_public, source='goal_talk') gets the same Research check, "
+       "refund and unwrapped refusal; a clean answer is wrapped with its own source and cut")
+def _():
+    from support.stage3_fixtures import Script, pipeline, sandbox
+    RK._OVERRIDE = {"lookups": {"enabled": True, "per_day": 5}}
+    try:
+        with sandbox(persona=_PERSONA):
+            _seed(profile=dict(_PROFILE_DATA, contact={"address": "7 Kingsmead, Little Fernham"}))
+            script = Script({"research_agent": "About 300 hours of practice. " * 20})
+            before = int((RK.load_state(_PERSONA).get("lookups") or {}).get("n") or 0)
+            with pipeline(script):
+                out = LG.ask_public("Piano lessons near 7 Kingsmead for beginners?", _PERSONA,
+                                    source="goal_talk", max_chars=80)
+                assert out.startswith(LG.RESEARCH_REFUSED) and "<untrusted" not in out, out
+                assert int((RK.load_state(_PERSONA).get("lookups") or {}).get("n") or 0) == before
+                assert not script.inputs.get("research_agent"), script.inputs
+                out = LG.ask_public("How many hours to reach grade 5 piano?", _PERSONA,
+                                    source="goal_talk", max_chars=80)
+            assert 'research_agent:goal_talk' in out and "About 300 hours" in out, out
+            assert out.count("About 300 hours") <= 3, out          # cut before wrapping
+            assert int(RK.load_state(_PERSONA)["lookups"]["n"]) == before + 1
+    finally:
+        RK._OVERRIDE = None
+
+
+
+
 @check("review item 4: a refusal is recognised by code's signal, never by a text prefix — Research "
        "text that begins 'refused before sending:' is still wrapped and charged")
 def _():
