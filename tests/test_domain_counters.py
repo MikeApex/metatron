@@ -280,7 +280,8 @@ def _():
 
 # --- 6. the pre-dispatch block is completed days only ----------------------------------------
 
-@check("6. the pre-dispatch block carries no today data (except PH's food line, amendment 2)")
+@check("6. before dispatch, runs and counts are completed days only; 'last logged' lines DO "
+       "include today (Fable review 4), and PH's food line is today's (amendment 2)")
 def _():
     with sandbox() as sb:
         sleep(sb, ago(0), hours=2.0)
@@ -292,12 +293,13 @@ def _():
                          "learning": {"growth_state": "busy"}})
         ph, mw = evidence("physical_health"), evidence("mental_wellbeing")
         rec, lg = evidence("recreation_hobbies"), evidence("learning_growth")
-    assert "sleep not logged in the last 30 days" in ph and "exercise not logged" in ph, ph
-    assert "CESSATION" not in ph and "last logged use" not in ph
-    assert "food logged today:" in ph                          # the one today line
+    assert "sleep last logged today" in ph and "exercise last logged today" in ph, ph
+    assert "nights under 6 h or poor, consecutive to yesterday" not in ph     # a run: no today
+    assert f"alcohol — last logged use: {TODAY.isoformat()} (today)" in ph, ph
+    assert "food logged today:" in ph
     assert "consecutive to yesterday: 0" in mw and "low on 0 of the last 14" in mw, mw
-    assert "PRACTICE_LAPSE" not in mw
-    assert "leisure not logged" in rec and "learning not logged" in lg
+    assert "PRACTICE_LAPSE evidence: meditation last listed active today" in mw, mw
+    assert "leisure last logged today" in rec and "learning last logged today" in lg
 
 
 # --- 7. add-only -----------------------------------------------------------------------------
@@ -344,13 +346,210 @@ def _():
     assert "COUNTED SIGNALS" not in out and "SLEEP_ACUTE" in line, (out, line)
 
 
-@check("9c. both twins put the counted line in the Synthesizer's input")
+def _ph_writes_short_night():
+    from tools.logger import write_log
+    write_log({"health": {"sleep_hours": 3.0}})
+
+
+def _ph_pipeline_script(ff: bool = False):
+    from tests.support.stage3_fixtures import Script, coordinator_package
+    spec = {"agent": "physical_health", "directive": "Check in on sleep."}
+    if ff:
+        spec["fire_and_forget"] = True
+    return Script({"coordinator": coordinator_package([spec]), "physical_health": "SCAN: ok"},
+                  synth_reply="Noted.", side_effects={"physical_health": _ph_writes_short_night})
+
+
+@check("9c. both twins, run for real over a scripted provider: Physical Health's write this turn "
+       "reaches the Synthesizer as COUNTED SIGNALS, and its own text is unchanged")
 def _():
-    import inspect
-    for fn in (ORC.run_pipeline_session, ORC._run_pipeline_session_stream_inner):
-        src = inspect.getsource(fn)
-        assert "crisis, counted_line = _after_specialists(" in src, fn.__name__
-        assert '(f"\\n\\n{counted_line}" if counted_line else "")' in src, fn.__name__
+    from tests.support.stage3_fixtures import collect_stream, pipeline
+    for stream in (False, True):
+        script = _ph_pipeline_script()
+        with sandbox(), pipeline(script):
+            if stream:
+                collect_stream(ORC.run_pipeline_session_stream("slept three hours",
+                                                               persona=PERSONA,
+                                                               provider="openai"))
+            else:
+                ORC.run_pipeline_session("slept three hours", persona=PERSONA,
+                                         provider="openai")
+        synth = script.last("synthesizer")
+        _PRODUCED.append(synth)
+        assert DC.SIGNALS_HEADING in synth and "SLEEP_ACUTE — 3 h" in synth, (stream, synth)
+        assert "--- physical_health ---\nSCAN: ok" in synth, (stream, synth)
+        assert synth.count("SLEEP_ACUTE — 3 h") == 1, synth
+
+
+@check("9d. amendment 3, every path: a run_subagent consult, the weekly single-agent review and a "
+       "fire-and-forget run all compute the counters at Physical Health's return")
+def _():
+    import threading
+    from tests.support.stage3_fixtures import Script, pipeline
+    from tools.subagent import run_subagent
+    seen: list = []
+    real = ORC._counters_return
+
+    def spy(agent_name, result, persona):
+        out = real(agent_name, result, persona)
+        seen.append((agent_name, out))
+        return out
+    s = Script({"physical_health": "SCAN: ok"},
+               side_effects={"physical_health": _ph_writes_short_night})
+    # (a) a consult from the Synthesizer's pass, after the slot is closed: on the tool result
+    with sandbox(), pipeline(s), patched([(ORC, "_counters_return", spy)]), \
+            T.turn_scope(user_turn=True):
+        out = run_subagent("physical_health", "check their sleep")
+    assert "COUNTED SIGNALS" in out and "SLEEP_ACUTE" in out, out
+    # (b) the weekly review: run_session, no turn, its own proactive trace
+    seen.clear()
+    with sandbox(), pipeline(s), patched([(ORC, "_counters_return", spy)]):
+        assert T.current() is None
+        out = ORC.run_session("physical_health", "weekly review", persona=PERSONA,
+                              provider="openai", proactive=True)
+    assert seen and seen[-1][0] == "physical_health" and "COUNTED SIGNALS" in out, out
+    # (c) fire-and-forget: the background run's return computes them too
+    seen.clear()
+    done = threading.Event()
+
+    def spy_ff(agent_name, result, persona):
+        out = spy(agent_name, result, persona)
+        done.set()
+        return out
+    with sandbox(), pipeline(s), patched([(ORC, "_counters_return", spy_ff)]), \
+            T.turn_scope(user_turn=True):
+        assert run_subagent("physical_health", "scan", fire_and_forget=True).endswith(
+            "dispatched (async)")
+        assert done.wait(10), "the fire-and-forget run never returned"
+    assert seen and seen[-1][0] == "physical_health" and "SLEEP_ACUTE" in seen[-1][1], seen
+    _PRODUCED.extend(o for _, o in seen)
+
+
+@check("9e. a fire-and-forget Physical Health in a twin still gets its COUNTED SIGNALS line")
+def _():
+    import threading
+    from tests.support.stage3_fixtures import pipeline
+    script = _ph_pipeline_script(ff=True)
+    called = threading.Event()
+    with sandbox() as sb, pipeline(script), \
+            patched([(ORC, "run_session", lambda *a, **k: called.set() or "")]):
+        sleep(sb, date.today(), hours=3.0)       # what an earlier turn recorded
+        ORC.run_pipeline_session("slept three hours", persona=PERSONA, provider="openai")
+        assert called.wait(10)
+    synth = script.last("synthesizer")
+    assert DC.SIGNALS_HEADING in synth and "[physical_health]" in synth, synth
+
+
+# --- Fable review 3: the persona's day, not the server's file date ---------------------------
+
+def _tz_sandbox(sb, tz="America/Los_Angeles"):
+    import yaml
+    (sb["config"] / "profile.yaml").write_text(yaml.safe_dump({"location": {"timezone": tz}}))
+    return ZoneInfo(tz)
+
+
+def _server(dt: datetime) -> str:
+    """`dt` as write_log stamps it: the server's local wall time."""
+    return dt.astimezone().replace(tzinfo=None).isoformat(timespec="seconds")
+
+
+def _file(sb, file_day: date, content: dict, stamps: dict, origin="user"):
+    logs = sb["data"] / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    entry = {**content, "date": file_day.isoformat(), "_written_at": stamps,
+             "_written_on": {p: origin for p in stamps}}
+    (logs / f"{file_day.isoformat()}.json").write_text(json.dumps(entry))
+
+
+@check("R3a. SLEEP_ACUTE: a night logged on the persona's today that the server filed under the "
+       "next date counts; one stamped on the persona's tomorrow does not")
+def _():
+    with sandbox() as sb:
+        la = _tz_sandbox(sb)
+        now = datetime(2026, 11, 20, 18, 0, tzinfo=la)
+        _file(sb, date(2026, 11, 21), {"health": {"sleep_hours": 3.0}},
+              {"health.sleep_hours": _server(datetime(2026, 11, 20, 7, 30, tzinfo=la))})
+        assert "SLEEP_ACUTE — 3 h" in signals(now=now)
+    with sandbox() as sb:
+        la = _tz_sandbox(sb)
+        now = datetime(2026, 11, 20, 18, 0, tzinfo=la)
+        _file(sb, date(2026, 11, 20), {"health": {"sleep_hours": 3.0}},
+              {"health.sleep_hours": _server(datetime(2026, 11, 21, 7, 30, tzinfo=la))})
+        assert "SLEEP_ACUTE" not in signals(now=now)
+
+
+@check("R3b. food: food_logged the server filed under yesterday's date but written on the "
+       "persona's today counts as today, before and after dispatch alike")
+def _():
+    with sandbox() as sb:
+        la = _tz_sandbox(sb)
+        now = datetime(2026, 11, 20, 16, 0, tzinfo=la)
+        _file(sb, date(2026, 11, 19), {"health": {"food_logged": True}},
+              {"health.food_logged": _server(datetime(2026, 11, 20, 12, 15, tzinfo=la))})
+        assert "FOOD_NOT_LOGGED" not in signals(now=now)
+        assert "food logged today: yes" in DC.evidence_block("physical_health", date(2026, 11, 20))
+
+
+@check("R3c. sleep evidence: last logged is placed by write time, not file name")
+def _():
+    with sandbox() as sb:
+        la = _tz_sandbox(sb)
+        _file(sb, date(2026, 11, 18), {"health": {"sleep_hours": 7.0}},
+              {"health.sleep_hours": _server(datetime(2026, 11, 17, 23, 30, tzinfo=la))})
+        got = DC.evidence_block("physical_health", date(2026, 11, 20))
+    assert "SLEEP_MISSING evidence: sleep last logged 3 days ago" in got, got
+
+
+# --- Fable review 4: no false gap, and the caveat covers the whole span -----------------------
+
+@check("R4a. something logged earlier today is not a gap")
+def _():
+    with sandbox() as sb:
+        day(sb, ago(0), {"health": {"sleep_hours": 7, "exercise": {"type": "walk"}}})
+        got = evidence()
+    assert "sleep last logged today" in got and "exercise last logged today" in got, got
+
+
+@check("R4b. the 'counting has just started' caveat covers the whole 30-day span the lines claim")
+def _():
+    with sandbox() as sb:
+        day(sb, ago(20), {"health": {"exercise": {"type": "swim"}}})
+        sleep(sb, ago(25), hours=7, origin=None)            # before stamps: not counted
+        got = evidence()
+    assert "exercise last logged 20 days ago" in got, got
+    assert f"counting from {ago(20).isoformat()}" in got, got
+    assert "none in this window yet" not in got, got
+
+
+# --- Fable review 5: the Diarist from a proactive job is not the user -------------------------
+
+@check("R5. a Diarist run handed off by run_subagent from a turn-less proactive job stamps its "
+       "writes `scheduled`")
+def _():
+    import threading
+    from tools.logger import write_log, read_log
+    from tools.subagent import run_subagent
+    done = threading.Event()
+
+    def fake_single(agent_name, user_input, *a, **k):
+        TR._set_current_agent(TR.AgentRecord(agent=agent_name, provider="", model=""))
+        try:
+            write_log({"notes": "the weekly review's summary"})
+        finally:
+            TR._set_current_agent(None)
+            done.set()
+        return "ok"
+    with sandbox(), patched([(ORC, "_run_single_agent", fake_single),
+                             (ORC, "_spend_gate", lambda *a, **k: None)]):
+        assert T.current() is None
+        TR.start_request_trace("weekly physical review", PERSONA, is_proactive=True)
+        try:
+            run_subagent("diarist", "log the review")
+            assert done.wait(10)
+        finally:
+            TR.set_trace(None)
+        origins = read_log().get("_written_on") or {}
+    assert origins.get("notes") == "scheduled", origins
 
 
 # --- 10. M17 ---------------------------------------------------------------------------------

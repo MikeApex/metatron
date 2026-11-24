@@ -5138,7 +5138,9 @@ def _run_gemini_native_stream(client, model_name: str,
                                    thinking_tokens, output_text="".join(text_parts),
                                    cached_tokens=cache_read, finish_reason=_finish_name(finish))
 
-        if text_parts:
+        # Whitespace-only text is no text (Fable review of Stage 4 Step 0): it neither replaces
+        # an earlier round's text nor counts as an answer below.
+        if "".join(text_parts).strip():
             result = "".join(text_parts)
         last_round_text = "".join(text_parts)
         shown_rounds.append(last_round_text)
@@ -5155,8 +5157,9 @@ def _run_gemini_native_stream(client, model_name: str,
                 yield _REPLACE_REPLY_SENTINEL + final
                 _finish(final)
                 return
-            if not result:
-                # A round that returned neither text nor a call — the blank-reply shape.
+            if not result.strip():
+                # A round that returned neither text nor a call (or only whitespace) — the
+                # blank-reply shape.
                 yield _NO_REPLY_LINE
                 result = _NO_REPLY_LINE
             _finish(result)
@@ -5240,6 +5243,8 @@ def _run_gemini_native_stream(client, model_name: str,
         prompt=(_FINAL_REPLY_PROMPT + _FINAL_REPLY_IF_ANSWERED) if last_round_text.strip()
         else _FINAL_REPLY_PROMPT)
     final = (final or "").strip()
+    if _final_adds_nothing(final, already):
+        final = ""
     if final:
         sep = "\n\n" if already.strip() else ""
         yield sep + final
@@ -5250,6 +5255,41 @@ def _run_gemini_native_stream(client, model_name: str,
         yield _NO_REPLY_LINE
         result = _NO_REPLY_LINE
     _finish(result)
+
+
+# A final-round reply that says "I have nothing to add" in some form. Compared after
+# _norm_reply (case, punctuation and whitespace removed), so "(Nothing further.)" and "—" match.
+_EMPTY_FINAL_REPLIES = frozenset({
+    "", "nothing", "nothing further", "nothing more", "nothing to add", "nothing else",
+    "none", "na", "empty", "no reply", "no further reply", "no response", "empty reply",
+})
+# How much new text a final reply that CONTAINS what was shown must add to be kept. A reply
+# that repeats the answer with a few words more is a doubled answer; one that extends a
+# preamble ("Let me check." → "Let me check. Saturday is free from 2pm.") is the answer, and
+# dropping it would leave the user with only the preamble.
+_FINAL_EXTENSION_MIN_CHARS = 24
+
+
+def _norm_reply(text: str) -> str:
+    import unicodedata
+    text = unicodedata.normalize("NFKC", str(text or "")).casefold()
+    text = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in text)
+    return " ".join(text.split())
+
+
+def _final_adds_nothing(final: str, already: str) -> bool:
+    """True when the final round's reply would only repeat or pad what the user already saw
+    (Fable review of Stage 4 Step 0): a no-content token, or — normalised — contained in the
+    shown text, or containing it with too little added to be an answer of its own."""
+    nf = _norm_reply(final)
+    if nf in _EMPTY_FINAL_REPLIES:
+        return True
+    na = _norm_reply(already)
+    if not na:
+        return False
+    if nf in na:
+        return True
+    return na in nf and len(nf) - len(na) < _FINAL_EXTENSION_MIN_CHARS
 
 
 def _final_reply_round(client, model_name: str, contents: list, config, types,
@@ -6896,14 +6936,17 @@ def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
     from tools.wisdom import write_wisdom
 
     _t = _tr.get_trace()
-    read_untrusted = _t is not None and (any(
+    read_untrusted = _t is not None and any(
         tc.name in _UNTRUSTED_READ_TOOLS
         for rec in _tr._walk_agents(list(_t.pipeline))
         for turn in rec.turns
         for tc in turn.tool_calls
-    # Stage 4 review L3: a PREFETCHED block that carried calendar text leaves no tool-call
-    # record (prefetch calls the handler directly), so it sets this flag instead.
-    ) or bool(getattr(_t, "prefetched_untrusted", False)))
+    )
+    # Stage 4 review L3, scoped (Fable review): a PREFETCHED block that carried calendar events
+    # leaves no tool-call record (prefetch calls the handler directly), so it names the agent
+    # whose input held them. Only THAT agent's proposals are forced to `observed`.
+    prefetched_untrusted = set(getattr(_t, "prefetched_untrusted_agents", None) or ()) \
+        if _t is not None else set()
 
     cleaned: dict = {}
     for agent, text in outputs.items():
@@ -6935,6 +6978,7 @@ def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
                         domain=prop.get("domain", ""),
                         provenance=("observed"
                                     if read_untrusted or agent in _UNTRUSTED_OUTPUT_AGENTS
+                                    or agent in prefetched_untrusted
                                     else prop.get("provenance", "")),
                     )
                     _trace(f"[KNOWLEDGE] proposal from {agent}: {result}")

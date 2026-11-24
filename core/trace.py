@@ -172,9 +172,10 @@ class RequestTrace:
         # `annotations["clarification"]`). Serialised only when non-empty, so ordinary turns
         # carry no new key. Counts and shapes only — never user text.
         self.annotations: dict = {}
-        # Stage 4 review L3: a PREFETCHED block put outsider text (calendar) in front of a model
-        # this request. Prefetch leaves no tool-call record, so _file_wisdom_proposals reads this.
-        self.prefetched_untrusted = False
+        # Stage 4 review L3: the agents whose PREFETCHED block put outsider text (calendar events)
+        # in front of them this request. Prefetch leaves no tool-call record, so
+        # _file_wisdom_proposals reads this to force those agents' proposals to `observed`.
+        self.prefetched_untrusted_agents: set[str] = set()
         self.start_mono = time.monotonic()
         self._lock = threading.Lock()  # guards pipeline/subagent list mutations from worker threads
 

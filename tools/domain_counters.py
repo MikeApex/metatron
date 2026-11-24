@@ -94,16 +94,121 @@ def owners() -> set[str]:
     return set(load_config()["owners"])
 
 
-# --- reading the day files --------------------------------------------------------------------
+# --- reading the day files: the persona's day, not the server's file date ---------------------
+#
+# A day file is named by the SERVER's calendar (write_log's `date.today()`), but "today" for the
+# user is their own: their zone and their `day_starts` boundary. Changing write_log/read_log's
+# defaults is out of scope here, so the counters place each field the way
+# tools/obligations._logged_entries places a dose — by its write time, converted to the persona's
+# zone and day boundary, read from the same-date file and both neighbours. A field with no write
+# time (written before stamps existed) keeps its file's date.
 
-def _read_day(d: date) -> dict:
-    """One day file, as the bound persona's write_log wrote it ({} when absent or unreadable)."""
+def ledger_day(now: datetime) -> date:
+    """The persona's ledger day for a persona-local moment (tools.obligations' own reckoning:
+    its `day_starts` boundary applied). Never raises."""
+    try:
+        from tools.obligations import _ledger_day
+        return _ledger_day(now.replace(tzinfo=None))
+    except Exception:  # noqa: BLE001
+        return now.date()
+
+
+def _persona_zone():
+    try:
+        from tools.ambient import _get_timezone
+        tz = _get_timezone()
+        if tz:
+            from zoneinfo import ZoneInfo
+            return ZoneInfo(tz)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _place(stamp: Any, zone) -> date | None:
+    """The persona's ledger day of a `_written_at` stamp. The stamp is the server's local time
+    (write_log's `datetime.now()`), so it is read as such and converted to the persona's zone."""
+    if not stamp:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(stamp))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.astimezone()                     # the server's own zone
+    if zone is not None:
+        dt = dt.astimezone(zone)
+    return ledger_day(dt)
+
+
+def _read_file(d: date, cache: dict | None) -> dict:
+    key = d.isoformat()
+    if cache is not None and key in cache:
+        return cache[key]
     try:
         from tools.logger import read_log
-        entry = read_log(d.isoformat())
-        return entry if isinstance(entry, dict) else {}
+        entry = read_log(key)
+        entry = entry if isinstance(entry, dict) else {}
     except Exception:  # noqa: BLE001
-        return {}
+        entry = {}
+    if cache is not None:
+        cache[key] = entry
+    return entry
+
+
+def _set_path(node: dict, path: str, value: Any) -> None:
+    parts = path.split(".")
+    for part in parts[:-1]:
+        nxt = node.get(part)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            node[part] = nxt
+        node = nxt
+    node[parts[-1]] = value
+
+
+def day_entry(d: date, cache: dict | None = None) -> dict:
+    """The persona's day `d` as one log entry: every field from the files dated d−1, d and d+1
+    whose write time falls on `d` in the persona's zone and day boundary (a field with no write
+    time counts for its file's date). The latest write of a field wins. Carries its own
+    `_written_on` / `_written_at` maps, so provenance reads exactly as on a day file."""
+    from tools.logger import _WRITTEN_AT_KEY, _leaf_paths
+    zone = _persona_zone()
+    best: dict[str, tuple] = {}
+    for off in (-1, 0, 1):
+        file_day = d + timedelta(days=off)
+        entry = _read_file(file_day, cache)
+        if not entry:
+            continue
+        stamps = entry.get(_WRITTEN_AT_KEY) if isinstance(entry.get(_WRITTEN_AT_KEY), dict) else {}
+        origins = entry.get(_WRITTEN_ON) if isinstance(entry.get(_WRITTEN_ON), dict) else {}
+        for path in _leaf_paths(entry):
+            stamp = stamps.get(path)
+            if (_place(stamp, zone) or file_day) != d:
+                continue
+            rank = (str(stamp or ""), off)
+            if path not in best or rank > best[path][0]:
+                best[path] = (rank, _get(entry, path), origins.get(path), stamp)
+    out: dict = {}
+    on: dict = {}
+    at: dict = {}
+    for path, (_, value, origin, stamp) in sorted(best.items()):
+        _set_path(out, path, value)
+        if origin:
+            on[path] = origin
+        if stamp:
+            at[path] = stamp
+    if best:
+        out["date"] = d.isoformat()
+    if on:
+        out[_WRITTEN_ON] = on
+    if at:
+        out[_WRITTEN_AT_KEY] = at
+    return out
+
+
+def _read_day(d: date, cache: dict | None = None) -> dict:
+    return day_entry(d, cache)
 
 
 def _get(entry: dict, path: str) -> Any:
@@ -141,11 +246,18 @@ def _stamped(entry: dict) -> bool:
     return isinstance(entry.get(_WRITTEN_ON), dict) and bool(entry.get(_WRITTEN_ON))
 
 
-def _days_back(today: date, n: int, include_today: bool = False) -> list[tuple[date, dict]]:
-    """[(day, entry)], newest first: today (when asked) then yesterday back n days."""
+def _days_back(today: date, n: int, include_today: bool = False,
+               cache: dict | None = None) -> list[tuple[date, dict]]:
+    """[(day, entry)], newest first: today (when asked) then yesterday back n days, each the
+    persona's day (day_entry)."""
     start = 0 if include_today else 1
-    return [(today - timedelta(days=i), _read_day(today - timedelta(days=i)))
+    return [(today - timedelta(days=i), _read_day(today - timedelta(days=i), cache))
             for i in range(start, n + 1)]
+
+
+def _ago_text(today: date, d: date) -> str:
+    n = _ago(today, d)
+    return "today" if n == 0 else f"{n} day{'s' if n != 1 else ''} ago"
 
 
 def _counting_from(days: list[tuple[date, dict]]) -> str:
@@ -212,11 +324,11 @@ def _run(days: list[tuple[date, dict]], test) -> int:
 
 # --- food (amendment 2: one source of truth) --------------------------------------------------
 
-def food_logged_today(today: date) -> bool:
-    """True when today's log has `health.food_logged` set on a user turn, OR the meals log has
-    an entry for today. Both Physical Health's pre-dispatch line and code's post-return
+def food_logged_today(today: date, cache: dict | None = None) -> bool:
+    """True when the persona's today has `health.food_logged` set on a user turn, OR the meals
+    log has an entry for today. Both Physical Health's pre-dispatch line and code's post-return
     FOOD_NOT_LOGGED evidence use this one function."""
-    entry = _read_day(today)
+    entry = _read_day(today, cache)
     if _user(entry, "health.food_logged") not in (None, False, "", "false", "no", "null"):
         return True
     try:
@@ -255,51 +367,59 @@ def cessation_lines(today: date, cfg: dict | None = None) -> list[str]:
     """Per substance type logged in the last `cessation_days`: its last logged use and how many
     days have a health log since. Never "clean", never a streak (M17)."""
     cfg = cfg or load_config()
-    days = _days_back(today, int(cfg["cessation_days"]))
+    days = _days_back(today, int(cfg["cessation_days"]), include_today=True,
+                      cache=cfg.get("_cache"))
     lines: list[str] = []
     for kind in _SUBSTANCE_TYPES:
         last = _last_logged(days, lambda e, k=kind: k in _substance_types(e))
         if last is None:
             continue
         since = sum(1 for d, e in days if d > last and _user_any(e, "health"))
-        lines.append(f"{kind} — last logged use: {last.isoformat()} ({_ago(today, last)} days "
-                     f"ago); days with a health log since: {since}")
+        lines.append(f"{kind} — last logged use: {last.isoformat()} ({_ago_text(today, last)}); "
+                     f"days with a health log since: {since}")
     return lines
 
 
 # --- pre-dispatch evidence ---------------------------------------------------------------------
 
 def _ph_evidence(today: date, cfg: dict) -> list[str]:
-    days = _days_back(today, int(cfg["last_logged_days"]))
+    # "Last logged" lines include today (something logged this morning is not a gap); runs
+    # and counts stay on completed days.
+    span = _days_back(today, int(cfg["last_logged_days"]), include_today=True,
+                      cache=cfg.get("_cache"))
+    days = span[1:]
     n = int(cfg["last_logged_days"])
     lines = []
-    last = _last_logged(days, lambda e: _poor_night(e, float(cfg["sleep_poor_hours"])) is not None)
+    last = _last_logged(span, lambda e: _poor_night(e, float(cfg["sleep_poor_hours"])) is not None)
     lines.append(
-        (f"SLEEP_MISSING evidence: sleep last logged {_ago(today, last)} days ago"
+        (f"SLEEP_MISSING evidence: sleep last logged {_ago_text(today, last)}"
          if last else f"SLEEP_MISSING evidence: sleep not logged in the last {n} days")
         + f" (file threshold {cfg['sleep_missing_days']})")
     run = _run(days, lambda e: _poor_night(e, float(cfg["sleep_poor_hours"])))
     if run:
         lines.append(f"nights under {cfg['sleep_poor_hours']} h or poor, consecutive to "
                      f"yesterday: {run}")
-    last = _last_logged(days, lambda e: _user_any(e, "health.exercise"))
+    last = _last_logged(span, lambda e: _user_any(e, "health.exercise"))
     lines.append(
-        (f"EXERCISE_GAP evidence: exercise last logged {_ago(today, last)} days ago"
+        (f"EXERCISE_GAP evidence: exercise last logged {_ago_text(today, last)}"
          if last else f"EXERCISE_GAP evidence: exercise not logged in the last {n} days")
         + f" (threshold {cfg['exercise_gap_days']} if exercise is one of the user's goals — "
           f"that condition is yours to judge)")
     for c in cessation_lines(today, cfg):
         lines.append(f"CESSATION evidence: {c}")
-    lines.append("food logged today: " + ("yes" if food_logged_today(today) else "no")
+    lines.append("food logged today: " + ("yes" if food_logged_today(today, cfg.get("_cache"))
+                                          else "no")
                  + " (health.food_logged or the meals log; as of before this turn — raise "
                    "FOOD_NOT_LOGGED only when this says no and the message does not mention "
                    "eating)")
-    return _with_note(lines, days[:int(cfg["window_days"])])
+    return _with_note(lines, span)
 
 
 def _mw_evidence(today: date, cfg: dict) -> list[str]:
     win = int(cfg["window_days"])
-    days = _days_back(today, int(cfg["last_logged_days"]))
+    span = _days_back(today, int(cfg["last_logged_days"]), include_today=True,
+                      cache=cfg.get("_cache"))
+    days = span[1:]
     lines = []
     run = _run(days, lambda e: _poor_night(e, float(cfg["sleep_poor_hours"])))
     lines.append(f"SLEEP_CONCERN evidence: nights logged under {cfg['sleep_poor_hours']} h or "
@@ -309,23 +429,24 @@ def _mw_evidence(today: date, cfg: dict) -> list[str]:
     lines.append(f"mood logged low on {low} of the last {win} days ({logged} with a mood "
                  f"logged; how much that weighs is yours to judge)")
     practices: dict[str, date] = {}
-    for d, e in days:
+    for d, e in span:
         rows = _user(e, "wellbeing.practices_active")
         for p in rows if isinstance(rows, list) else []:
             name = str(p or "").strip()
             if name and name.lower() not in {k.lower() for k in practices}:
                 practices[name] = d
     for name, d in sorted(practices.items(), key=lambda kv: kv[1]):
-        lines.append(f"PRACTICE_LAPSE evidence: {name} last listed active {_ago(today, d)} "
-                     f"days ago")
-    return _with_note(lines, days[:win])
+        lines.append(f"PRACTICE_LAPSE evidence: {name} last listed active "
+                     f"{_ago_text(today, d)}")
+    return _with_note(lines, span)
 
 
 def _rec_evidence(today: date, cfg: dict) -> list[str]:
-    days = _days_back(today, int(cfg["last_logged_days"]))
+    days = _days_back(today, int(cfg["last_logged_days"]), include_today=True,
+                      cache=cfg.get("_cache"))
     n = int(cfg["last_logged_days"])
     last = _last_logged(days, lambda e: _user_any(e, "recreation"))
-    lines = [(f"LEISURE_GAP evidence: leisure last logged {_ago(today, last)} days ago"
+    lines = [(f"LEISURE_GAP evidence: leisure last logged {_ago_text(today, last)}"
               if last else f"LEISURE_GAP evidence: leisure not logged in the last {n} days")
              + f" (threshold {cfg['leisure_gap_days']}); this is recorded only when the leisure "
                f"specialist was consulted"]
@@ -339,20 +460,21 @@ def _rec_evidence(today: date, cfg: dict) -> list[str]:
             if desc and desc.lower() not in {k.lower() for k in seen}:
                 seen[desc] = d
     for desc, d in sorted(seen.items(), key=lambda kv: kv[1])[:6]:
-        lines.append(f"HOBBY_LAPSE evidence: {desc} last logged {_ago(today, d)} days ago")
-    return _with_note(lines, days[:int(cfg["window_days"])])
+        lines.append(f"HOBBY_LAPSE evidence: {desc} last logged {_ago_text(today, d)}")
+    return _with_note(lines, days)
 
 
 def _lg_evidence(today: date, cfg: dict) -> list[str]:
-    days = _days_back(today, int(cfg["last_logged_days"]))
+    days = _days_back(today, int(cfg["last_logged_days"]), include_today=True,
+                      cache=cfg.get("_cache"))
     n = int(cfg["last_logged_days"])
     last = _last_logged(days, lambda e: _user_any(e, "learning"))
-    line = ((f"LEARNING_GAP evidence: learning last logged {_ago(today, last)} days ago"
+    line = ((f"LEARNING_GAP evidence: learning last logged {_ago_text(today, last)}"
              if last else f"LEARNING_GAP evidence: learning not logged in the last {n} days")
             + f" (threshold {cfg['learning_gap_days']} if growth is a stated priority); this is "
               f"recorded only when you were consulted. Skill practice dates are on the skill "
               f"habits, not here")
-    return _with_note([line], days[:int(cfg["window_days"])])
+    return _with_note([line], days)
 
 
 _EVIDENCE = {"physical_health": _ph_evidence, "mental_wellbeing": _mw_evidence,
@@ -360,13 +482,16 @@ _EVIDENCE = {"physical_health": _ph_evidence, "mental_wellbeing": _mw_evidence,
 
 
 def evidence_block(agent: str, today: date) -> str:
-    """The pre-dispatch evidence for `agent`, or "". Completed days only (plus PH's food line).
-    Reads under whatever persona is bound — the caller binds it."""
+    """The pre-dispatch evidence for `agent`, or "". Runs and counts are completed days only;
+    "last logged" lines include the persona's today (something logged this morning is not a
+    gap), and PH's food line is today's (amendment 2). Reads under whatever persona is bound —
+    the caller binds it."""
     try:
         cfg = load_config()
         fn = _EVIDENCE.get(agent)
         if fn is None or agent not in cfg["owners"]:
             return ""
+        cfg["_cache"] = {}                 # one read of each day file per block
         lines = [x for x in fn(today, cfg) if x]
         return "\n".join(f"- {x}" for x in lines) if lines else ""
     except Exception as exc:  # noqa: BLE001
@@ -377,7 +502,8 @@ def evidence_block(agent: str, today: date) -> str:
 # --- post-return signals ------------------------------------------------------------------------
 
 def _ph_signals(today: date, now: datetime, cfg: dict) -> tuple[list[str], list[str]]:
-    days = _days_back(today, int(cfg["last_logged_days"]), include_today=True)
+    days = _days_back(today, int(cfg["last_logged_days"]), include_today=True,
+                      cache=cfg.get("_cache"))
     flags: list[str] = []
     evidence: list[str] = []
     floor = float(cfg["sleep_poor_hours"])
@@ -397,7 +523,8 @@ def _ph_signals(today: date, now: datetime, cfg: dict) -> tuple[list[str], list[
     if erun >= int(cfg["energy_crash_run"]):
         flags.append(f"ENERGY_CRASH — energy logged low on {erun} consecutive logged days, to "
                      f"today")
-    if _after_cutoff(now, cfg["food_cutoff"]) and not food_logged_today(today):
+    if _after_cutoff(now, cfg["food_cutoff"]) and not food_logged_today(today,
+                                                                         cfg.get("_cache")):
         evidence.append(f"FOOD_NOT_LOGGED evidence: it is past {cfg['food_cutoff']} and there is "
                         f"no meal in the meals log today and food_logged is not set — as of "
                         f"before this turn's diary write; a meal mentioned this turn is still "
@@ -406,7 +533,8 @@ def _ph_signals(today: date, now: datetime, cfg: dict) -> tuple[list[str], list[
 
 
 def _mw_signals(today: date, now: datetime, cfg: dict) -> tuple[list[str], list[str]]:
-    days = _days_back(today, int(cfg["last_logged_days"]), include_today=True)
+    days = _days_back(today, int(cfg["last_logged_days"]), include_today=True,
+                      cache=cfg.get("_cache"))
     run = _run(days, lambda e: _poor_night(e, float(cfg["sleep_poor_hours"])))
     if run < int(cfg["sleep_poor_run"]):
         return [], []
@@ -430,7 +558,8 @@ def counted_signals(agent: str, now: datetime | None = None) -> str:
             from tools.ambient import _now_local
             now = _now_local()
         allowed = set(cfg["owners"].get(agent) or [])
-        flags, evidence = fn(now.date(), now, cfg)
+        cfg["_cache"] = {}
+        flags, evidence = fn(ledger_day(now), now, cfg)
         flags = [f for f in flags if f.split(" ", 1)[0] in allowed]
         evidence = [e for e in evidence if e.split(" ", 1)[0] in allowed]
         out = []

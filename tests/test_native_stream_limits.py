@@ -498,6 +498,46 @@ def _():
     assert hist[-1]["content"] == O._NO_REPLY_LINE
 
 
+@check("Step0.3 a final reply that repeats or pads what was shown is dropped; one that extends "
+       "a preamble into the answer is kept")
+def _():
+    shown = "All three are booked for Friday."
+    for final, dropped in (("All three are booked for Friday.", True),       # a repeat
+                           ("all three are BOOKED — for Friday", True),      # normalised repeat
+                           ("booked for Friday", True),                      # contained in it
+                           ("All three are booked for Friday. Done.", True),  # pads it
+                           ("(Nothing further.)", True), ("nothing", True), ("—", True),
+                           ("All three are booked for Friday. Saturday could not be checked "
+                            "because the calendar did not answer.", False),  # a real addition
+                           ("Saturday is still unchecked.", False)):
+        _reset()
+        rounds = (_calls_only(O._SYNTH_MAX_ROUNDS - 1)
+                  + [lambda: [_Chunk([_text(shown), _call("probe_tool")])]]
+                  + [lambda f=final: [_Chunk([_text(f)])]])
+        out, hist = _run(_FakeClient(rounds))
+        expect = shown if dropped else f"{shown}\n\n{final}"
+        assert out == expect, (final, out)
+        assert hist[-1]["content"] == out
+    # Nothing shown and a no-content final reply: the fixed line, never "nothing".
+    _reset()
+    out, _ = _run(_FakeClient(_calls_only(O._SYNTH_MAX_ROUNDS)
+                              + [lambda: [_Chunk([_text("(nothing further)")])]]))
+    assert out == O._NO_REPLY_LINE, out
+
+
+@check("Step0.4 a round with no call whose only text is whitespace counts as no text: the "
+       "fixed line")
+def _():
+    _reset()
+    out, hist = _run(_FakeClient([lambda: [_Chunk([_call("probe_tool")])],
+                                  lambda: [_Chunk([_text("  \n ")])]]))
+    assert out == "  \n " + O._NO_REPLY_LINE, repr(out)
+    assert hist[-1]["content"] == O._NO_REPLY_LINE
+    _reset()
+    out, _ = _run(_FakeClient([lambda: [_Chunk([_text("   ")])]]))
+    assert out.endswith(O._NO_REPLY_LINE), repr(out)
+
+
 @check("#10.1c round-1 text, rounds 2-4 silent, then the cap: final round runs after a blank line")
 def _():
     _reset()

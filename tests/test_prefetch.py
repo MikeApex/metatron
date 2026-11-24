@@ -18,7 +18,7 @@ import sys
 import threading
 import time
 from concurrent.futures import Future
-from datetime import datetime
+from datetime import date as date_, datetime
 from pathlib import Path
 from unittest import mock
 
@@ -322,7 +322,7 @@ _PROPOSAL = ('Done.\nWISDOM_PROPOSAL: {"key": "dentist_day", "value": "goes on F
              '"provenance": "stated"}')
 
 
-@check("10. a Logistics prefetch with the calendar sets prefetched_untrusted, and a 'stated' "
+@check("10. a Logistics prefetch with calendar events marks Logistics untrusted, and its 'stated' "
        "proposal from that turn is filed 'observed'")
 def _():
     filed, wpatch = _wisdom_capture()
@@ -331,10 +331,49 @@ def _():
                                                 '</untrusted_content>"}', True)}):
         TR.start_request_trace("what's on", PERSONA)
         try:
-            assert TR.get_trace().prefetched_untrusted is False
+            assert TR.get_trace().prefetched_untrusted_agents == set()
             PF.build("logistics", "d", "", PERSONA, now=NOW)
-            assert TR.get_trace().prefetched_untrusted is True
+            assert TR.get_trace().prefetched_untrusted_agents == {"logistics"}
             ORC._file_wisdom_proposals({"logistics": _PROPOSAL}, persona=PERSONA)
+        finally:
+            TR.set_trace(None)
+    assert filed == ["observed"], filed
+
+
+@check("10c. the taint is scoped: Logistics with calendar events is forced 'observed' while "
+       "Physical Health's 'stated' proposal on the same turn stays 'stated'")
+def _():
+    import tools.wisdom as W
+    filed: dict = {}
+    ph_prop = _PROPOSAL.replace("dentist_day", "knee_brace")
+    with sandbox(), patched([(W, "write_wisdom",
+                              lambda key, value, domain="", provenance="": filed.__setitem__(
+                                  key, provenance) or "ok")]), \
+            patched([(CAL, "_query_events", lambda *a, **k: _calendar_raw(_EVENT))]):
+        TR.start_request_trace("what's on, and my knee", PERSONA)
+        try:
+            PF.build("logistics", "d", "", PERSONA, now=NOW)
+            PF.build("physical_health", "d", "", PERSONA, now=NOW)
+            ORC._file_wisdom_proposals({"logistics": _PROPOSAL, "physical_health": ph_prop},
+                                       persona=PERSONA)
+        finally:
+            TR.set_trace(None)
+    assert filed == {"dentist_day": "observed", "knee_brace": "stated"}, filed
+
+
+@check("10d. an empty calendar taints nobody; a real read_email tool call still taints every "
+       "proposal on the turn (unchanged)")
+def _():
+    filed, wpatch = _wisdom_capture()
+    with sandbox(), wpatch, patched([(CAL, "_query_events", lambda *a, **k: _calendar_raw())]):
+        TR.start_request_trace("what's on", PERSONA)
+        try:
+            PF.build("logistics", "d", "", PERSONA, now=NOW)
+            assert TR.get_trace().prefetched_untrusted_agents == set()
+            rec = TR.AgentRecord(agent="relationships", provider="", model="")
+            TR.get_trace().pipeline.append(rec)
+            TR.record_tool_call(rec, 1, "read_email", {}, "mail", 1.0, ok=True)
+            ORC._file_wisdom_proposals({"physical_health": _PROPOSAL}, persona=PERSONA)
         finally:
             TR.set_trace(None)
     assert filed == ["observed"], filed
@@ -366,7 +405,7 @@ def _():
         TR.start_request_trace("x", PERSONA)
         try:
             block = PF.build("logistics", "d", "", PERSONA, now=NOW)
-            assert TR.get_trace().prefetched_untrusted is False
+            assert TR.get_trace().prefetched_untrusted_agents == set()
         finally:
             TR.set_trace(None)
     assert "2 new items in your intake queue" in block, block
@@ -473,15 +512,136 @@ def _():
     assert nw.calls == [], nw.calls
 
 
-@check("14b. both pipeline twins start the speculative read before the Coordinator and hand it "
-       "to dispatch")
+@check("14b. both pipeline twins (run for real over a scripted provider) start the calendar "
+       "read before the Coordinator, and Logistics gets it with no second fetch")
 def _():
-    import inspect
-    for fn in (ORC.run_pipeline_session, ORC._run_pipeline_session_stream_inner):
-        src = inspect.getsource(fn)
-        assert src.count("_speculative_calendar(persona)") == 1, fn.__name__
-        assert src.index("_speculative_calendar(persona)") < src.index('"coordinator", coord_input')
-        assert "calendar_future=_cal_future," in src, fn.__name__
+    from tests.support.stage3_fixtures import (Script, collect_stream, coordinator_package,
+                                               pipeline)
+    for stream in (False, True):
+        order: list = []
+
+        def rows(start, end):
+            order.append("calendar")
+            return CAL.read_calendar_rows(start, end)
+        script = Script({"coordinator": lambda: order.append("coordinator") or
+                         coordinator_package([{"agent": "logistics",
+                                               "directive": "What is on tomorrow?"}]),
+                         "logistics": "Dentist at three."}, synth_reply="Dentist at three.")
+        with sandbox(), pipeline(script), \
+                patched([(PF, "_calendar_rows", rows),
+                         (CAL, "_query_events", lambda *a, **k: _calendar_raw(_EVENT))]):
+            if stream:
+                collect_stream(ORC.run_pipeline_session_stream("what's on tomorrow?",
+                                                               persona=PERSONA,
+                                                               provider="openai"))
+            else:
+                ORC.run_pipeline_session("what's on tomorrow?", persona=PERSONA,
+                                         provider="openai")
+        assert order[:2] == ["calendar", "coordinator"], (stream, order)
+        assert order.count("calendar") == 1, (stream, order)
+        logi = script.last("logistics")
+        assert "[PREFETCHED" in logi and "Dentist" in logi, (stream, logi[:400])
+
+
+@check("14c. a speculative read not ready within the budget is the omission line — never a "
+       "second fetch; the read runs on a daemon thread")
+def _():
+    import threading as th
+    gate = th.Event()
+    fetches: list = []
+
+    def slow_rows(start, end):
+        fetches.append(th.current_thread())
+        gate.wait(5)
+        return ({"connected": False}, [])
+    cfg = PF.load_config()
+    cfg["read_timeout_s"] = 0.3
+    with sandbox(), patched([(PF, "_calendar_rows", slow_rows),
+                             (PF, "load_config", lambda: cfg)]):
+        fut = PF.speculative_calendar(PERSONA)
+        deadline = time.monotonic() + 2
+        while not fetches and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert fetches and fetches[0].daemon, fetches
+        block = PF.build("logistics", "d", "", PERSONA, now=NOW, calendar_future=fut)
+        gate.set()
+    assert "(not read in advance: call `read_calendar`)" in block, block
+    assert len(fetches) == 1, fetches
+
+
+@check("2b. an over-cap calendar never cuts the wrapper open: the list is cut before wrapping, "
+       "the tag closes, and code's counts sit before the wrapped block")
+def _():
+    events = [{**_EVENT, "uid": f"u{i}", "title": f"Meeting number {i} " + "x" * 300}
+              for i in range(40)] + [_FAILED]
+    with sandbox(), patched([(CAL, "_query_events", lambda *a, **k: _calendar_raw(*events)),
+                             (PF, "_READERS", {**PF._READERS,
+                                               "agent_config": lambda a, e, c: ("cfg", "c", False),
+                                               "open_tasks": lambda a, e, c: ("tasks", "t", False),
+                                               })]):
+        import tools.intake as IN
+        with patched([(IN, "read_records", lambda *a, **k: [
+                {"id": "a", "domain": "logistics", "seen_at": "2026-11-20T09:00"}])]):
+            block = PF.build("logistics", "d", "", PERSONA, now=NOW)
+    cal = block[block.index("### read_calendar"):]
+    assert cal.count("<untrusted_content source=") == cal.count("</untrusted_content>") >= 1, \
+        cal[-300:]
+    assert cal.rstrip().endswith("</untrusted_content>"), cal[-200:]
+    opened = cal.index('<untrusted_content source="calendar')
+    assert cal.index("41 events in range.") < opened
+    assert cal.index("1 event still unverified") < opened
+    assert cal.index("more events not shown — call `read_calendar`") < opened
+    assert len(cal) <= 6000 + 200, len(cal)
+    assert block.index("in your intake queue") < block.index("### read_calendar")
+
+
+@check("1c. readers see the real caller: Finance's and Logistics' prefetched list_tasks carry no "
+       "medication-link tag; a link-setter's does")
+def _():
+    from tests.support.stage3_fixtures import linked_habit
+    profile = {"medications": [{"name": "testamine", "dose": "1mg", "schedule": "daily",
+                                "criticality": "required"}]}
+    with sandbox(profile=profile) as sb:
+        linked_habit(sb["state"], "Take the morning tablet", "testamine")
+        got = {}
+        for agent in ("finance", "logistics"):
+            got[agent] = PF.build(agent, "d", "", PERSONA, now=NOW)
+        with patched([(PF, "plan_for", lambda a, cfg=None: [{"read": "open_tasks"}])]):
+            got["physical_health"] = PF.build("physical_health", "d", "", PERSONA, now=NOW)
+    for agent in ("finance", "logistics"):
+        assert "Take the morning tablet" in got[agent], got[agent]
+        assert "[medication:" not in got[agent], got[agent]
+    assert "[medication: testamine]" in got["physical_health"], got["physical_health"]
+
+
+@check("3c. 'today's log' is the persona's day: a field in the server's next-date file, written "
+       "on the persona's today, is shown; one written on its tomorrow is not")
+def _():
+    from zoneinfo import ZoneInfo
+    import yaml
+    la = ZoneInfo("America/Los_Angeles")
+    with sandbox() as sb:
+        (sb["config"] / "profile.yaml").write_text(yaml.safe_dump(
+            {"location": {"timezone": "America/Los_Angeles"}}))
+        logs = sb["data"] / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+
+        def server(dt):
+            return dt.astimezone().replace(tzinfo=None).isoformat(timespec="seconds")
+        today_local = datetime(2026, 11, 20, 18, 0, tzinfo=la)
+        tomorrow_local = datetime(2026, 11, 21, 9, 0, tzinfo=la)
+        (logs / "2026-11-21.json").write_text(json.dumps({
+            "date": "2026-11-21", "health": {"energy": "low"},
+            "_written_at": {"health.energy": server(today_local)},
+            "_written_on": {"health.energy": "user"}}))
+        (logs / "2026-11-20.json").write_text(json.dumps({
+            "date": "2026-11-20", "health": {"symptoms": "sore throat"},
+            "_written_at": {"health.symptoms": server(tomorrow_local)},
+            "_written_on": {"health.symptoms": "user"}}))
+        ctx = {"cap": 6000, "today": date_(2026, 11, 20), "now": today_local, "timeout": 4}
+        _, text, _ = PF._read_log_field("physical_health", {"field": "health"}, ctx)
+    assert '"energy": "low"' in text, text
+    assert "sore throat" not in text, text
 
 
 # --- #6: PROACTIVE_FLAGS ---------------------------------------------------------------------

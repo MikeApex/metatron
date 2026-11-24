@@ -237,11 +237,15 @@ def _write_provenance() -> str:
         if turn is not None:
             return "user" if turn.get("user_turn") else "scheduled"
         from core.trace import get_current_agent, get_trace
+        trace = get_trace()
+        # A proactive trace first: a Diarist handed off from a turn-less proactive job (a weekly
+        # single-agent run's run_subagent) is writing the system's words, not the user's.
+        if trace is not None and trace.is_proactive:
+            return "scheduled"
         if str(getattr(get_current_agent(), "agent", "") or "") == "diarist":
             return "user"
-        trace = get_trace()
         if trace is not None:
-            return "scheduled" if trace.is_proactive else "user"
+            return "user"
     except Exception:  # noqa: BLE001 — provenance must never cost the write
         pass
     return "unknown"

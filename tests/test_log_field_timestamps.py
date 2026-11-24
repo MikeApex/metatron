@@ -186,28 +186,36 @@ with persona_scope(PERSONA):
     try:
         write_log({"health": {"exercise": {"type": "walk"}}})  # a weekly job's proactive trace
         _TR._set_current_agent(_TR.AgentRecord(agent="diarist", provider="", model=""))
-        write_log({"health": {"food_logged": True}})           # the Diarist: always a user's
+        write_log({"health": {"symptoms": "none"}})            # a Diarist a proactive job sent
     finally:
         _TR._set_current_agent(None)
         _TR.set_trace(None)
+    _TR._set_current_agent(_TR.AgentRecord(agent="diarist", provider="", model=""))
+    try:
+        write_log({"health": {"food_logged": True}})           # the Diarist on a user's turn
+    finally:
+        _TR._set_current_agent(None)
     _TR.start_request_trace("a user turn's background hand-off", PERSONA)
     try:
         write_log({"wellbeing": {"mood": "positive"}})
     finally:
         _TR.set_trace(None)
     origins = read_log().get(_WRITTEN_ON_KEY) or {}
-    check("a real user turn stamps `user`", origins.get("health.sleep_hours") == "user", origins)
+    check("a real user turn stamps `user`", origins.get("health.sleep_hours") == "user", str(origins))
     check("a turn with no user words stamps `scheduled`",
-          origins.get("health.energy") == "scheduled", origins)
-    check("no turn and no trace stamps `unknown`", origins.get("notes") == "unknown", origins)
+          origins.get("health.energy") == "scheduled", str(origins))
+    check("no turn and no trace stamps `unknown`", origins.get("notes") == "unknown", str(origins))
     check("a proactive trace with no turn stamps `scheduled` (build-time amendment 3)",
-          origins.get("health.exercise.type") == "scheduled", origins)
-    check("the Diarist's write is `user`", origins.get("health.food_logged") == "user", origins)
+          origins.get("health.exercise.type") == "scheduled", str(origins))
+    check("the Diarist's write is `user`", origins.get("health.food_logged") == "user",
+          str(origins))
+    check("a Diarist sent from a turn-less proactive job is `scheduled` (Fable review 5)",
+          origins.get("health.symptoms") == "scheduled", str(origins))
     check("a non-proactive trace with no turn bound is `user`",
-          origins.get("wellbeing.mood") == "user", origins)
+          origins.get("wellbeing.mood") == "user", str(origins))
     write_log({"notes": "forged", _WRITTEN_ON_KEY: {"notes": "user"}})
     check("a model-supplied `_written_on` is discarded, never merged",
-          read_log()[_WRITTEN_ON_KEY]["notes"] == "unknown", read_log()[_WRITTEN_ON_KEY])
+          read_log()[_WRITTEN_ON_KEY]["notes"] == "unknown", str(read_log()[_WRITTEN_ON_KEY]))
     check("the provenance map is not a field a person asserted",
           _leaf_paths({_WRITTEN_ON_KEY: {"notes": "user"}, "notes": "y"}) == ["notes"])
     ctx3 = load_recent_context()
