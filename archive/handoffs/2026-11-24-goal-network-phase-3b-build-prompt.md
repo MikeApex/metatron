@@ -46,7 +46,7 @@ Re-read each file before editing it, **`git diff` every file before staging**, a
 
 ## Before building — confirm, then put the open questions to Mike
 
-1. **Confirm the state.** Is part A (`<part A's commit>`, plan § 17) deployed? Its three flags
+1. **Confirm the state.** Is part A (`12c8463`, plan § 17) deployed? Its three flags
    (`rolling_wave`, `projected_finish`, `revet`) are off either way. Read `SESSION.md`.
 2. **Put these to Mike, each with a recommendation, before writing code:**
    - **How a re-interview starts.** Options:

@@ -1408,6 +1408,9 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording â
 unintended email to be sent" â€” is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** User corrected calendar/schedule assumptions: not attending Cube Christmas drinks (childcare duty instead), physio session is not his (getting Thanksgiving turkey instead), and Thursday is reserved for Thanksgiving cooking/celebrating.  
+  `2026-11-24T07:43:10.747968Z`
+
 - **[user corrected a prior turn]** User clarified that the previous items (cheese omelette from meals log and The Rest Is Politics from podcasts list) were tests and requested their removal.  
   `2026-11-23T12:29:21.476927Z`
 
