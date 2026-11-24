@@ -160,7 +160,7 @@ list and the per-stage live checks.
 
 **Ceilings:** `CLAUDE.md` briefly hit 301/300 from the added sentence; folded back into the existing line, now 300/300. claims check 47/47.
 
-**Owed (Mike, ~1 min):** in a new session, edit any agent file and revert — no box should appear; then try `config/modules/routing.yaml` and decline — the box should still appear.
+**Owed (Mike, ~1 min):** in a new session, edit any agent file and revert — no box should appear; same for `routing_cloud.yaml`; then try `core/router.py` and decline — the box should still appear.
 
 **Pre-edit check, honestly:** `SESSION.md` and `settings.json` read in full; `ROADMAP.md` searched for agent-file/tier wording (no hits) rather than read in full.
 

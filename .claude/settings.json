@@ -76,6 +76,8 @@
       "tier for smoother editing'). Agent files are Amber for prompting now, but are still",
       "built in the main session, never delegated (CLAUDE.md § Change tiers), and Build's",
       "hardcoded deny list in core/build/gates.py is unchanged.",
+      "Edit(./config/modules/routing.yaml) and routing_cloud.yaml REMOVED 2026-11-24 too",
+      "(Mike: 'remove routing.yaml from red tier as well'), on the same terms.",
       "",
       "KNOWN LIMIT, and it is narrower than it was first recorded. Measured 2026-08-13, then",
       "RE-MEASURED BY HAND IN BOTH HARNESSES on 2026-08-14: the split is by TOOL FAMILY, not",
@@ -108,8 +110,6 @@
     "ask": [
       "Bash(git push *)",
       "Bash(git push)",
-      "Edit(./config/modules/routing.yaml)",
-      "Edit(./config/modules/routing_cloud.yaml)",
       "Edit(./core/router.py)",
       "Edit(./core/persona.py)",
       "Edit(./core/scheduler.py)",
