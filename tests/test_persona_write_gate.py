@@ -462,6 +462,34 @@ def test_m5_the_redundancy_refusal_still_fires_in_add_mode():
         assert fx.text() == _PERSONA_SEED
 
 
+def test_m5_add_keeps_a_bullets_continuation_lines_and_prose_lines():
+    with _fixture() as fx:
+        PS.write_persona(section="Interaction Preferences", content=_TWO, source="user_stated")
+        content = ("- Give train times as departure and arrival,\n"
+                   "  never just the duration.\n"
+                   "Mornings are for the hardest task.")
+        out = PS.write_persona(section="Interaction Preferences", content=content,
+                               source="user_stated", mode="add")
+        assert "Persona updated" in out, out
+        sec = _section(fx.text())
+        assert ("- Give train times as departure and arrival,\n  never just the duration."
+                in sec), sec
+        assert "Mornings are for the hardest task." in sec, sec
+        assert "British spelling" in sec
+
+
+def test_m5_an_inferred_add_with_nothing_new_raises_no_card():
+    with _fixture() as fx:
+        PS.write_persona(section="Interaction Preferences", content=_TWO, source="user_stated")
+        before = fx.text()
+        out = PS.write_persona(section="Interaction Preferences", content=_TWO,
+                               source="inferred", mode="add")
+        assert isinstance(out, str) and out.startswith("Persona unchanged"), out
+        assert fx.text() == before
+        cards = [f for f in (fx.path / "data").rglob("*") if f.is_file()]
+        assert not cards, f"an approval card was raised: {cards}"
+
+
 def test_m5_the_schema_offers_both_modes_with_replace_the_default():
     props = PS.WRITE_PERSONA_SCHEMA["input_schema"]["properties"]
     assert props["mode"]["enum"] == ["replace", "add"], props["mode"]

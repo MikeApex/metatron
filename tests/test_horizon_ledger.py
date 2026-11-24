@@ -436,6 +436,22 @@ def _():
             assert any("Pottery" in r["item"]["title"] for r in ledger().values()), ledger()
 
 
+@check("Stage 5 review item 13: the key form is decoded exactly — a detail holding '[mobile]' "
+       "is filed whole and the decoded span alone is stripped")
+def _():
+    import core.orchestrator as O
+    reset()
+    items = [{"title": "Choir concert", "date": FUTURE, "venue": "St Mark's", "kind": "event",
+              "detail": "Tickets are in the app [mobile], row F", "precursor": "",
+              "precursor_by": ""}]
+    obj = dict(_REC_OBJ, HORIZON_ITEMS=items, after="kept [brackets] too")
+    cleaned = O._file_horizon_items({"recreation_hobbies": json.dumps(obj)}, persona="test")
+    parsed = json.loads(cleaned["recreation_hobbies"])
+    assert parsed == dict(_REC_OBJ, after="kept [brackets] too"), parsed
+    rec = [r["item"] for r in ledger().values() if "Choir" in r["item"]["title"]]
+    assert rec and rec[0]["detail"] == "Tickets are in the app [mobile], row F", ledger()
+
+
 @check("Stage 5 #11: a malformed array in either form writes one HORIZON_BLOCK_UNPARSED (agent, "
        "first 300 chars) and never raises")
 def _():

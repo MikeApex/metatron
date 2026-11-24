@@ -81,14 +81,23 @@ def _flight(status="Expected", dep=("2026-12-01 10:00", ""), arr=("2026-12-01 12
             "departure": _leg(*dep), "arrival": _leg(*arr)}
 
 
-@check("2. is_disrupted matches the old travel_watch rule on its four cases — a late leg, "
-       "cancelled, diverted — and an early arrival is not disrupted; each flight carries it")
+@check("2. is_disrupted (review item 12): the API's own status spellings — Canceled, "
+       "CanceledUncertain, Diverted, Delayed with no revised time — and a leg 15+ minutes late "
+       "are disruptions; 5 minutes late, early, Expected, EnRoute and Arrived are not; each flight "
+       "carries the flag and keeps its details")
 def _():
     cases = [
-        (_flight(dep=("2026-12-01 10:00", "2026-12-01 10:40")), True),
+        (_flight(status="Canceled"), True),
+        (_flight(status="CanceledUncertain"), True),
         (_flight(status="Cancelled"), True),
         (_flight(status="Diverted"), True),
+        (_flight(status="Delayed"), True),                       # no revised time at all
+        (_flight(dep=("2026-12-01 10:00", "2026-12-01 10:40")), True),
+        (_flight(arr=("2026-12-01 12:00", "2026-12-01 12:15")), True),
+        (_flight(dep=("2026-12-01 10:00", "2026-12-01 10:05")), False),
         (_flight(arr=("2026-12-01 12:00", "2026-12-01 11:32")), False),
+        (_flight(status="EnRoute"), False),
+        (_flight(status="Arrived"), False),
         (_flight(), False),
     ]
     payload = [c[0] for c in cases]
@@ -101,12 +110,10 @@ def _():
     finally:
         F.requests.get, F._api_key, F._throttle = saved
     got = [f["disrupted"] for f in out["flights"]]
-    assert got == [c[1] for c in cases], got
-    for f in out["flights"]:
-        old = (f["departure"].get("delayed") or f["arrival"].get("delayed")
-               or f["status"].lower() in ("cancelled", "canceled", "diverted"))
-        assert F.is_disrupted(f) == bool(old), f
+    assert got == [c[1] for c in cases], list(zip([c[0]["status"] for c in cases], got))
     assert out["flights"][0]["departure"]["terminal"] == "5"     # details are kept
+
+
 
 
 @check("3. two back-to-back flight calls sleep only for the remainder of 1.05 s; a call after "
@@ -136,12 +143,33 @@ def _():
     assert slept == [0.75], slept
 
 
-@check("travel_watch uses flights.is_disrupted and still reports a disrupted line only")
+@check("travel_watch by behaviour (review item 14): check_travel_events reports the disrupted "
+       "flight and the disrupted line only — an on-time flight, a 5-minute slip and Good Service "
+       "lines say nothing")
 def _():
-    import inspect
+    import tools.flights as FL
+    import tools.tfl_status as TS
     import tools.travel_watch as TW
-    src = inspect.getsource(TW)
-    assert "is_disrupted(f)" in src and '"cancelled", "canceled", "diverted"' not in src
+    flights = {
+        "XY1": {"flights": [{"number": "XY 1", "airline": "Example Air", "status": "CanceledUncertain",
+                             "departure": {"delay_minutes": 0}, "arrival": {"delay_minutes": 0}}]},
+        "XY2": {"flights": [{"number": "XY 2", "airline": "Example Air", "status": "Expected",
+                             "departure": {"delay_minutes": 5}, "arrival": {"delay_minutes": 0}}]},
+    }
+    saved = (FL.get_flight_status, TS.requests.get)
+    FL.get_flight_status = lambda n, date="": flights[n]
+    TS.requests.get = lambda url, timeout=None: _Resp([
+        _line("DLR", "Good Service"), _line("Victoria", "Part Suspended", "Engineering works")])
+    try:
+        found = TW.check_travel_events([
+            {"uid": "e1", "title": "Flight out", "flights": ["XY1", "XY2"], "lines": []},
+            {"uid": "e2", "title": "Into town", "flights": [], "lines": ["dlr", "victoria"]}])
+    finally:
+        FL.get_flight_status, TS.requests.get = saved
+    assert [(f["kind"], f["subject"]) for f in found] == [("flight", "XY 1"),
+                                                          ("transit", "Victoria")], found
+
+
 
 
 if __name__ == "__main__":

@@ -75,22 +75,38 @@ _NAME_STOPLIST = frozenset(w.lower() for w in (
     "Will", "May", "Mark", "Grace", "Rose", "June", "Hope", "Bill", "Pat", "Art", "Joy", "Dawn",
     "Summer", "Faith", "Frank", "Grant", "Victor", "Sterling", "Iris", "Ivy", "Jade", "Ruby",
     "Amber", "Holly", "Rich", "Sunny", "Bob", "Sue", "Rob", "Jack", "Bay", "Jay"))
+# Articles, possessives and common words — roles, places, kin — never count as a person's name
+# word ("The Dentist", "School Office", the "Aunt" of "Aunt Ruth"), review item 11.
+_COMMON_WORDS = frozenset((
+    "the a an my our your his her their of and at for to in on by with from mr mrs ms dr "
+    "office school dentist doctor surgery clinic practice gp plumber builder electrician garage "
+    "team club group family home work shop store bank council nursery college university "
+    "mum mom dad mother father aunt uncle auntie gran granny grandma grandpa nan nana brother "
+    "sister cousin boss friend neighbour neighbor wife husband partner baby kids son daughter "
+    "service services support admin reception care centre center hospital church").split())
 _BLOCK_RE = re.compile(r"^\[(user|them)\] ", re.M)
 _QUOTED = re.compile(r"(?:^|(?<=[\s(]))['\"‘“]([^'\"‘’“”]{2,}?)['\"’”](?=$|[\s.,;:!?)])")
 _WORD = re.compile(r"[^\W\d_]+")
 
 
+def _flat(text: str) -> str:
+    """Curly quotes straightened, whitespace and line wraps collapsed — so a phrase broken across
+    a wrapped line, or typed with smart quotes, is still counted (review item 11)."""
+    text = str(text or "").translate(str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'}))
+    return re.sub(r"\s+", " ", text)
+
+
 def _occurrences(phrase: str, text: str) -> int:
-    phrase = phrase.strip()
+    phrase = _flat(phrase).strip()
     if not phrase:
         return 0
-    return len(re.findall(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", text, re.I))
+    return len(re.findall(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", _flat(text), re.I))
 
 
 def _recurs(value: str, sample: str) -> bool:
     """A value that quotes its phrase (`calls Fridays 'the long one'`) is counted by the quote;
     counting the whole description would drop every correct entry."""
-    quoted = _QUOTED.findall(value)
+    quoted = _QUOTED.findall(_flat(value))
     return _occurrences(quoted[0] if quoted else value, sample) >= _MIN_RECURRENCE
 
 
@@ -118,7 +134,8 @@ def _name_words(record: dict, keys: tuple) -> set[str]:
 _OWN_KEYS = ("name", "first_name", "last_name", "nickname", "preferred_name", "referred_to_as")
 
 
-def _other_names(contact: dict | None, contacts: list, user_name: str, sample: str) -> set[str]:
+def _other_names(contact: dict | None, contacts: list, user_name: str, sample: str,
+                 protected: set[str] = frozenset()) -> set[str]:
     """Name words of OTHER people the user knows: any word of another contact's name, first name
     or nickname — minus every word the profiled contact is known by (a duplicate record or a
     namesake must never remove the contact's own name, review L8), minus the user's own name
@@ -126,7 +143,8 @@ def _other_names(contact: dict | None, contacts: list, user_name: str, sample: s
     amendment 2: exact for this check, so a contact saved as "School Office" whose words the mail
     never capitalises contributes nothing)."""
     contact = contact or {}
-    own = _name_words(contact, _OWN_KEYS) | {w.lower() for w in _WORD.findall(user_name or "")}
+    own = (_name_words(contact, _OWN_KEYS) | {w.lower() for w in _WORD.findall(user_name or "")}
+           | {w.lower() for w in protected})
     in_sample = {w for w in _WORD.findall(sample) if w[0].isupper()}
     cid = contact.get("id")
     out: set[str] = set()
@@ -134,7 +152,7 @@ def _other_names(contact: dict | None, contacts: list, user_name: str, sample: s
         if not isinstance(c, dict) or (cid and c.get("id") == cid):
             continue
         for w in _name_words(c, ("name", "first_name", "nickname")):
-            if w in own or w in _NAME_STOPLIST:
+            if w in own or w in _NAME_STOPLIST or w in _COMMON_WORDS:
                 continue
             for form in in_sample:
                 if form.lower() == w:
@@ -147,10 +165,20 @@ def _names_other(value: str, names: set[str]) -> bool:
     return any(w[0].isupper() and w in names for w in _WORD.findall(value))
 
 
+def _their_names_for_user(data: dict, theirs: str) -> list[str]:
+    raw = data.get("names_they_use_for_user") or []
+    raw = [raw] if isinstance(raw, str) else raw if isinstance(raw, list) else []
+    return [v for v in raw if isinstance(v, str)
+            and _occurrences((_QUOTED.findall(_flat(v)) or [v])[0], theirs)]
+
+
 def _validate(data: dict, sample: str, contact: dict | None, contacts: list,
               user_name: str) -> dict:
-    names = _other_names(contact, contacts, user_name, sample)
     theirs = _their_text(sample)
+    # What the contact really calls the user (seen in their own lines) is the user's name here,
+    # never another person's — even when another contact shares it (review item 11).
+    protected = {w for v in _their_names_for_user(data, theirs) for w in _WORD.findall(v)}
+    names = _other_names(contact, contacts, user_name, sample, protected)
     out = dict(data)
     for key in _STR_KEYS:
         v = out.get(key)
@@ -171,7 +199,7 @@ def _validate(data: dict, sample: str, contact: dict | None, contacts: list,
             if key in ("pet_names", "shared_phrases") and not _recurs(v, sample):
                 continue
             if key == "names_they_use_for_user" and not _occurrences(
-                    (_QUOTED.findall(v) or [v])[0], theirs):
+                    (_QUOTED.findall(_flat(v)) or [v])[0], theirs):
                 continue
             kept.append(v)
         out[key] = kept

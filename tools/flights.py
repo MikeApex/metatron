@@ -46,15 +46,27 @@ def _throttle() -> None:
         _LAST_REQUEST["at"] = time.monotonic()
 
 
-_DISRUPTED_STATUSES = ("cancelled", "canceled", "diverted")
+# AeroDataBox spells these several ways ("Canceled", "CanceledUncertain", "Diverted",
+# "Delayed"); a status naming any of them is a disruption, revised time or not.
+_DISRUPTED_WORDS = ("cancel", "divert", "delay")
+# A leg this many minutes later than scheduled is a disruption; a few minutes is noise.
+DELAY_THRESHOLD_MIN = 15
 
 
 def is_disrupted(f: dict) -> bool:
-    """The one home of "this flight is off schedule": either leg later than scheduled, or a
-    cancelled / diverted status. Running early is not a disruption."""
-    dep, arr = f.get("departure") or {}, f.get("arrival") or {}
+    """The one home of "this flight is off schedule" (review item 12): a status that names a
+    cancellation, diversion or delay, or either leg running DELAY_THRESHOLD_MIN or more minutes
+    later than scheduled. Running early is not a disruption."""
     status = str(f.get("status") or "").lower()
-    return bool(dep.get("delayed") or arr.get("delayed") or status in _DISRUPTED_STATUSES)
+    if any(w in status for w in _DISRUPTED_WORDS):
+        return True
+    for leg in (f.get("departure") or {}, f.get("arrival") or {}):
+        try:
+            if int(leg.get("delay_minutes") or 0) >= DELAY_THRESHOLD_MIN:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
 
 
 def _api_key() -> str | None:
@@ -168,7 +180,7 @@ GET_FLIGHT_STATUS_SCHEMA = {
         "Current status of a scheduled flight by flight number (e.g. 'BA117') — on time, "
         "delayed, cancelled, arrived, with departure/arrival airport, terminal, and "
         "scheduled vs. current-estimate times. Use ahead of a travel day to check before "
-        "the user asks. Each flight carries `disrupted` (a leg running late, or cancelled "
+        "the user asks. Each flight carries `disrupted` (15+ minutes late, delayed, cancelled "
         "or diverted); when it is false there is nothing to tell the user. Call once per "
         "flight — the rate limit is kept by the tool. An empty result means no matching "
         "flight was found; say so rather than guessing at a status."

@@ -7281,9 +7281,24 @@ _HORIZON_ITEMS_RE = _re.compile(
     r'HORIZON_ITEMS:\s*(?:```(?:json)?\s*(?P<fenced>.*?)```|(?P<bare>\[.*?\]))',
     _re.DOTALL,
 )
-# The key form inside a JSON object (Stage 5 #11): `"HORIZON_ITEMS": [ ... ]`. Non-greedy to
-# the first `]` for the same reason as the bare form above.
-_HORIZON_KEY_RE = _re.compile(r'"HORIZON_ITEMS"\s*:\s*(?P<arr>\[.*?\])', _re.DOTALL)
+# The key form inside a JSON object (Stage 5 #11): `"HORIZON_ITEMS": [ ... ]`. The array is read
+# with a real JSON decoder from its "[" (review item 13), never a regex to the first "]" — a
+# detail such as "tickets on the app [mobile]" holds one.
+_HORIZON_KEY_HEAD = _re.compile(r'"HORIZON_ITEMS"\s*:\s*(?=\[)')
+
+
+def _horizon_key_spans(text: str) -> list[tuple[int, int, object, str]]:
+    """(start, end, value, raw) for each key-form member; `value` is None when the array does
+    not decode (then `end` is -1 and the text is left as it is)."""
+    out = []
+    decoder = json.JSONDecoder()
+    for m in _HORIZON_KEY_HEAD.finditer(text):
+        try:
+            value, end = decoder.raw_decode(text, m.end())
+            out.append((m.start(), end, value, text[m.end():end]))
+        except json.JSONDecodeError:
+            out.append((m.start(), -1, None, text[m.end():m.end() + 300]))
+    return out
 
 
 def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
@@ -7312,7 +7327,7 @@ def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
     cleaned: dict = {}
     for agent, text in outputs.items():
         if not isinstance(text, str) or not ("HORIZON_ITEMS:" in text
-                                             or _HORIZON_KEY_RE.search(text)):
+                                             or _HORIZON_KEY_HEAD.search(text)):
             cleaned[agent] = text
             continue
 
@@ -7320,8 +7335,16 @@ def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
         raws = [(m.group("fenced") or m.group("bare") or "").strip()
                 for m in _HORIZON_ITEMS_RE.finditer(text)]
         # Stage 5 #11: the key form inside a JSON object — Recreation's safety net beside its
-        # `HORIZON_ITEMS:` line. Stripped with one adjacent comma so the object still parses.
-        raws += [m.group("arr") for m in _HORIZON_KEY_RE.finditer(text)]
+        # `HORIZON_ITEMS:` line. Decoded exactly, and its decoded span stripped with one
+        # adjacent comma so the object still parses.
+        rest = _HORIZON_ITEMS_RE.sub("", text)
+        spans = _horizon_key_spans(rest)
+        for _s, _e, value, raw in spans:
+            if value is None:
+                logger.warning(f"[horizon] {agent} HORIZON_ITEMS key form did not decode")
+                _record_unparsed_horizon(agent, raw)
+            else:
+                items.extend(value if isinstance(value, list) else [value])
         for raw in raws:
             try:
                 parsed = json.loads(raw)
@@ -7343,19 +7366,18 @@ def _file_horizon_items(outputs: dict, persona: str | None = None) -> dict:
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"[horizon] {agent} filing failed: {exc}")
 
-        cleaned[agent] = _strip_horizon_key(_HORIZON_ITEMS_RE.sub("", text)).strip()
+        cleaned[agent] = _strip_horizon_key(rest, spans).strip()
 
     return cleaned
 
 
-def _strip_horizon_key(text: str) -> str:
-    """Remove each `"HORIZON_ITEMS": [...]` member with one adjacent comma — the one after it
-    when there is one, else the one before — so the object around it stays valid JSON."""
-    while True:
-        m = _HORIZON_KEY_RE.search(text)
-        if not m:
-            return text
-        start, end = m.start(), m.end()
+def _strip_horizon_key(text: str, spans: list) -> str:
+    """Remove exactly each decoded `"HORIZON_ITEMS": [...]` member with one adjacent comma — the
+    one after it when there is one, else the one before — so the object stays valid JSON. A
+    member that did not decode is left as it is (its event was recorded)."""
+    for start, end, value, _raw in sorted(spans, reverse=True):
+        if value is None:
+            continue
         after = _re.match(r"\s*,\s*", text[end:])
         if after:
             end += after.end()
@@ -7364,6 +7386,7 @@ def _strip_horizon_key(text: str) -> str:
             if before:
                 start = before.start()
         text = text[:start] + text[end:]
+    return text
 
 
 def _record_unparsed_horizon(agent: str, raw: str) -> None:

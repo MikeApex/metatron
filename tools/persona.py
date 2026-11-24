@@ -185,21 +185,28 @@ _MODES = ("replace", "add")
 
 
 def _lines_to_add(section_body: str, content: str) -> list[str]:
-    """`add` mode: the lines of `content` not already in the section, as written — bullets
-    when there are bullets, else prose lines (the same reading as `_new_lines`)."""
+    """`add` mode: the items of `content` not already in the section, as written. An item is a
+    bullet together with its indented continuation lines, or a prose line — both are kept
+    (review item 10). An item is new when its first line is not already in the section."""
     def strip(line: str) -> str:
         return line.strip().lstrip("-* ").strip()
 
     existing = {strip(ln) for ln in section_body.splitlines() if strip(ln)}
-    lines = content.strip().splitlines()
-    bullets = [ln for ln in lines if ln.strip().startswith(("-", "*"))]
-    pool = bullets or [ln for ln in lines if strip(ln) and not ln.strip().startswith("#")]
+    items: list[list[str]] = []
+    for ln in content.strip("\n").splitlines():
+        if not ln.strip() or ln.strip().startswith("#"):
+            continue
+        is_bullet = ln.strip().startswith(("-", "*"))
+        if not is_bullet and ln[:1] in (" ", "\t") and items:
+            items[-1].append(ln.rstrip())          # a continuation stays with its item
+            continue
+        items.append([ln.rstrip()])
     out, seen = [], set()
-    for ln in pool:
-        key = strip(ln)
+    for item in items:
+        key = strip(item[0])
         if key and key not in existing and key not in seen:
             seen.add(key)
-            out.append(ln.rstrip())
+            out.extend(item)
     return out
 
 
@@ -256,6 +263,17 @@ def write_persona(section: str, content: str, source: str = _INFERRED,
     text = path.read_text()
     added = _new_lines(text, content)
 
+    # Look for an existing section with this heading
+    pattern = re.compile(
+        rf'^## {re.escape(section)}\n.*?(?=^## |\Z)',
+        re.MULTILINE | re.DOTALL,
+    )
+    found = pattern.search(text)
+    new_lines = _lines_to_add(found.group(0), content) if mode == "add" and found else None
+    if new_lines == []:
+        # Nothing new: no write and no approval card for the user to tap through.
+        return f"Persona unchanged: everything in that is already under '{section}'."
+
     # Both sources, and before the gate: a pending card the user can only usefully
     # decline is noise in the approval queue (same ordering as merge_contacts).
     already = _existing_home(added)
@@ -282,16 +300,7 @@ def write_persona(section: str, content: str, source: str = _INFERRED,
                 ),
             )
 
-    # Look for an existing section with this heading
-    pattern = re.compile(
-        rf'^## {re.escape(section)}\n.*?(?=^## |\Z)',
-        re.MULTILINE | re.DOTALL,
-    )
-    found = pattern.search(text)
-    if mode == "add" and found:
-        new_lines = _lines_to_add(found.group(0), content)
-        if not new_lines:
-            return f"Persona unchanged: everything in that is already under '{section}'."
+    if new_lines:
         sep = found.group(0)[len(found.group(0).rstrip("\n")):]   # the blank line(s) kept
         new_block = found.group(0).rstrip("\n") + "\n" + "\n".join(new_lines) + (sep or "\n")
     else:

@@ -75,11 +75,27 @@ def _():
     assert "synthesizer.md" in text and "sentence_starts" in text
 
 
-@check("both pipeline twins run the detector beside check_false_action_claims")
+@check("both pipeline twins run the detector — by behaviour (review item 14): a real twin over a "
+       "scripted provider writes one FILLER_PHRASE for an 'Enjoy …' reply, and none for a clean one")
 def _():
-    src = (ROOT / "core" / "orchestrator.py").read_text()
-    assert src.count("check_false_action_claims(visible)\n") == 2
-    assert src.count("_check_filler(visible)") == 2
+    sys.path.insert(0, str(ROOT / "tests"))
+    from support.stage3_fixtures import (PERSONA, Script, collect_stream, coordinator_package,
+                                         pipeline, sandbox)
+    import core.orchestrator as ORC
+    for stream in (False, True):
+        for reply, expected in (("Booked for 7. Enjoy the museum.", 1), ("Booked for 7.", 0)):
+            _EVENTS.clear()
+            with sandbox():
+                s = Script({"coordinator": coordinator_package([])}, synth_reply=reply)
+                with pipeline(s):
+                    if stream:
+                        collect_stream(ORC.run_pipeline_session_stream(
+                            "book the museum", persona=PERSONA, provider="openai"))
+                    else:
+                        ORC.run_pipeline_session("book the museum", persona=PERSONA,
+                                                 provider="openai")
+            got = [e for e in _EVENTS if e.get("event_type") == "FILLER_PHRASE"]
+            assert len(got) == expected, (stream, reply, _EVENTS)
 
 
 if __name__ == "__main__":

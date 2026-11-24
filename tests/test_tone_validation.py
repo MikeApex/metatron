@@ -138,6 +138,45 @@ def _():
     assert out.get("register_notes") == "mentions Lund at times", out
 
 
+@check("review item 11: what the contact calls the user is never dropped as another person's "
+       "name — 'Hi Sam' with the user and another contact both Sam; 'Lex' (a nickname only the "
+       "contact uses) with a contact named Lex on file")
+def _():
+    them = ["Hi Sam, all good?", "Thanks Sam", "Sam — see you Friday", "Lex! long time",
+            "Cheers Lex", "Lex, call me"]
+    sample = _sample(["Hi Dee", "Hi Dee", "Hi Dee"], them)
+    contacts = OTHERS + [{"id": "s2", "name": "Sam Reed", "first_name": "Sam"},
+                         {"id": "l2", "name": "Lex Hart", "first_name": "Lex"}]
+    out = T._parse_profile(json.dumps({"names_they_use_for_user": ["Sam", "Lex"],
+                                       "greeting_style": "Hi Sam / Hi Lex"}),
+                           sample=sample, contact=CONTACT, contacts=contacts,
+                           user_name="Sam Ortiz")
+    assert out.get("names_they_use_for_user") == ["Sam", "Lex"], out
+    assert out.get("greeting_style") == "Hi Sam / Hi Lex", out
+
+
+@check("review item 11: articles and common words never count as name words — a 'The Dentist' "
+       "contact and 'School Office' with Office capitalised in the sample cost no value")
+def _():
+    sample = _sample(["The Dentist moved my slot", "The School Office rang again"] * 3, ["ok"])
+    contacts = OTHERS + [{"id": "d1", "name": "The Dentist"}]
+    out = T._parse_profile(json.dumps({"register_notes": "mentions The Dentist often",
+                                       "formality": "warm but Office-formal"}),
+                           sample=sample, contact=CONTACT, contacts=contacts)
+    assert out.get("register_notes") == "mentions The Dentist often", out
+    assert out.get("formality") == "warm but Office-formal", out
+
+
+@check("review item 11: curly quotes and line wraps are normalised before counting uses")
+def _():
+    user = ["see you at “the long one”", "the long\n one again", "‘the long one’ tomorrow",
+            "the long one", "the  long   one"]
+    sample = _sample(user, ["ok"])
+    out = T._parse_profile(json.dumps({"shared_phrases": ["calls Fridays ‘the long one’"]}),
+                           sample=sample, contact={}, contacts=[])
+    assert out.get("shared_phrases") == ["calls Fridays ‘the long one’"], out
+
+
 @check("validation runs before the 6-item truncation, so one-offs do not use up the slots")
 def _():
     many = _sample(["cheers sis"] * 5, ["x"])
