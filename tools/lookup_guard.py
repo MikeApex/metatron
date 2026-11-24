@@ -509,7 +509,7 @@ def refusal_text(why: str) -> str:
     if why == UNREADABLE:
         return (f"{RESEARCH_REFUSED} the user's records could not be read, so nothing was sent. "
                 f"Answer without the lookup, or ask the user.")
-    return (f"{RESEARCH_REFUSED} the question carries {why}. Nothing left this device. Ask it "
+    return (f"{RESEARCH_REFUSED} the question carries {why}. Nothing was sent. Ask it "
             f"again without that.")
 
 
@@ -551,7 +551,7 @@ def ask_public(question: str, persona: str, source: str = "lookup_public_fact",
     why = check(question, persona, refuse_figures=bool(lc.get("refuse_figures", True)))
     if why:
         logger.info("[lookup] refused: %s", why.split(" (")[0])
-        return (f"refused: the question carries {why}. Nothing left this device. Ask it again "
+        return (f"refused: the question carries {why}. Nothing was sent. Ask it again "
                 f"without that — a public fact needs no detail of the user's own (\"how long does "
                 f"a passport renewal take\", not theirs) — or ask the user instead.")
     from tools import ranking as RK

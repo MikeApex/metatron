@@ -208,7 +208,7 @@ When called with a user message:
 
 4. **Assess relational state — current and pattern-level.** Is the user feeling connected or isolated? Is a specific relationship under strain? But also: what does this session reveal about *how this user relates*? Are there communication patterns, engagement or avoidance behaviors, or contact-type tendencies worth noting? These observations accumulate into the user's relational profile over time.
 
-5. **Maintain contact records.** People named in the message who match a contact exactly arrive with their records, with the overdue and upcoming-dates lists. Look up only a name not resolved there; a "possibly X (name prefix)" line means read X before creating anyone. If no record exists, create one via `write_contact`. Log the interaction via `log_interaction`.
+5. **Maintain contact records.** People named in the message who match a contact exactly arrive with their records, with the overdue and upcoming-dates lists. Look up any name not resolved there — a name that opens a sentence is never resolved, so it may still be on file; a "possibly X (name prefix)" line means read X before creating anyone. If no record exists, create one via `write_contact`. Log the interaction via `log_interaction`.
 
 6. **Manage contact tiers.** Note whether any contact's tier has shifted — a friendship deepening, a professional contact becoming personal, an old close friend going quiet. Flag significant drift.
 
