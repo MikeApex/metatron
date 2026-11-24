@@ -8606,11 +8606,20 @@ def _lift_requests(outputs: dict, persona: str | None, nudge: bool):
         return outputs, None
 
 
-def _commit_requests(lifted, persona: str | None) -> str:
-    """Called only once the Synthesizer will run: spend the profile question (write the queue)
-    and return the block. "" when nothing was lifted."""
+def _requests_text(lifted, signoff_note: str) -> str:
+    """The block for the Synthesizer's input. On a sign-off-note turn (told to raise nothing
+    new) the profile question is left out, and nothing is spent (review item 8)."""
     if lifted is None:
         return ""
+    return lifted.text(with_gap=not signoff_note)
+
+
+def _commit_requests(lifted, persona: str | None, signoff_note: str = "") -> None:
+    """Spend the profile question (write the queue). Called only AFTER the Synthesizer call came
+    back (review item 8), never on a sign-off skip, a sign-off-note turn, a nudge or an empty
+    turn — so a held question is spent only on a reply that carried it."""
+    if lifted is None or signoff_note:
+        return
     try:
         from tools import specialist_requests as SR
         with persona_scope(resolve_persona(persona)):
@@ -8619,7 +8628,6 @@ def _commit_requests(lifted, persona: str | None) -> str:
         raise
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[requests] queue not committed: {type(exc).__name__}")
-    return lifted.block
 
 
 # [DB-0815-11] The system claims actions it never took. Third confirmed instance
@@ -9205,8 +9213,9 @@ def run_pipeline_session(user_input: str,
             _tr.finish_request_trace(_SIGNOFF_ACK)
             return _SIGNOFF_ACK
         signoff_note = _signoff_note(veto_text, user_input, is_proactive)
-        # The Synthesizer runs: only now is a held profile question spent (Stage 5 #19).
-        requests_text = _commit_requests(requests, persona)
+        # Stage 5 #19: the requests block; the held question is spent only once the
+        # Synthesizer has answered (below). Mirrors the streaming twin.
+        requests_text = _requests_text(requests, signoff_note)
 
         # Pass 2: Synthesizer — integration and user-facing response.
         # The ACTIONS block goes last, closest to the response, and is always
@@ -9267,6 +9276,7 @@ def run_pipeline_session(user_input: str,
             history=recent_history, attachments=attachments,
         )
         _trace(f"[PIPELINE] synthesizer  done  ({len(synth_result)} chars)")
+        _commit_requests(requests, persona, signoff_note)
         _clarify_shadow_finish()
         # Strip the internal [CONTEXT] block before the response leaves the
         # pipeline. Without this it reaches push notifications, the scheduler's
@@ -9543,8 +9553,8 @@ def _run_pipeline_session_stream_inner(
         _tr.finish_request_trace(_SIGNOFF_ACK)
         return
     signoff_note = _signoff_note(veto_text, user_input, is_proactive)
-    # The Synthesizer runs — mirrors the non-streaming twin.
-    requests_text = _commit_requests(requests, persona)
+    # The requests block — spent only after the stream completes. Mirrors the twin.
+    requests_text = _requests_text(requests, signoff_note)
 
     _trace("[PIPELINE] synthesizer  streaming")
 
@@ -9772,6 +9782,7 @@ def _run_pipeline_session_stream_inner(
 
     complete = "".join(buffer)
     _clarify_shadow_finish()     # M7 — mirrors the non-streaming twin.
+    _commit_requests(requests, persona, signoff_note)   # Stage 5 #19 — after the reply.
 
     # Same splitting logic as the non-streaming pipeline — one implementation so
     # the two paths cannot drift apart again.

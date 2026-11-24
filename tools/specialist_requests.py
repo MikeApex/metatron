@@ -40,6 +40,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from core.orchestrator import _SIGNOFF_FLAG_TOKENS
+from core.orchestrator import _UNTRUSTED_OUTPUT_AGENTS as _UNTRUSTED_AGENTS
+from tools.logistics_log import _is_none
 from core.persona import persona_data_dir
 
 logger = logging.getLogger(__name__)
@@ -96,8 +98,14 @@ _FLAG_RE = re.compile(r"(\*\*)?\b(" + "|".join(LIFTED) + r")\b(\*\*)?")
 _STOP_RE = re.compile(r"\b(?:" + "|".join(sorted(KNOWN_TOKENS, key=len, reverse=True)) + r")\b")
 _CLINICAL_RE = re.compile("|".join(re.escape(t).replace("_", "[_ ]") for t in CLINICAL_TOKENS),
                           re.I)
-_LEAD = re.compile(r"\s*(?:\*\*)?\s*[:\-—–]?\s*")
-_EMPTY_BODIES = {"", "none", "n/a", "na", "nothing", "-", "—"}
+_LEAD = re.compile(r"[ \t]*(?:\*\*)?[ \t]*[:\-—–]?[ \t]*")
+# Flag position (review item 7): what may come before a liftable flag on its line.
+_POS_LINE = re.compile(r"^[ \t]*(?:(?:[-*•>]|\d+[.)])[ \t]*)?(?:\*\*)?[ \t]*$")
+_POS_FLAGS = re.compile(r"^[ \t]*(?:(?:[-*•]|\d+[.)])[ \t]*)?(?:\*\*)?FLAGS(?:\*\*)?[ \t]*:[ \t]*"
+                        r"(?:\*\*)?(?:.*[,;][ \t]*(?:\*\*)?)?$")
+_POS_JSON = re.compile(r'(?:^[ \t]*|[\[,][ \t]*)"$')
+_BULLET = re.compile(r"^[ \t]*(?:[-*•]|\d+[.)])[ \t]+")
+_CONTINUATION = re.compile(r"^[ \t]+(?![-*•][ \t]|\d+[.)][ \t])\S")
 _MARK = "\x00"
 
 _EXPIRY = timedelta(days=7)
@@ -116,24 +124,39 @@ class Lift:
     pick: dict | None = None            # the one PROFILE_GAP this turn, {agent, text, queued?}
     losers: list = field(default_factory=list)   # the queue as it should stand after this turn
     lifted: int = 0
+    requests: list = field(default_factory=list)  # the consult and lookup lines
+
+    def text(self, with_gap: bool = True) -> str:
+        """The block; without the profile question on a turn that must raise nothing new."""
+        lines = list(self.requests)
+        if with_gap and self.pick:
+            held = " (held from an earlier turn)" if self.pick.get("held") else ""
+            lines.append(f"- {self.pick['agent']}: PROFILE_GAP{held}: {self.pick['text']}")
+        return (BLOCK_HEAD + "\n" + "\n".join(lines)) if lines else ""
 
 
 def _find(text: str) -> list[tuple[int, int, str, str]]:
     """(start, end, token, body) for each liftable flag, in order. `end` is where the removal
-    span ends; the body is cleaned. A flag with a clinical token in its body, or with no body at
-    all, is not returned — it stays where it is."""
-    found = []
+    span ends; the body is cleaned.
+
+    Lifted only from FLAG POSITION (review item 7): at a line start after markup or a bullet,
+    as an item of a `FLAGS:` list, as a JSON list item, or straight after a flag just lifted —
+    never from prose ("No CONSULT_NEEDED this turn"). Left exactly where it is: a flag on a
+    line, or under a section, that holds a clinical token anywhere (review item 1 — the clinical
+    rule); a bare token with no body."""
+    found: list[tuple[int, int, str, str]] = []
     for m in _FLAG_RE.finditer(text):
         start, tok = m.start(), m.group(2)
         if found and start < found[-1][1]:
             continue
-        # Inside a JSON string (Recreation's "flags": [...], or a flag mid-value): an odd count
-        # of unescaped quotes on the line before the flag. The body then stops at the string's
-        # closing quote, so the object stays valid JSON.
         line_start = text.rfind("\n", 0, start) + 1
-        in_string = len(re.findall(r'(?<!\\)"', text[line_start:start])) % 2 == 1
-        lead = _LEAD.match(text, m.end())
-        b0 = lead.end()
+        prefix = text[line_start:start]
+        after_lift = bool(found) and start == found[-1][1]
+        if not (after_lift or _POS_LINE.match(prefix) or _POS_FLAGS.match(prefix)
+                or _POS_JSON.search(prefix)):
+            continue
+        in_string = len(re.findall(r'(?<!\\)"', prefix)) % 2 == 1
+        b0 = _LEAD.match(text, m.end()).end()
         line_end = text.find("\n", b0)
         line_end = len(text) if line_end == -1 else line_end
         stop = line_end
@@ -143,18 +166,55 @@ def _find(text: str) -> list[tuple[int, int, str, str]]:
                 q = text.find('"', q + 1)
             if q != -1 and q < line_end:
                 stop = q
-        nxt = _STOP_RE.search(text, b0, stop)
-        if nxt:
-            stop = nxt.start()
-        body = text[b0:stop]
-        clean = body.strip().strip("*").strip().rstrip(",;").strip()
-        # A body holding a clinical token in any spelling is never lifted (the clinical rule).
-        if _CLINICAL_RE.search(body):
+        # A known token cuts the body only in flag position — followed by ":" or at a list
+        # separator. "… SLEEP_POOR three nights running" is a mention, and stays in the body.
+        for k in _STOP_RE.finditer(text, b0, stop):
+            before = text[b0:k.start()]
+            if (re.match(r"(?:\*\*)?[ \t]*:", text[k.end():])
+                    or re.search(r"[,;][ \t]*(?:\*\*)?$", before)):
+                stop = k.start()
+                break
+        # An indented continuation line belongs to the body it continues.
+        end_line = line_end
+        if stop == line_end and not in_string:
+            while end_line < len(text):
+                nxt_end = text.find("\n", end_line + 1)
+                nxt_end = len(text) if nxt_end == -1 else nxt_end
+                nxt = text[end_line + 1:nxt_end]
+                if not _CONTINUATION.match(nxt) or _STOP_RE.match(nxt.strip()):
+                    break
+                end_line = nxt_end
+            stop = end_line
+        whole = text[line_start:max(stop, line_end)]
+        if _CLINICAL_RE.search(whole) or _under_clinical(text, line_start):
             continue
+        body = re.sub(r"\s*\n\s*", " ", text[b0:stop])
+        clean = body.strip().strip("*").strip().rstrip(",;").strip()
         if not clean:
             continue        # a bare token carries no request; left where it is
         found.append((start, stop, tok, clean))
     return found
+
+
+def _under_clinical(text: str, line_start: int) -> bool:
+    """Is this line a bullet or continuation under a section headed by a clinical token? Then it
+    is part of that section ("MUST_SURFACE:" and its bullets) and is never moved out of it."""
+    line_end = text.find("\n", line_start)
+    line = text[line_start:line_end if line_end != -1 else len(text)]
+    if not (_BULLET.match(line) or _CONTINUATION.match(line)):
+        return False
+    pos = line_start
+    while pos > 0:
+        prev_start = text.rfind("\n", 0, pos - 1) + 1
+        prev = text[prev_start:pos - 1]
+        if not prev.strip():
+            return False
+        if _CLINICAL_RE.search(prev):
+            return True
+        if not (_BULLET.match(prev) or _CONTINUATION.match(prev)):
+            return False
+        pos = prev_start
+    return False
 
 
 def _strip(text: str, spans: list[tuple[int, int, str, str]]) -> str:
@@ -286,22 +346,24 @@ def lift(outputs: dict, persona: str | None = None) -> Lift:
             cleaned[agent] = text
             continue
         spans = _find(text)
+        if agent in _UNTRUSTED_AGENTS:
+            # Research reads the web: its output is untrusted, so it never puts a question to the
+            # user or into the held queue (review item 9). Its consult and lookup requests are
+            # lifted for this turn only — they are acted on only if the Synthesizer chooses.
+            spans = [sp for sp in spans if sp[2] != "PROFILE_GAP"]
         if not spans:
             cleaned[agent] = text
             continue
         n += len(spans)
         cleaned[agent] = _strip(text, spans)
         for _s, _e, tok, body in spans:
-            if body.lower().strip(" .\"'") in _EMPTY_BODIES:
-                continue
+            if _is_none(body.strip(" \"'")):
+                continue        # "none at this time", "n/a": removed, never a request
             if tok == "PROFILE_GAP":
                 gaps = [g for g in gaps if g[0] != agent] + [(agent, body)]
             else:
                 requests.append(f"- {agent}: {tok}: {body}")
     pick, losers = _rotate(gaps, persona)
-    lines = list(requests)
-    if pick:
-        held = " (held from an earlier turn)" if pick.get("held") else ""
-        lines.append(f"- {pick['agent']}: PROFILE_GAP{held}: {pick['text']}")
-    block = (BLOCK_HEAD + "\n" + "\n".join(lines)) if lines else ""
-    return Lift(outputs=cleaned, block=block, pick=pick, losers=losers, lifted=n)
+    lift_ = Lift(outputs=cleaned, pick=pick, losers=losers, lifted=n, requests=requests)
+    lift_.block = lift_.text(with_gap=True)
+    return lift_

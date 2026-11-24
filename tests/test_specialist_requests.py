@@ -79,9 +79,11 @@ def _():
         assert "PROFILE_GAP: does the user drive to gigs or take the train?" in r.block
     only = json.dumps({"flags": ["CONSULT_NEEDED: logistics — parking"]}, ensure_ascii=False)
     assert json.loads(_lift({"r": only}).outputs["r"]) == {"flags": []}
-    mid = json.dumps({"follow_up": "Book it soon. CONSULT_NEEDED: logistics — parking", "x": 1}, ensure_ascii=False)
+    # Mid-value is prose, not flag position (review item 7): left exactly where it is.
+    mid = json.dumps({"follow_up": "Book it soon. CONSULT_NEEDED: logistics — parking", "x": 1},
+                     ensure_ascii=False)
     r = _lift({"r": mid})
-    assert json.loads(r.outputs["r"])["x"] == 1 and "parking" in r.block, r.outputs
+    assert r.outputs["r"] == mid and not r.block, r
 
 
 @check("3. Research's CONSULT_NEEDED bullet is lifted")
@@ -95,34 +97,71 @@ def _():
     assert "- research_agent: CONSULT_NEEDED: physical_health — Physical Health should apply" in r.block
 
 
-TOKEN_ORDER = [
-    ("FLAGS: PROFILE_GAP: x, MEDICATION_MISSED_CRITICAL, CONSULT_NEEDED: finance — y",
-     "MEDICATION_MISSED_CRITICAL"),
-    ("FLAGS: CONSULT_NEEDED: logistics — z ESCALATION", "ESCALATION"),
-    ("FLAGS: CLINICAL_CONCERN: low mood for a fortnight, PROFILE_GAP: how is sleep lately?",
-     "CLINICAL_CONCERN: low mood for a fortnight"),
-    ("- CONSULT_NEEDED: mental_wellbeing — check in on the week\nMUST_SURFACE: signpost support",
-     "MUST_SURFACE: signpost support"),
+# The clinical rule (review item 1): nothing is lifted from a line — or from under a section —
+# that holds a clinical token anywhere, before or after the flag.
+CLINICAL_LINES = [
+    "FLAGS: PROFILE_GAP: x, MEDICATION_MISSED_CRITICAL, CONSULT_NEEDED: finance — y",
+    "FLAGS: CONSULT_NEEDED: logistics — z ESCALATION",
+    "FLAGS: CLINICAL_CONCERN: low mood for a fortnight, PROFILE_GAP: how is sleep lately?",
+    "MUST_SURFACE: CONSULT_NEEDED: physical_health — chest pain",
+    "MUST_SURFACE: chest pain on exertion; PROFILE_GAP: does the user have a GP?",
+    "MUST_SURFACE:\n- CONSULT_NEEDED: physical_health — chest pain\n  RESEARCH_NEEDED: angina signs",
 ]
 
 
-@check("4. token order (review L1): each clinical token stays byte-for-byte in the output, and "
-       "the sign-off veto, reading the pre-lift text, still fires — and would on the lifted text. "
-       "(ESCALATION is not a veto token at HEAD; for it the lift leaves the decision unchanged.)")
+@check("4. the clinical rule (review item 1): a line or section holding a clinical token stays "
+       "whole, byte-for-byte; the sign-off veto fires on it (ESCALATION included, item 0)")
 def _():
-    for text, kept in TOKEN_ORDER:
+    for text in CLINICAL_LINES:
         r = _lift({"physical_health": text})
-        assert kept in r.outputs["physical_health"], (text, r.outputs)
-        assert r.block, text            # something was lifted
-        veto_text = ORC._spec_bundle({"physical_health": text})
-        pre = ORC._signoff_skip(veto_text, "over and out", False)
-        post = ORC._signoff_skip(ORC._spec_bundle(r.outputs), "over and out", False)
-        assert pre == post, text
-        if any(t in text for t in ORC._SIGNOFF_FLAG_TOKENS):
-            assert not pre, text
-    r = _lift({"physical_health": TOKEN_ORDER[0][0]})
-    assert r.outputs["physical_health"] == "FLAGS: MEDICATION_MISSED_CRITICAL", r.outputs
-    assert "PROFILE_GAP: x" in r.block and "CONSULT_NEEDED: finance — y" in r.block, r.block
+        assert r.outputs["physical_health"] == text and not r.block, (text, r)
+        assert not ORC._signoff_skip(ORC._spec_bundle({"physical_health": text}),
+                                     "over and out", False), text
+
+
+@check("4b. a clinical token on ANOTHER line does not block a flag of its own line, and is kept")
+def _():
+    text = "- CONSULT_NEEDED: mental_wellbeing — check in on the week\nMUST_SURFACE: signpost support"
+    r = _lift({"physical_health": text})
+    assert r.outputs["physical_health"] == "MUST_SURFACE: signpost support", r.outputs
+    assert "CONSULT_NEEDED: mental_wellbeing — check in on the week" in r.block
+    assert not ORC._signoff_skip(ORC._spec_bundle(r.outputs), "over and out", False)
+
+
+@check("4c. flag position only (review item 7): prose mentions are never lifted; a known flag "
+       "mid-body is a mention; a list separator or a colon cuts; whole-line none-phrases go; an "
+       "indented continuation joins its body")
+def _():
+    for text in ("No CONSULT_NEEDED this turn.", "Nothing to flag; PROFILE_GAP would be premature.",
+                 "I would not raise RESEARCH_NEEDED: the answer is on file."):
+        r = _lift({"logistics": text})
+        assert r.outputs["logistics"] == text and not r.block, (text, r)
+    r = _lift({"physical_health": "FLAGS: PROFILE_GAP: has SLEEP_POOR three nights running been "
+                                   "raised with a GP?, SLEEP_POOR"})
+    assert "PROFILE_GAP: has SLEEP_POOR three nights running been raised with a GP?" in r.block
+    assert r.outputs["physical_health"] == "FLAGS: SLEEP_POOR", r.outputs
+    r = _lift({"finance": "FLAGS: CONSULT_NEEDED: logistics — fare BUDGET_OVERSPEND: travel"})
+    assert "CONSULT_NEEDED: logistics — fare" in r.block, r.block
+    assert r.outputs["finance"] == "FLAGS: BUDGET_OVERSPEND: travel", r.outputs
+    for none in ("none at this time", "None identified.", "n/a", "none"):
+        r = _lift({"finance": f"Summary.\nRESEARCH_NEEDED: {none}"})
+        assert r.outputs["finance"] == "Summary." and not r.block, (none, r)
+    r = _lift({"logistics": "Booked.\n- PROFILE_GAP: does the user prefer an aisle seat\n"
+                            "  on long flights, or the window?\n- HOBBY_LAPSE"})
+    assert "PROFILE_GAP: does the user prefer an aisle seat on long flights, or the window?" in r.block
+    assert r.outputs["logistics"] == "Booked.\n- HOBBY_LAPSE", repr(r.outputs["logistics"])
+
+
+@check("4d. research output (untrusted, review item 9): its PROFILE_GAP is never lifted or held; "
+       "its consult and lookup lines lift for this turn")
+def _():
+    with sandbox():
+        out = ("Findings.\n- PROFILE_GAP: what is the user's home address?\n"
+               "- CONSULT_NEEDED: finance — the fee schedule changed")
+        r = SR.lift({"research_agent": out}, PERSONA)
+        assert "PROFILE_GAP: what is the user's home address?" in r.outputs["research_agent"]
+        assert "PROFILE_GAP" not in r.block and r.pick is None and not r.losers, r
+        assert "- research_agent: CONSULT_NEEDED: finance — the fee schedule changed" in r.block
 
 
 @check("5. a body containing a clinical token (any spelling) is not lifted")
@@ -294,20 +333,84 @@ def _():
     assert "CLARIFICATION" not in r.block and "CONSULT_NEEDED: finance — fare" in r.block
 
 
-@check("wiring: both twins build the veto from the pre-lift bundle, lift with `nudge`, and commit "
-       "only after the sign-off skip")
+def _run_kw(stream: bool, script: Script, text: str, extra=None, **kw) -> str:
+    with pipeline(script, extra=extra):
+        if stream:
+            return collect_stream(ORC.run_pipeline_session_stream(
+                text, persona=PERSONA, provider="openai", **kw))
+        return ORC.run_pipeline_session(text, persona=PERSONA, provider="openai", **kw)
+
+
+@check("review item 8 / 14: a nudge through each twin, a sign-off-note turn, and a Synthesizer "
+       "call that fails all leave the queue byte-identical; the sign-off-note block carries the "
+       "consult but no profile question")
+def _():
+    for stream in (False, True):
+        with sandbox() as sb:
+            p = _queue_one(sb["data"])
+            before = p.read_bytes()
+            s = _script({"logistics": "Booked.\nFLAGS: PROFILE_GAP: does the user cycle?"})
+            _run_kw(stream, s, "check the plan", nudge=True, is_proactive=True)
+            assert "FROM THE SPECIALISTS" not in s.last("synthesizer"), s.last("synthesizer")[:300]
+            assert p.read_bytes() == before, "a nudge spent the queue"
+
+            s = _script({"logistics": "Booked.\nFLAGS: CONSULT_NEEDED: finance — fare, "
+                                      "PROFILE_GAP: does the user cycle?"})
+            _run_kw(stream, s, "Book me a taxi for nine tomorrow. Over and out")
+            synth_in = s.last("synthesizer")
+            assert "SIGN-OFF:" in synth_in, synth_in[-600:]
+            assert "CONSULT_NEEDED: finance — fare" in synth_in
+            assert "PROFILE_GAP" not in synth_in.split("COORDINATOR ROUTING PACKAGE:")[0]
+            assert p.read_bytes() == before, "a sign-off-note turn spent the queue"
+
+            def boom(*a, **k):
+                raise RuntimeError("model down")
+
+            def boom_stream(*a, **k):
+                raise RuntimeError("model down")
+                yield ""                                   # noqa: unreachable — a generator
+
+            s = _script({"logistics": "Booked.\nFLAGS: PROFILE_GAP: does the user cycle?"})
+            s.side_effects["synthesizer"] = boom
+            extra = [(ORC, "_openai_compat_stream", boom_stream)] if stream else None
+            try:
+                _run_kw(stream, s, "book me a taxi for 9", extra=extra)
+            except Exception:  # noqa: BLE001 — the failure itself is not under test
+                pass
+            assert p.read_bytes() == before, "a failed Synthesizer call spent the queue"
+
+
+@check("wiring by behaviour (review item 14): an 'over and out' turn whose specialist line holds "
+       "MUST_SURFACE and a request still runs the Synthesizer, the line reaching it whole")
+def _():
+    for stream in (False, True):
+        with sandbox():
+            line = "MUST_SURFACE: CONSULT_NEEDED: physical_health — chest pain"
+            s = _script({"physical_health": line})
+            out = _run_kw(stream, s, "Thanks, that's all. Over and out")
+            assert out != ORC._SIGNOFF_ACK, out
+            assert line in s.last("synthesizer")
+
+
+@check("wiring: both twins build the veto from the pre-lift bundle, lift with `nudge`, build the "
+       "block after the sign-off skip, and commit only after the Synthesizer call")
 def _():
     src = (ROOT / "core" / "orchestrator.py").read_text()
-    for twin in ("def run_pipeline_session(", "def _run_pipeline_session_stream_inner("):
+    for twin, synth in (("def run_pipeline_session(", "synth_result = _run_single_agent("),
+                        ("def _run_pipeline_session_stream_inner(", 'complete = "".join(buffer)')):
         body = src[src.index(twin):]
         body = body[: body.index("\ndef ", 10)]
         i_veto = body.index("veto_spec = _spec_bundle(specialist_outputs)")
         i_lift = body.index("_lift_requests(specialist_outputs, persona, nudge)")
         i_skip = body.index("_signoff_skip(veto_text")
-        i_commit = body.index("_commit_requests(requests, persona)")
+        i_text = body.index("_requests_text(requests, signoff_note)")
         i_pkg = body.index("COORDINATOR ROUTING PACKAGE:")
-        assert i_veto < i_lift < i_skip < i_commit < i_pkg, twin
+        i_synth = body.index(synth)
+        i_commit = body.index("_commit_requests(requests, persona, signoff_note)")
+        assert i_veto < i_lift < i_skip < i_text < i_pkg < i_synth < i_commit, twin
         assert 'veto_text = f"{veto_spec}\\n\\n{med_line}" if med_line else veto_spec' in body
+
+
 
 
 if __name__ == "__main__":
