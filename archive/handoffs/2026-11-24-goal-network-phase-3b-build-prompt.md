@@ -84,10 +84,10 @@ Re-read each file before editing it, **`git diff` every file before staging**, a
    and counts and the user's own one-liners only. The gap per class is computed by code; it is
    raised, rarely, when the next commitment in that class is proposed, and it feeds that class's
    vetting. Never a second signals file.
-4. **The language playbook, if it was not finished in part A's chat** — Mike wants to be involved
-   (2026-11-24). Method only, researched through the Research Agent with a decontextualised
-   question; `applies_when:` (built in part A) attaches it to any language. It lands only after
-   Mike reviews it.
+4. **Not the language playbook.** It has its own Mike-led chat
+   (`archive/handoffs/2026-11-24-language-playbook-prompt.md`), which may run before or after this
+   one. Do not draft it here. It must be in place before Bulgarian is planned for real (part A's
+   live check, stage 2) — the planner reads it at planning time.
 5. **Tests** — extend `tests/test_goal_network_phase3.py` or add `…phase3b.py`: fixture personas
    only, every live meter stubbed. At minimum: an Interviewer vet writes `pass: full` and
    `weekly_minutes`, after which the sweep plans the goal in waves (part A's path, end to end); a
