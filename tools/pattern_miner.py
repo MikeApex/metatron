@@ -72,6 +72,7 @@ def get_log_window(
                 # weeks — a window of 30 days would carry 30 blocks of ISO timestamps into
                 # the Pattern Miner's prompt for nothing.
                 entry.pop("_written_at", None)
+                entry.pop("_written_on", None)   # Stage 4 provenance map: bookkeeping too
                 results.append(entry)
             except Exception:
                 pass

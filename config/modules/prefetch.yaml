@@ -1,0 +1,53 @@
+# Prefetch — the reads code makes for a specialist before its first turn (instructions-to-code
+# Stage 4, #22). Read by core/prefetch.py `load_config()`.
+#
+# The block goes in the specialist's USER message, never its system prompt: the cached Vertex
+# prefix (and the 4,096-token cache floor, CLAUDE.md trap 6) is untouched by anything here.
+#
+# Policy, so it lives here. Each entry is one read; `read` names the kind, and every kind maps to
+# the tool the agent must already be granted (core/prefetch.READ_TOOLS) — an entry for a tool the
+# agent does not hold is refused at load and logged. Prefetch never widens a grant.
+#
+# Never listed, by ruling: email (DECISION 4-1 — 19.6k tokens a read, mostly on scheduled turns),
+# the Coordinator, the Synthesizer and the Diarist (measured: nothing to prefetch), the Research
+# Agent and any bare run (review L2 — no personal context on the cloud web path).
+
+enabled: true
+# Each read's budget, seconds. A read past it is listed as "not read in advance".
+read_timeout_s: 4
+# Each read's text cap. An agent config over it is replaced by its key list.
+cap_chars: 6000
+
+agents:
+  logistics:
+    - {read: agent_config}
+    - {read: open_tasks}
+    - {read: calendar}                      # today and tomorrow; read beside the Coordinator (4-2)
+    - {read: intake_count, domain: logistics}
+  physical_health:
+    - {read: log_field, field: health}
+    - {read: data_object, object: medication_taken}
+    - {read: agent_config}
+    - {read: counters}
+  mental_wellbeing:
+    - {read: log_field, field: wellbeing}
+    - {read: agent_config}
+    - {read: counters}
+  relationships:
+    - {read: agent_config}
+  work_vocation:
+    - {read: agent_config}
+    - {read: log_field, field: wellbeing}   # #6: the flow cross-check reads MW's and PH's fields
+    - {read: log_field, field: health}
+  finance:
+    - {read: agent_config}
+    - {read: open_tasks}                    # open only — never include_closed (5k tokens)
+    - {read: intake_count, domain: finance}
+    # Finance's period totals already arrive by code (Stage 3 #13, _finance_block) — not repeated.
+  recreation_hobbies:
+    - {read: agent_config}
+    - {read: counters}
+  learning_growth:
+    - {read: agent_config}
+    - {read: counters}
+    - {read: skill_habits}                  # #15: skill practice as ledger habits

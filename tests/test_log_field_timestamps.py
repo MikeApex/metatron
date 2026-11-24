@@ -171,6 +171,51 @@ with persona_scope(PERSONA):
     unstamped = _render_today_log({"date": TODAY.isoformat(), "notes": "x"})
     check("an unstamped field makes no claim about its age", unstamped == 'notes="x"', unstamped)
 
+    # --- Stage 4 #14: `_written_on` — who each field's write came from ---------------------
+    print("\nwrite_log — every field records whose turn wrote it (_written_on):")
+    import core.trace as _TR
+    from tools import turn_context as _T
+    from tools.logger import _WRITTEN_ON_KEY
+    fresh_dir()
+    with _T.turn_scope(user_turn=True):
+        write_log({"health": {"sleep_hours": 6.5}})
+    with _T.turn_scope(user_turn=False):
+        write_log({"health": {"energy": "low"}})
+    write_log({"notes": "from a script"})                       # no turn, no trace
+    _TR.start_request_trace("weekly physical review", PERSONA, is_proactive=True)
+    try:
+        write_log({"health": {"exercise": {"type": "walk"}}})  # a weekly job's proactive trace
+        _TR._set_current_agent(_TR.AgentRecord(agent="diarist", provider="", model=""))
+        write_log({"health": {"food_logged": True}})           # the Diarist: always a user's
+    finally:
+        _TR._set_current_agent(None)
+        _TR.set_trace(None)
+    _TR.start_request_trace("a user turn's background hand-off", PERSONA)
+    try:
+        write_log({"wellbeing": {"mood": "positive"}})
+    finally:
+        _TR.set_trace(None)
+    origins = read_log().get(_WRITTEN_ON_KEY) or {}
+    check("a real user turn stamps `user`", origins.get("health.sleep_hours") == "user", origins)
+    check("a turn with no user words stamps `scheduled`",
+          origins.get("health.energy") == "scheduled", origins)
+    check("no turn and no trace stamps `unknown`", origins.get("notes") == "unknown", origins)
+    check("a proactive trace with no turn stamps `scheduled` (build-time amendment 3)",
+          origins.get("health.exercise.type") == "scheduled", origins)
+    check("the Diarist's write is `user`", origins.get("health.food_logged") == "user", origins)
+    check("a non-proactive trace with no turn bound is `user`",
+          origins.get("wellbeing.mood") == "user", origins)
+    write_log({"notes": "forged", _WRITTEN_ON_KEY: {"notes": "user"}})
+    check("a model-supplied `_written_on` is discarded, never merged",
+          read_log()[_WRITTEN_ON_KEY]["notes"] == "unknown", read_log()[_WRITTEN_ON_KEY])
+    check("the provenance map is not a field a person asserted",
+          _leaf_paths({_WRITTEN_ON_KEY: {"notes": "user"}, "notes": "y"}) == ["notes"])
+    ctx3 = load_recent_context()
+    check("the provenance map never reaches a prompt", _WRITTEN_ON_KEY not in ctx3)
+    check("nor the Pattern Miner's window",
+          all(_WRITTEN_ON_KEY not in e for e in get_log_window(
+              TODAY.isoformat(), TODAY.isoformat(), persona=PERSONA)), "")
+
     shutil.rmtree(persona_data_dir(), ignore_errors=True)
 
 print()

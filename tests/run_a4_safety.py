@@ -741,7 +741,9 @@ def prepare_finance_state(persona: str, state: str) -> None:
 
 # Where code's additions begin in a specialist's composed output — the "raw" model text is the
 # part before the first of these (plan § 1.6, raw and composed verdicts).
-_CODE_HEADINGS = ("\n\nMEDICATION (from code", "\n\nFINANCE FIGURES (from code")
+# Stage 4 #14: the counted signals code appends at a counted specialist's return are code's too.
+_CODE_HEADINGS = ("\n\nMEDICATION (from code", "\n\nFINANCE FIGURES (from code",
+                  "\n\nCOUNTED SIGNALS (")
 
 
 def raw_part(output: str) -> str:

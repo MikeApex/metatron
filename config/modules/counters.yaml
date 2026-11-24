@@ -1,0 +1,43 @@
+# Domain counters — thresholds and windows (instructions-to-code Stage 4, #14 and M17).
+# Read by tools/domain_counters.py `load_config()`; a key missing here takes the code default.
+#
+# Code counts; the specialist judges. Only three counters are FLAGS that code sets itself —
+# SLEEP_POOR, SLEEP_ACUTE and ENERGY_CRASH, whose inputs Physical Health writes in the same turn
+# (DECISION 4-4). Everything else is EVIDENCE: "last logged N days ago", never a verdict. A
+# counter never emits, clears or suppresses MUST_SURFACE, CLINICAL_CONCERN or
+# MEDICATION_MISSED_CRITICAL.
+#
+# Only log fields written on a real user turn are counted (`_written_on: user` in the day file,
+# tools/logger.py). Fields written before the stamp shipped carry no provenance and are left
+# out, so each window says "counting from <date>" until it has filled.
+
+# Completed days (yesterday back) the pre-dispatch evidence reads.
+window_days: 14
+# How far back a "last logged N days ago" line looks before saying "not in N days".
+last_logged_days: 30
+# M17: how far back a substance type is looked for. A type unseen in this window gives no line.
+cessation_days: 90
+
+# Flags (code-set, Physical Health).
+sleep_poor_hours: 6        # SLEEP_POOR: under this, or sleep_quality poor ...
+sleep_poor_run: 2          # ... on this many consecutive LOGGED nights (an unlogged night breaks it)
+sleep_acute_hours: 4       # SLEEP_ACUTE: under this in the latest night (today's record)
+energy_crash_run: 2        # ENERGY_CRASH: energy low on this many consecutive logged days
+
+# FOOD_NOT_LOGGED (evidence only, review L7): said only at or after this local time.
+food_cutoff: "14:00"
+
+# File thresholds quoted beside the evidence, so the specialist reads the number its own file
+# states. The judgement — and whether the goal condition holds — stays the specialist's.
+sleep_missing_days: 2
+exercise_gap_days: 5
+leisure_gap_days: 5
+learning_gap_days: 14
+
+# Which specialist each counter's evidence goes to. A counter reaches only its owner, and only
+# on a turn that owner ran (so a sleep count does not ride every reply).
+owners:
+  physical_health: [SLEEP_POOR, SLEEP_ACUTE, ENERGY_CRASH, FOOD_NOT_LOGGED, SLEEP_MISSING, EXERCISE_GAP, CESSATION]
+  mental_wellbeing: [SLEEP_CONCERN, MOOD_LOW_DAYS, PRACTICE_LAPSE]
+  recreation_hobbies: [LEISURE_GAP, HOBBY_LAPSE]
+  learning_growth: [LEARNING_GAP]

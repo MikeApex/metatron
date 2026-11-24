@@ -1075,7 +1075,26 @@ def read_calendar(start_date: str, end_date: str) -> dict:
         Dict with "events" list and "count". Each event has: uid, title,
         start, end, description, location, status, recurrence, attendees.
     """
+    return _render_read(_query_events(start_date, end_date, calendars="all"),
+                        start_date, end_date)
+
+
+def read_calendar_rows(start_date: str, end_date: str) -> tuple[dict, list[dict]]:
+    """read_calendar's result AND the structured rows behind it, from ONE fetch (Stage 4
+    build-time amendment 4). Read-only. The rows (`uid`, `start`, `end`,
+    `conflict_check_status`, …) are for code that must count or compare — the "N events still
+    unverified" line in core/prefetch.py — so nothing ever parses text back out of the
+    `<untrusted_content>` wrapper. The rows are never handed to a model; the result is, and it
+    is exactly what read_calendar returns."""
     raw = _query_events(start_date, end_date, calendars="all")
+    rows = [dict(e) for e in (raw.get("events") or []) if isinstance(e, dict)] \
+        if "error" not in raw and raw.get("connected") is not False else []
+    return _render_read(raw, start_date, end_date), rows
+
+
+def _render_read(raw: dict, start_date: str, end_date: str) -> dict:
+    """read_calendar's body after the fetch — split out unchanged so read_calendar_rows returns
+    the identical result from the same fetch."""
     if "error" in raw:
         return raw
     if raw.get("connected") is False:

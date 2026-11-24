@@ -1299,6 +1299,7 @@ def load_recent_context(persona: str | None = None, days: int = 5, audience: str
                     body = _render_today_log(entry)
                 else:
                     entry.pop("_written_at", None)
+                    entry.pop("_written_on", None)     # provenance, for code's counters only
                     body = _json.dumps(entry, ensure_ascii=False)
                 recent_entries.append(f"  {d} ({_relative_age(i)}): {body}")
                 derived_sources.append((d, body))
@@ -5889,6 +5890,12 @@ _CACHED_SPECIALISTS = {
     "learning_growth", "recreation_hobbies", "logistics",
 }
 
+# Stage 4 #6/#22: the agents that may be handed code's evidence — the PREFETCHED block and the
+# Coordinator's PROACTIVE_FLAGS. An allow-list, so the Research Agent (whose directive becomes
+# web queries on the grounded path, review L2), the Diarist and every code-only agent are out by
+# construction. Exactly the eight personal specialists.
+_EVIDENCE_AGENTS = frozenset(_CACHED_SPECIALISTS)
+
 
 def _run_single_agent(agent_name: str, user_input: str,
                       persona: str | None = None, provider: str | None = None,
@@ -5897,7 +5904,8 @@ def _run_single_agent(agent_name: str, user_input: str,
                       history: list[dict] | None = None,
                       bare: bool = False,
                       attachments: list[dict] | None = None,
-                      thinking_budget: int | None = None) -> str:
+                      thinking_budget: int | None = None,
+                      prefetch: str | None = None) -> str:
     """
     Run one agent pass and return its raw output (no filter applied).
     Used internally by run_session and run_pipeline_session.
@@ -5909,6 +5917,11 @@ def _run_single_agent(agent_name: str, user_input: str,
     inline parts. Only the cached Vertex path carries them — every other provider
     here is text-only, and the accompanying description in the input text is what
     tells those models a file existed.
+
+    prefetch: the specialist's PREFETCHED block (core/prefetch.build), already built by the
+    pipeline's dispatch worker — "" when it has none. None (the /internal/session path,
+    scheduled single-agent jobs, run_subagent) builds it here, with no user text. It goes in
+    the USER message only, so the cached system prefix is byte-identical either way.
     """
     from core.router import get_allowed_tools
     base_url_override = None
@@ -5990,8 +6003,21 @@ def _run_single_agent(agent_name: str, user_input: str,
             if goals else f"## Your Role for This Session\n\n{agent}"
         )
         clock = clock_line()
-        augmented_input = f"{clock}\n\n---\n\n{user_input}" if clock else user_input
+        # Stage 4 #22: the specialist's fixed first-turn reads, made by code — after the clock,
+        # before the directive, in the user message (never the cached prefix: trap 6).
+        if prefetch is None:
+            try:
+                from core import prefetch as _prefetch
+                prefetch = _prefetch.build(agent_name, user_input, "", persona,
+                                           user_turn=False, bare=bare)
+            except Exception as exc:  # noqa: BLE001 — a hint, never a cost
+                logger.warning(f"[prefetch] {agent_name}: {exc}")
+                prefetch = ""
+        head = "\n\n---\n\n".join(x for x in (clock, prefetch) if x)
+        augmented_input = f"{head}\n\n---\n\n{user_input}" if head else user_input
         context_sections = {"agent_file": agent, "goals": goals, "clock": clock}
+        if prefetch:
+            context_sections["prefetch"] = prefetch
 
     # The user's logs and lists this agent may read — in the USER message, so creating one
     # never changes a cached system prefix (_data_object_manifest). Bare runs (code-only
@@ -6081,7 +6107,45 @@ def _run_single_agent(agent_name: str, user_input: str,
             result = _physical_health_return(result, persona)
         elif agent_name == "finance":
             result = _finance_return(result, persona)
+        # Stage 4 #14 (build-time amendment 3): today's counted signals at the same hook, on
+        # every path — after the medication check, re-read from the logs this run just wrote.
+        result = _counters_return(agent_name, result, persona)
     return result
+
+
+_COUNTED_SLOT_KEY = "counted"
+
+
+def _speculative_calendar(persona: str | None):
+    """4-2 — see core/prefetch.speculative_calendar. None on any failure."""
+    try:
+        from core.prefetch import speculative_calendar
+        return speculative_calendar(persona)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[prefetch] speculative calendar: {exc}")
+        return None
+
+
+def _counters_return(agent_name: str, result: str, persona: str | None) -> str:
+    """#14 — code's counted signals at a counted specialist's return. Into the pipeline's open
+    slot on the bound turn (the twins put them in one COUNTED SIGNALS bundle line), else
+    appended to `result`. Add-only: `result` is always a prefix of what is returned; the
+    specialist's own text — including any flag it raised — is never touched. Never raises."""
+    try:
+        from tools.domain_counters import SIGNALS_HEADING, counted_signals, owners
+        if agent_name not in owners():
+            return result
+        with persona_scope(resolve_persona(persona)):
+            text = counted_signals(agent_name)
+        turn = _turn.current()
+        slot = turn.get(_MEDICATION_SLOT) if isinstance(turn, dict) else None
+        if isinstance(slot, dict):
+            slot.setdefault(_COUNTED_SLOT_KEY, {})[agent_name] = text
+            return result
+        return f"{result}\n\n{SIGNALS_HEADING}:\n{text}" if text else result
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[counters] {agent_name} at return failed: {exc}")
+        return result
 
 
 _MEDICATION_SLOT = "medication"
@@ -6832,12 +6896,14 @@ def _file_wisdom_proposals(outputs: dict, persona: str | None = None) -> dict:
     from tools.wisdom import write_wisdom
 
     _t = _tr.get_trace()
-    read_untrusted = _t is not None and any(
+    read_untrusted = _t is not None and (any(
         tc.name in _UNTRUSTED_READ_TOOLS
         for rec in _tr._walk_agents(list(_t.pipeline))
         for turn in rec.turns
         for tc in turn.tool_calls
-    )
+    # Stage 4 review L3: a PREFETCHED block that carried calendar text leaves no tool-call
+    # record (prefetch calls the handler directly), so it sets this flag instead.
+    ) or bool(getattr(_t, "prefetched_untrusted", False)))
 
     cleaned: dict = {}
     for agent, text in outputs.items():
@@ -6985,17 +7051,21 @@ def _close_medication_slot() -> None:
 
 
 def _after_specialists(outputs: dict, persona: str | None, user_input: str,
-                       user_turn: bool) -> tuple[dict, str, str, bool]:
+                       user_turn: bool) -> tuple[dict, str, str, bool, str]:
     """Code's checks over the specialists' outputs, once per twin, AFTER
-    _drop_unprompted_clinical_flags. Returns (outputs, dose_note, med_line, crisis):
+    _drop_unprompted_clinical_flags. Returns (outputs, dose_note, med_line, crisis,
+    counted_line):
 
     - `dose_note` / `med_line` — the doses H1 recorded and code's medication check, from the
       turn's slot. When Physical Health ran but stored nothing (fire-and-forget, or a failed
       specialist) the check is computed here. No Physical Health this turn, no line (ruling B).
     - `outputs` with M8's completions (complete_clinical_flags; add-only).
     - `crisis` — Mental Wellbeing's FLAGS raised SUICIDAL_IDEATION on a real user turn (M9).
+    - `counted_line` — step 6 (Stage 4 #14): COUNTED SIGNALS for the counted specialists that
+      ran this turn, from the slot their returns filled; computed here for one that ran but
+      stored nothing (fire-and-forget, a failed run). Owners that did not run get nothing.
     Never raises."""
-    dose_note, med_line, crisis = "", "", False
+    dose_note, med_line, crisis, counted_line = "", "", False, ""
     try:
         from tools.clinical_checks import medication_note
         from tools.obligations import reported_doses_note
@@ -7021,7 +7091,21 @@ def _after_specialists(outputs: dict, persona: str | None, user_input: str,
         crisis = bool(user_turn) and raises_suicidal_ideation(outputs)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[clinical] completion failed: {exc}")
-    return outputs, dose_note, med_line, crisis
+    try:
+        from tools.domain_counters import counted_signals, owners, signals_block
+        turn = _turn.current()
+        slot = turn.get(_MEDICATION_SLOT) if isinstance(turn, dict) else None
+        stored = dict(slot.get(_COUNTED_SLOT_KEY) or {}) if isinstance(slot, dict) else {}
+        counted = owners()
+        per_agent = {a: t for a, t in stored.items() if a in counted}
+        for agent in (outputs or {}):
+            if agent in counted and agent not in per_agent:
+                with persona_scope(resolve_persona(persona)):
+                    per_agent[agent] = counted_signals(agent)
+        counted_line = signals_block(per_agent)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[counters] pipeline signals failed: {exc}")
+    return outputs, dose_note, med_line, crisis, counted_line
 
 
 def _crisis_bundle_line(crisis: bool, persona: str | None) -> str:
@@ -7574,6 +7658,7 @@ def _dispatch_from_coordinator(
     user_text: str = "",
     session: str | None = None,
     clarify: str | None = None,
+    calendar_future=None,
 ) -> dict:
     """
     Parse SPECIALISTS_TO_CALL from Coordinator output and dispatch agents.
@@ -7602,6 +7687,13 @@ def _dispatch_from_coordinator(
 
     `clarify`: the Coordinator's real CLARIFICATION_NEEDED value (`_clarification_needed`).
     Acts only when `_CLARIFY_HOLD_LIVE` is on; in shadow it changes nothing.
+
+    `calendar_future`: 4-2's calendar read, started beside the Coordinator. Used for Logistics'
+    PREFETCHED block when Logistics is dispatched, otherwise dropped (it wrote nothing).
+
+    Stage 4: each blocking specialist's PREFETCHED block is built in its own worker
+    (core/prefetch.build), so prefetch runs in parallel with the other specialists; and the
+    Coordinator's PROACTIVE_FLAGS are appended to each blocking `_EVIDENCE_AGENTS` directive.
     """
     import re as _re
     import threading
@@ -7677,6 +7769,14 @@ def _dispatch_from_coordinator(
     def _normalize_agent(name: str) -> str:
         return normalize_agent_name(name, name_map)
 
+    # #6: the Coordinator's PROACTIVE_FLAGS, parsed once, for the blocking personal specialists.
+    try:
+        from core.prefetch import flags_block as _flags_block
+        _flags = _flags_block(coord_output)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[PIPELINE] PROACTIVE_FLAGS not parsed: {exc}")
+        _flags = ""
+
     for spec in specialists:
         if not isinstance(spec, dict):
             continue
@@ -7733,6 +7833,15 @@ def _dispatch_from_coordinator(
             directive = (f"{directive}\n\nTHE USER'S OWN WORDS THIS TURN (what any time or "
                          f"place in the directive points from): {user_text[:2000]}")
 
+        # #6: signals the specialist is told to weigh must be signals it was handed. Blocking
+        # personal specialists only — never the Research Agent (review L2), the Diarist, a
+        # fire-and-forget run or a code-only agent — and never the fixed tone-only Mental
+        # Wellbeing directive of a scheduled brief or close (Stage 2 D4: it raises nothing).
+        if (_flags and not is_ff and agent in _EVIDENCE_AGENTS
+                and not (agent == "mental_wellbeing" and not user_turn
+                         and session in _FIXED_SESSION_KINDS)):
+            directive = f"{directive}\n\n{_flags}"
+
         if is_ff:
             # Collected, NOT started — see the deferral note below the blocking loop.
             fire_and_forget.append((agent, directive, complexity))
@@ -7761,8 +7870,20 @@ def _dispatch_from_coordinator(
                     _tr._set_current_agent(_fan_agent)
                     _turn.adopt(_fan_turn)
                     with (persona_scope(_fan_persona) if _fan_persona else nullcontext()):
+                        # Stage 4 #22: this specialist's fixed reads, in its own worker so they
+                        # run beside the other specialists. "" = none; never fails the dispatch.
+                        try:
+                            from core import prefetch as _prefetch
+                            pre = _prefetch.build(
+                                agent_name, directive, user_text, persona, user_turn,
+                                calendar_future=(calendar_future
+                                                 if agent_name == "logistics" else None))
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(f"[prefetch] {agent_name}: {exc}")
+                            pre = ""
                         return _run_single_agent(
-                            agent_name, directive, persona, provider, None, cx
+                            agent_name, directive, persona, provider, None, cx,
+                            prefetch=pre,
                         )
                 return _worker
             futures = {
@@ -8527,6 +8648,9 @@ def run_pipeline_session(user_input: str,
 
         # Pass 1: Coordinator — single-pass routing directive assembly. Skipped on a day-plan
         # nudge (F9 (a)), which has nothing to route.
+        # 4-2: Logistics' calendar read starts now, beside the Coordinator — read-only, held on
+        # the request, used for Logistics' PREFETCHED block or dropped. Mirrors the twin.
+        _cal_future = None if nudge else _speculative_calendar(persona)
         _trace("[PIPELINE] coordinator  starting")
         coord_output = _NUDGE_PACKAGE if nudge else _run_single_agent(
             "coordinator", coord_input, persona=persona, provider=provider,
@@ -8570,6 +8694,7 @@ def run_pipeline_session(user_input: str,
             coord_output, persona=persona, provider=provider, knowledge=knowledge,
             user_turn=has_real_user_turn(user_input, is_proactive, attachments),
             data_turn=data_turn, user_text=user_input, session=kind, clarify=clarify,
+            calendar_future=_cal_future,
         )
         specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
         specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
@@ -8578,7 +8703,7 @@ def run_pipeline_session(user_input: str,
         # Code's checks over the outputs (Stage 3): doses Physical Health heard were recorded
         # at its return (H1); the medication check is its own bundle line; clinical companions
         # are completed; a suicide disclosure arms the crisis line. Mirrors the streaming twin.
-        specialist_outputs, dose_note, med_line, crisis = _after_specialists(
+        specialist_outputs, dose_note, med_line, crisis, counted_line = _after_specialists(
             specialist_outputs, persona, user_input,
             has_real_user_turn(user_input, is_proactive, attachments))
         crisis_text = _crisis_bundle_line(crisis, persona)
@@ -8645,6 +8770,7 @@ def run_pipeline_session(user_input: str,
             + (f"\n\n{task_hint}" if task_hint else "")
             + (f"\n\n{dose_note}" if dose_note else "")
             + (f"\n\n{med_line}" if med_line else "")
+            + (f"\n\n{counted_line}" if counted_line else "")
             + (f"\n\n{crisis_text}" if crisis_text else "")
             + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
             + (f"\n\n{signoff_note}" if signoff_note else "")
@@ -8872,6 +8998,8 @@ def _run_pipeline_session_stream_inner(
     capture_job = (_capture.start(persona, user_input, history, "synthesizer", _capture_trace)
                    if not nudge and has_real_user_turn(user_input, is_proactive, attachments)
                    else None)
+    # 4-2: Logistics' calendar read beside the Coordinator — mirrors the non-streaming twin.
+    _cal_future = None if nudge else _speculative_calendar(persona)
     # Skipped on a day-plan nudge (F9 (a)) — mirrors the non-streaming twin.
     coord_output = _NUDGE_PACKAGE if nudge else _run_single_agent(
         "coordinator", coord_input, persona=persona, provider=provider,
@@ -8901,13 +9029,14 @@ def _run_pipeline_session_stream_inner(
         coord_output, persona=persona, provider=provider, knowledge=knowledge,
         user_turn=has_real_user_turn(user_input, is_proactive, attachments),
         data_turn=data_turn, user_text=user_input, session=kind, clarify=clarify,
+        calendar_future=_cal_future,
     )
     specialist_outputs = _file_wisdom_proposals(specialist_outputs, persona=persona)
     specialist_outputs = _file_horizon_items(specialist_outputs, persona=persona)
     specialist_outputs = _drop_unprompted_clinical_flags(
         specialist_outputs, has_real_user_turn(user_input, is_proactive, attachments))
     # Code's checks over the outputs (Stage 3) — see _after_specialists. Mirrors the twin.
-    specialist_outputs, dose_note, med_line, crisis = _after_specialists(
+    specialist_outputs, dose_note, med_line, crisis, counted_line = _after_specialists(
         specialist_outputs, persona, user_input,
         has_real_user_turn(user_input, is_proactive, attachments))
     crisis_text = _crisis_bundle_line(crisis, persona)
@@ -8968,6 +9097,7 @@ def _run_pipeline_session_stream_inner(
         + (f"\n\n{task_hint}" if task_hint else "")
         + (f"\n\n{dose_note}" if dose_note else "")
         + (f"\n\n{med_line}" if med_line else "")
+        + (f"\n\n{counted_line}" if counted_line else "")
         + (f"\n\n{crisis_text}" if crisis_text else "")
         + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
         + (f"\n\n{signoff_note}" if signoff_note else "")

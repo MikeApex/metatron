@@ -213,6 +213,39 @@ def _deep_merge(base: dict, incoming: dict) -> dict:
 # tools/context_tracker.py).
 _WRITTEN_AT_KEY = "_written_at"
 
+# Stage 4 #14: beside each write time, WHO the write came from — "user" (a real user turn, the
+# Diarist's background write included), "scheduled" (a turn with no user words: a scheduled
+# session, a weekly job's proactive trace) or "unknown" (no turn, no trace: a script). Derived,
+# never model-supplied, exactly as `_written_at` is. Code's domain counters
+# (tools/domain_counters.py) count only "user" leaves, so a log the system wrote during a
+# scheduled check-in never becomes evidence about the user.
+_WRITTEN_ON_KEY = "_written_on"
+
+
+def _write_provenance() -> str:
+    """Where this write_log call came from: "user" | "scheduled" | "unknown". Never raises.
+
+    A bound turn answers decisively. With none bound: the Diarist is "user" (its dispatch is
+    refused on a turn with no user words, [DB-0822-05], and its thread binds no turn on purpose
+    — the decline guard in tools/confirm.py reads an unbound thread); otherwise the trace's own
+    real-user-turn status (Stage 4 build-time amendment 3) — a proactive trace is "scheduled",
+    any other trace is a user's (a user turn's background hand-off, the CLI). No trace at all is
+    "unknown"."""
+    try:
+        from tools.turn_context import current
+        turn = current()
+        if turn is not None:
+            return "user" if turn.get("user_turn") else "scheduled"
+        from core.trace import get_current_agent, get_trace
+        if str(getattr(get_current_agent(), "agent", "") or "") == "diarist":
+            return "user"
+        trace = get_trace()
+        if trace is not None:
+            return "scheduled" if trace.is_proactive else "user"
+    except Exception:  # noqa: BLE001 — provenance must never cost the write
+        pass
+    return "unknown"
+
 
 def _leaf_paths(node: dict, prefix: str = "") -> list[str]:
     """
@@ -229,7 +262,7 @@ def _leaf_paths(node: dict, prefix: str = "") -> list[str]:
     """
     paths: list[str] = []
     for key, value in node.items():
-        if not prefix and key in (_WRITTEN_AT_KEY, "date"):
+        if not prefix and key in (_WRITTEN_AT_KEY, _WRITTEN_ON_KEY, "date"):
             continue
         path = f"{prefix}{key}"
         if isinstance(value, dict) and value:
@@ -642,6 +675,7 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
     # A write time the model chose is not evidence of when anything was written. Discarded
     # before the merge, so a forged map can never displace the real one — see _WRITTEN_AT_KEY.
     content.pop(_WRITTEN_AT_KEY, None)
+    content.pop(_WRITTEN_ON_KEY, None)    # same discipline: provenance is derived, never sent
 
     # One record per dose — see _strip_medications.
     content, dropped_meds = _strip_medications(content)
@@ -690,9 +724,12 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
         # still called it missing, because a merged day-file has one date and no way to say
         # that one field in it was three hours old and another three minutes.
         stamps = dict(existing.get(_WRITTEN_AT_KEY) or {})
+        origins = dict(existing.get(_WRITTEN_ON_KEY) or {})
+        origin = _write_provenance()
         now_iso = datetime.now().isoformat(timespec="seconds")
         for path in _leaf_paths(content):
             stamps[path] = now_iso
+            origins[path] = origin
 
         health_entries = _health_note_entries(content, now_iso)
         # By medicine name and ledger day — see _merge_medications.
@@ -706,6 +743,7 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
             if feed != existing.get(_HEALTH_NOTES_KEY):
                 existing[_HEALTH_NOTES_KEY] = feed
                 stamps[_HEALTH_NOTES_KEY] = now_iso
+                origins[_HEALTH_NOTES_KEY] = origin
         if intention_entry is not None:
             feed = existing.get(_INTENTIONS_KEY)
             if not isinstance(feed, list):
@@ -715,9 +753,12 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
             # One stamp for the feed, not per entry: the list is one growing assertion,
             # the same reading _leaf_paths already applies to every other list.
             stamps[_INTENTIONS_KEY] = now_iso
+            origins[_INTENTIONS_KEY] = origin
         existing["date"] = log_date
         if stamps:
             existing[_WRITTEN_AT_KEY] = stamps
+        if origins:
+            existing[_WRITTEN_ON_KEY] = origins
         with open(log_path, "w") as f:
             json.dump(existing, f, indent=2)
         os.chmod(log_path, 0o600)
@@ -730,7 +771,8 @@ def write_log(content: dict | None = None, log_date: str = "") -> str:
     _persona = resolve_persona()
     # The stamp map is excluded from what gets embedded: it is bookkeeping, and a block of
     # ISO timestamps in the indexed text is noise a semantic search has to see past.
-    _payload = json.dumps({k: v for k, v in existing.items() if k != _WRITTEN_AT_KEY})
+    _payload = json.dumps({k: v for k, v in existing.items()
+                           if k not in (_WRITTEN_AT_KEY, _WRITTEN_ON_KEY)})
 
     def _index() -> None:
         from core.memory import index_entry
