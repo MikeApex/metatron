@@ -2769,7 +2769,17 @@ def render_block(plan: dict | None, kind: str | None = None, due_now: list[dict]
         # A plan made out of sight (goal–task network § 10 R8): said once, next turn — stamped by
         # project_plan.note_said only once a reply says it, never on render.
         from tools.project_plan import render as _render_projects
-        out.append("Planning, once each: " + " ".join(_render_projects(projects)))
+        late = [p for p in projects if p.get("status") == "late"]
+        rest = [p for p in projects if p.get("status") != "late"]
+        if late:
+            # A finish now past its date (§ 4.5, phase 3 § 17): Important, said once — the date
+            # and one fix, code's arithmetic. Not a candidate to skip: managing the expected
+            # finish is what the alert is for (§ 1, "Done").
+            from tools.goal_network import render_late
+            out.append("Important — the finish date has moved: "
+                       + " ".join(render_late(p) for p in late))
+        if rest:
+            out.append("Planning, once each: " + " ".join(_render_projects(rest)))
         record["projects"] = [p["id"] for p in projects]
     record["findings"] += [rid for k, _, rid in imp if k == "finding"]
     record["cascades"] += [rid for k, _, rid in imp if k == "cascade"]
@@ -3159,7 +3169,13 @@ def allocation_gaps(persona: str | None = None) -> list[dict]:
             continue
         # A goal with one end date (S/M) is planned in steps, not given weekly time — the
         # "verified goal with no plan" sweep (tools/project_plan.py) covers it (§ 4.3).
-        if str(g.get("size") or "").upper() in ("S", "M") or (has_plan and has_plan(gid, persona)):
+        # An L goal keeps its weekly time even once planned (rolling wave, goal network § 17): its
+        # steps are milestone work beside the recurring practice, not a replacement for it.
+        # Only under `rolling_wave`: off, an L goal with steps (the M-then-resized route) is
+        # skipped as in phase 2 (Fable diff review L9).
+        size = str(g.get("size") or "").upper()
+        wave_l = size == "L" and _flag("rolling_wave")
+        if size in ("S", "M") or (not wave_l and has_plan and has_plan(gid, persona)):
             continue
         hashes = linked.get(gid)
         if not hashes:
@@ -3940,6 +3956,9 @@ def _record_slips(persona: str, today: date) -> int:
             s = slips.get(tid) or {"first": day.isoformat(), "days": 0}
             if s.get("last") != day.isoformat():
                 s.update(days=int(s.get("days") or 0) + 1, last=day.isoformat())
+                # The dates themselves, the last fortnight's: a count cannot say whether four
+                # slips fell in one week (goal network § 17, re-vet trigger 1; Fable L5).
+                s["recent"] = (list(s.get("recent") or []) + [day.isoformat()])[-14:]
                 slips[tid] = s
                 n += 1
     slips = {k: v for k, v in slips.items()
@@ -4286,6 +4305,19 @@ def refresh_tick() -> str:
                 notes.append(note)
         except Exception as exc:  # noqa: BLE001 — never costs the day its plan
             notes.append(f"ranking review failed: {type(exc).__name__}")
+        # Goal network phase 3 (§ 17): each planned goal's likely finish, and the re-vet
+        # triggers — after the slips are recorded, which trigger 1 reads. Code only.
+        try:
+            from tools.goal_network import finish_daily, revet_daily
+            n = finish_daily(persona, today)
+            if n:
+                notes.append(f"{n} finish alert(s)")
+            n = revet_daily(persona, today)
+            if n:
+                notes.append(f"{n} re-vet(s) fired")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[day_plan] goal network daily failed: {exc}")
+            notes.append(f"goal network failed: {type(exc).__name__}")
     # Before `current()`, so a prep opened now is placed in this same tick (synth plan § 9).
     try:
         note = _prep_sweep(persona, _load_state(persona))
@@ -4298,7 +4330,12 @@ def refresh_tick() -> str:
     # on a worker; its steps are placed by the next tick's build, with no reshuffle (R5).
     planning = False
     try:
-        from tools.project_plan import start_planning
+        # Rolling wave (§ 17): a milestone whose last step closed queues the next one's
+        # expansion here, so it can start in this same tick, under the same cap.
+        from tools.project_plan import advance_waves, start_planning
+        n = advance_waves(persona)
+        if n:
+            notes.append(f"{n} milestone(s) queued")
         planning = start_planning(persona)
     except Exception as exc:  # noqa: BLE001 — a planner fault never costs the day its plan
         logger.warning(f"[day_plan] project planner failed to start: {exc}")
@@ -4584,7 +4621,10 @@ def remind_later(task_id: str, minutes: int = 0, persona: str | None = None,
                     "at": at.isoformat(timespec="seconds")})
         st["reminders"] = rem
         _write_json(_state_path(persona), st)
-    _log("remind_requested", persona, minutes=None if tomorrow else minutes, tomorrow=tomorrow)
+    # The task id is kept (an id, never words) so a goal's "not yet" taps count towards its re-vet
+    # (goal network § 17, trigger 1); "not yet" otherwise leaves no lasting trace.
+    _log("remind_requested", persona, minutes=None if tomorrow else minutes, tomorrow=tomorrow,
+         ref=ref.split("@", 1)[0])
     return f"I'll remind you {'tomorrow ' if tomorrow else ''}at {at:%H:%M}."
 
 

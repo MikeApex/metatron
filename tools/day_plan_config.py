@@ -40,6 +40,18 @@ _DEFAULTS: dict = {
         # Phase 3. A missing or broken file means the dry run: nothing parked, nothing noticed.
         "back_burner": False, "back_burner_dry_run": True, "weekly_priorities": False,
         "ranking_signals": False,
+        # Goal–task network phase 3, part A. Off = phase 2 exactly.
+        "rolling_wave": False, "projected_finish": False, "revet": False,
+    },
+    # Goal–task network phase 3, part A (archive/plans/goal_task_network_plan_2026-11-18.md
+    # § 17). Read by tools/goal_network.py and tools/project_plan.py through `goal_network()`.
+    "goal_network": {
+        "l_horizon_days": 365, "max_milestones": 8,
+        "default_weekly_minutes": 150, "pace_min_steps": 2,
+        "finish_margin_days": {"M": 3, "L": 14},
+        "revet": {"window_days": 7, "noncompliance_days": 4, "rearm_days": 28,
+                  "checkpoints_days": {"L": [14, 42]}, "every_days": {"L": 91},
+                  "per_week": 1, "max_shows": 3},
     },
     "replaces_jobs": ["companion_checkin"],
     "score": {
@@ -114,6 +126,11 @@ def flag(name: str) -> bool:
 
 def limit(name: str):
     return (load().get("limits") or {}).get(name, _DEFAULTS["limits"].get(name))
+
+
+def goal_network() -> dict:
+    """The goal network's phase 3 tuning (rolling wave, projected finish, re-vet)."""
+    return load().get("goal_network") or copy.deepcopy(_DEFAULTS["goal_network"])
 
 
 def score_weights() -> dict:

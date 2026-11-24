@@ -247,8 +247,9 @@ weekly:
   slipping_max: 5
   # Of those, at most this many QUESTIONS a week (keep, date or drop?) — the rest wait for another
   # week (Fable diff review #7: a first look-back of five questions is the "managed" failure;
-  # research § 7: repeats and load are where acceptance collapses). Heuristic.
-  questions_max: 2
+  # research § 7: repeats and load are where acceptance collapses). Heuristic. Raised 2 → 5 by
+  # Mike, 2026-11-24, when goal re-vet questions joined this queue (goal network plan § 17).
+  questions_max: 5
   # A keep-in-touch or upkeep clock is offered when it is this far through its wished cadence
   # (1.0 = due today). Heuristic.
   clock_min_ratio: 0.8

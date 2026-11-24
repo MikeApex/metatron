@@ -1680,10 +1680,13 @@ def _():
     assert not any("Saturday instead" in x for x in m["moved"]), m["moved"]
 
 
-@check("review (phase 3) #7/#10: at most two questions a week, the rest a count by kind; in "
-       "notices-only mode nothing is announced as being parked")
+@check("review (phase 3) #7/#10: at most `questions_max` questions a week (pinned at 2 here; it "
+       "ships at 5, Mike 2026-11-24), the rest a count by kind; in notices-only mode nothing is "
+       "announced as being parked")
 def _():
     _p3("bb_cap", _P3)
+    assert RK._DEFAULTS["weekly"]["questions_max"] == 5
+    RK._OVERRIDE = {"weekly": {"questions_max": 2}}       # the mechanism, at a cap of two
     ids = [_id(O.open_task(w, costs={"psychological": "major"}, costs_source="stated"))
            for w in ("Learn to juggle", "Frame the holiday photos", "Restring the guitar",
                      "Plant tulip bulbs")]

@@ -18,6 +18,17 @@ about $0.02 a call at the current reasoning-tier price, ~$0.04 after its introdu
 `project_plans_per_day` (default 6) caps a persona at ~$0.12/day (~$0.24 after), and the queue
 holds at most one request per end state. Unseen: steps the user never asked for — bounded
 because only a goal taken on (vetted) is ever planned, and a refused plan writes nothing.
+
+Phase 3, part A (plan § 17) — ROLLING WAVE, behind `rolling_wave`. An L goal is planned only
+after the Goals Interviewer's FULL pass (`vetted.pass == "full"`; Mike 2026-11-24: "2 questions
+isn't nearly enough for an L goal"). The planner returns the next milestone as steps and every
+later one as an outline — kept on this request (`milestones`), never as a ledger row, so no
+reader of the task list can place, show, judge, park or dedupe against one (the R7 leak class).
+When the last step of the current milestone closes, `advance_waves` (every tick) queues the next
+one's expansion through the same queue, worker and daily cap (§ 10 R8); a milestone that closed
+with no step done is `stalled` instead — more steps for a user ignoring these is the wrong
+answer, and the re-vet (tools/goal_network.py) asks about it. Expansions are said to no one: the
+next step simply appears. Run cost: one planner call per milestone, a few a month per L goal.
 """
 from __future__ import annotations
 
@@ -74,6 +85,24 @@ def _flag() -> bool:
     return _D()._flag("project_planner")
 
 
+def _wave_flag() -> bool:
+    return _flag() and _D()._flag("rolling_wave")
+
+
+def _gn() -> dict:
+    try:
+        from tools import day_plan_config as C
+        return C.goal_network()
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _full_pass(end: dict | None) -> bool:
+    """Has the Goals Interviewer talked this L goal through in full (plan § 4.2's L row)? Only
+    `vet_goal` writes `pass`, and writes "full" only when the calling agent is the Interviewer."""
+    return bool(end and end.get("pass") == "full")
+
+
 def _limit(name: str, default):
     try:
         v = _D()._limit(name)
@@ -119,10 +148,17 @@ def _end(part_of: str, persona: str | None = None) -> dict | None:
     g = O._goal_index().get(pid)
     if not g:
         return None
+    vetted = g.get("vetted") if isinstance(g.get("vetted"), dict) else {}
+    try:
+        wm = int(g.get("weekly_minutes") or vetted.get("weekly_minutes") or 0) or None
+    except (TypeError, ValueError):
+        wm = None
     return {"kind": "goal", "id": pid, "title": str(g.get("title") or pid),
             "deadline": str(g.get("due") or "")[:10] or None,
             "status": str(g.get("status") or "active"), "size": str(g.get("size") or "").upper(),
-            "what": str(g.get("shareable_what") or "")[:300], "vetted": bool(g.get("vetted"))}
+            "what": str(g.get("shareable_what") or "")[:300], "vetted": bool(g.get("vetted")),
+            "pass": vetted.get("pass"), "weekly_minutes": wm,
+            "goal_kind": str(g.get("kind") or "goal")}
 
 
 def _open_steps(end_id: str, persona: str | None = None) -> list[dict]:
@@ -191,8 +227,10 @@ def plan_project(part_of: str, size: str = "", weekly_minutes: int | None = None
         return ("Small enough to be one task — open it with open_task instead. Nothing was "
                 "queued.")
     if size == "L":
-        return ("A large goal is talked through properly before it is planned — not yet. It stays "
-                "as being considered. Nothing was queued.")
+        if not _wave_flag():
+            return ("A large goal is talked through properly before it is planned — not yet. It "
+                    "stays as being considered. Nothing was queued.")
+        return _plan_large(end, persona, weekly_minutes, note)
     if size != "M":
         return "error: say how big it is — size M (hours to days, one end date). Nothing was queued."
     if end["kind"] == "goal" and not end.get("vetted"):
@@ -209,6 +247,76 @@ def plan_project(part_of: str, size: str = "", weekly_minutes: int | None = None
     except (TypeError, ValueError):
         wm = None
     return _queue(end, size, persona, weekly_minutes=wm, note=note)
+
+
+def _plan_large(end: dict, persona: str, weekly_minutes=None, note: str = "") -> str:
+    """An L goal, under `rolling_wave`: queued only once the Interviewer's full pass is on record,
+    with the time a week it gets, and a date ahead if it has one (else `l_horizon_days`)."""
+    if end["kind"] != "goal":
+        return ("error: an obligation has one end date — plan it as size M. Nothing was queued.")
+    if not _full_pass(end):
+        # Mike, 2026-11-24: the two-question short pass is not enough to put a large goal's steps
+        # on someone's days — the Goals Interviewer's full talk-through comes first.
+        return ("A goal this size is talked through properly with the user before anything is "
+                "planned — that conversation comes first. It keeps its weekly time meanwhile. "
+                "Nothing was queued.")
+    dl = _O()._d(end.get("deadline"))
+    if dl and dl <= _D()._today():
+        return ("error: its date has passed — set a new one first, or clear it. Nothing was "
+                "queued.")
+    if _open_steps(end["id"], persona):
+        return f"{end['title']} is already planned — read_plan shows the steps if they ask."
+    try:
+        wm = int(weekly_minutes) if weekly_minutes not in (None, "") else end.get("weekly_minutes")
+    except (TypeError, ValueError):
+        wm = end.get("weekly_minutes")
+    if not wm or int(wm) < 10:
+        return ("error: a large goal is planned against the time a week the user gives it — pass "
+                "weekly_minutes (what they said). Nothing was queued.")
+    prev = _load(persona)["requests"].get(end["id"]) or {}
+    if any(m.get("status") != "done" for m in prev.get("milestones") or []):
+        # A wave plan already exists (Fable S5a): plan its next milestone, keeping the map, the
+        # waves done and the finish record — never a fresh first wave that forgets them.
+        return _requeue_wave(end, persona, int(wm), note)
+    return _queue(end, "L", persona, weekly_minutes=int(wm), note=note)
+
+
+def _requeue_wave(end: dict, persona: str, weekly_minutes: int, note: str = "",
+                  by: str = "synthesizer") -> str:
+    """Queue the expansion of the milestone a wave plan is stuck on: a stalled one, else the
+    current one, else the first still pending."""
+    D = _D()
+    with D._locked(persona):
+        st = _load(persona)
+        r = st["requests"].get(end["id"]) or {}
+        if r.get("status") in ("queued", "inflight"):
+            return f"{end['title']} is already being planned — nothing more to do."
+        ms = r.get("milestones") or []
+        # A current milestone whose steps are closed with one done is finished, even if the tick
+        # that would say so has not run yet (verify pass N3) — never planned a second time.
+        rows = {t["id"]: t for t in _O()._load(persona)}
+        ids = r.get("ids") or []
+        cur = next((x for x in ms if x.get("status") == "current"), None)
+        if (cur and ids and not any((rows.get(i) or {}).get("status") == "open" for i in ids)
+                and any((rows.get(i) or {}).get("status") == "done" for i in ids)):
+            cur.update(status="done", done_at=D._now().isoformat(timespec="seconds"))
+        m = (next((x for x in ms if x.get("status") == "stalled"), None)
+             or next((x for x in ms if x.get("status") == "current"), None)
+             or next((x for x in ms if x.get("status") == "pending"), None))
+        if not m:
+            return f"{end['title']} has no stage left to plan."
+        m["status"] = "pending"
+        r.update(status="queued", expand=m["key"], weekly_minutes=weekly_minutes, by=by,
+                 queued_at=D._now().isoformat(timespec="seconds"))
+        if str(note or "").strip():
+            r["note"] = str(note).strip()[:300]
+        for k in ("call_failures", "not_before", "expand_failures", "wave_failed", "error"):
+            r.pop(k, None)
+        _save(st, persona)
+    _log("project_wave_queued", persona, end=end["id"], milestone=m["key"], by=by)
+    return (f"Queued: the next part of {end['title']} will be broken into small steps, and the "
+            f"first will appear on their list on a day with room. Tell them in a few everyday "
+            f"words that it's under way; ask nothing about its steps now.")
 
 
 # --- the worker (R8) ---------------------------------------------------------------------------
@@ -282,6 +390,21 @@ def _playbook(title: str, what: str = "") -> str | None:
             text = p.read_text()
         except OSError:
             continue
+        # `applies_when: a, b | c, d` (phase 3 § 17): a whole word from EVERY group must be there
+        # — "speaking" + "Bulgarian" — so one playbook covers every language without a file each,
+        # and "public speaking" (no language) or "Bulgarian taxes" (no learning word) does not
+        # match. Plain words, as `applies_to`.
+        w = re.search(r"^applies_when:\s*(.+)$", text, re.M)
+        if w:
+            def hit(entry: str) -> bool:
+                entry = entry.strip().lower()
+                # A phrase ("sign language") is matched as written; a word as a plain word.
+                return (f" {entry} " in f" {' '.join(re.findall(r'[a-z0-9]+', low))} "
+                        if " " in entry else O._tstem(entry) in toks)
+
+            groups = [[x for x in g.split(",") if x.strip()] for g in w.group(1).split("|")]
+            if groups and all(g and any(hit(x) for x in g) for g in groups):
+                return re.sub(r"<!--.*?-->", "", text, flags=re.S).strip()
         m = re.search(r"^applies_to:\s*(.+)$", text, re.M)
         if not m:
             continue
@@ -315,12 +438,15 @@ def _payload(req: dict, persona: str) -> dict:
     D = _D()
     end = _end(req["id"], persona) or {"title": req.get("title"), "id": req["id"],
                                        "kind": req.get("kind")}
+    if end.get("deadline") is not None or end.get("kind") == "goal":
+        # The date NOW, not the one queued with (Fable S3) — `validate` reads the same `req`.
+        req["deadline"] = end.get("deadline")
     try:
         from tools.ambient import _get_timezone
         tz = _get_timezone() or ""
     except Exception:  # noqa: BLE001
         tz = ""
-    return {
+    out = {
         "today": D._today().isoformat(), "timezone": tz,
         "end_state": {"title": end.get("title"), "what": end.get("what") or "",
                       "deadline": req.get("deadline"), "kind": req.get("kind"),
@@ -332,6 +458,107 @@ def _payload(req: dict, persona: str) -> dict:
         "open_tasks": _adoptable(end, persona) if end.get("title") else [],
         "playbook": _playbook(str(end.get("title") or ""), str(end.get("what") or "")),
     }
+    if req.get("size") == "L":
+        out["wave"] = _wave_payload(req)
+        if req.get("expand"):
+            out["open_tasks"] = []         # an expansion adopts nothing: the plan owns its rows
+    return out
+
+
+def _horizon(req: dict) -> date:
+    """The furthest an L plan may reach: the goal's own date, else `l_horizon_days` out."""
+    D = _D()
+    dl = _O()._d(req.get("deadline"))
+    return dl or D._today() + timedelta(days=int(_gn().get("l_horizon_days") or 365))
+
+
+def _expand_window(m: dict, req: dict) -> tuple[date, date]:
+    """The window an outline is broken into steps over. A milestone reached late keeps its
+    length: it starts today and runs at least as long as its minutes need at the weekly time —
+    never past the horizon. The move is recorded on the milestone by the worker."""
+    D, O = _D(), _O()
+    today = D._today()
+    ef = max(O._d(m.get("eligible_from")) or today, today)
+    due = O._d(m.get("due")) or _horizon(req)
+    wm = max(10, int(req.get("weekly_minutes") or _gn().get("default_weekly_minutes") or 150))
+    need = timedelta(days=max(7, -(-int(m.get("minutes") or 0) * 7 // wm)))
+    due = min(max(due, ef + need), _horizon(req))
+    return ef, max(due, ef)
+
+
+def _wave_payload(req: dict) -> dict:
+    ms = req.get("milestones") or []
+    base = {"horizon": _horizon(req).isoformat(),
+            "max_milestones": int(_gn().get("max_milestones") or 8)}
+    key = req.get("expand")
+    if not key:
+        return {**base, "mode": "first"}
+    m = next((x for x in ms if x.get("key") == key), {})
+    ef, due = _expand_window(m, req)
+    return {**base, "mode": "expand",
+            "milestone": {"what": m.get("what"), "minutes": m.get("minutes"),
+                          "eligible_from": ef.isoformat(), "due": due.isoformat()},
+            "done": [x.get("what") for x in ms if x.get("status") == "done"],
+            "later": [x.get("what") for x in ms if x.get("status") == "pending"
+                      and x.get("key") != key]}
+
+
+def validate_milestones(result, payload: dict) -> tuple[list[dict], list[str]]:
+    """The outlines of a first wave (§ 4.3 rolling wave): each needs a window inside the horizon
+    and a total estimate in minutes — no 90-minute cap, since an outline is never placed. The
+    first is the milestone the steps are for. Ordered by `due`. ([], []) for any other payload."""
+    O = _O()
+    wave = payload.get("wave") or {}
+    if wave.get("mode") != "first":
+        return [], []
+    errors: list[str] = []
+    ms = result.get("milestones") if isinstance(result, dict) else None
+    if not isinstance(ms, list) or not ms:
+        return [], ["`milestones` must be a non-empty list for a large goal — the first is the "
+                    "one this answer's steps are for"]
+    mx = int(wave.get("max_milestones") or 8)
+    if len(ms) > mx:
+        errors.append(f"at most {mx} milestones")
+    today, horizon = O._d(payload.get("today")), O._d(wave.get("horizon"))
+    out: list[dict] = []
+    seen: set = set()
+    prev = None
+    for i, m in enumerate(ms):
+        if not isinstance(m, dict):
+            errors.append(f"milestone {i} is not an object")
+            continue
+        key = str(m.get("key") or f"m{i + 1}")
+        what = str(m.get("what") or "").strip()
+        if not what:
+            errors.append(f"milestone {key}: no `what`")
+        if key in seen:
+            errors.append(f"milestone {key}: key used twice")
+        seen.add(key)
+        try:
+            minutes = int(m.get("minutes"))
+        except (TypeError, ValueError):
+            minutes = 0
+        if minutes < 5:
+            errors.append(f"milestone {key}: `minutes` — its total estimate — must be at least 5")
+        ef, due = O._d(m.get("eligible_from")), O._d(m.get("due"))
+        if not ef or not due:
+            errors.append(f"milestone {key}: `eligible_from` and `due` (YYYY-MM-DD) are required")
+        else:
+            if today and ef < today:
+                errors.append(f"milestone {key}: eligible_from {ef} is in the past")
+            if ef > due:
+                errors.append(f"milestone {key}: eligible_from is after due")
+            if horizon and due > horizon:
+                errors.append(f"milestone {key}: due {due} is after {horizon}")
+            if prev and due < prev:
+                errors.append(f"milestone {key}: milestones go in order of their `due`")
+            prev = due
+        out.append({"key": key, "what": what[:160], "minutes": minutes,
+                    "eligible_from": ef.isoformat() if ef else None,
+                    "due": due.isoformat() if due else None, "status": "pending"})
+    if out:
+        out[0]["status"] = "current"
+    return out, errors
 
 
 def _call_model(payload: dict, persona: str) -> str:
@@ -363,6 +590,18 @@ def validate(result, req: dict, payload: dict) -> tuple[str | None, list[dict], 
         errors.append(f"at most {_MAX_STEPS} steps")
     today = O._d(payload.get("today"))
     deadline = O._d(req.get("deadline"))
+    wave = payload.get("wave") or {}
+    floor = None
+    if wave.get("mode") == "expand":
+        # Steps of one milestone stay inside its window (rolling wave, § 4.3).
+        deadline = O._d((wave.get("milestone") or {}).get("due")) or deadline
+        floor = O._d((wave.get("milestone") or {}).get("eligible_from"))
+    elif wave.get("mode") == "first":
+        first = (result.get("milestones") or [{}])[0] if isinstance(result.get("milestones"),
+                                                                    list) else {}
+        first = first if isinstance(first, dict) else {}
+        deadline = O._d(first.get("due")) or O._d(wave.get("horizon")) or deadline
+        floor = O._d(first.get("eligible_from"))
     cap = int((payload.get("limits") or {}).get("max_step_minutes") or 90)
     offered = {t["id"] for t in payload.get("open_tasks") or []}
     clean: list[dict] = []
@@ -397,6 +636,9 @@ def validate(result, req: dict, payload: dict) -> tuple[str | None, list[dict], 
             errors.append(f"step {key}: eligible_from {ef} is in the past")
         if ef and due and ef > due:
             errors.append(f"step {key}: eligible_from is after due")
+        if ef and floor and ef < floor:
+            # A milestone's steps start no earlier than the milestone (Fable L4).
+            errors.append(f"step {key}: eligible_from {ef} is before its milestone starts ({floor})")
         adopt = str(s.get("adopt") or "").strip()
         if adopt and (adopt not in offered or adopt in adopted):
             errors.append(f"step {key}: `adopt` must be one of the open_tasks ids, once")
@@ -442,6 +684,61 @@ def _open_steps_for(req: dict, steps: list[dict]) -> list[dict]:
     return rows
 
 
+_EXPAND_TRIES = 3
+
+
+def _fail(persona: str, end_id: str, gen: int, req: dict, error: str, **fields) -> None:
+    """A plan that could not be made. A first plan: `needs_plan`, said once. An EXPANSION (Fable
+    S5b): tried again the next day, up to `_EXPAND_TRIES`, keeping the map; only then said — as
+    the next stage, not as the whole goal "could not be broken into steps"."""
+    if not req.get("expand"):
+        _finish(persona, end_id, gen, status="needs_plan", said=None, error=error, **fields)
+        return
+    tries = int(req.get("expand_failures") or 0) + 1
+    if tries < _EXPAND_TRIES:
+        _finish(persona, end_id, gen, status="queued", expand_failures=tries, error=error,
+                not_before=(_D()._now() + timedelta(days=1)).isoformat(timespec="seconds"),
+                **fields)
+        return
+    _finish(persona, end_id, gen, status="needs_plan", said=None, error=error,
+            expand_failures=tries, wave_failed=req["expand"], **fields)
+
+
+def _check(raw: str, req: dict, payload: dict) -> tuple[str | None, list[dict], list[str], list]:
+    """`validate` (whose three-value shape the fixture runner reads) plus, for a first wave, the
+    milestone outlines."""
+    parsed = _D()._extract_json(raw)
+    size, steps, errors = validate(parsed, req, payload)
+    ms, merrs = validate_milestones(parsed, payload)
+    return size, steps, errors + merrs, ms
+
+
+def _wave_fields(req: dict, payload: dict, ids: list[str], first_ms: list[dict]) -> dict:
+    """What a written wave records on the request. A first wave: its outlines, the first one
+    current, said once ("it's planned"). An expansion: that outline current with the window its
+    steps were planned over (a move recorded), said to no one — the next step just appears."""
+    D = _D()
+    now = D._now().isoformat(timespec="seconds")
+    if not req.get("expand"):
+        ms = first_ms
+        key = ms[0]["key"] if ms else None
+        return {"status": "planned", "said": None, "ids": ids, "milestones": ms,
+                "waves": [{"key": key, "ids": ids, "at": now}]}
+    key = req["expand"]
+    win = (payload.get("wave") or {}).get("milestone") or {}
+    ms = []
+    for m in req.get("milestones") or []:
+        m = dict(m)
+        if m.get("key") == key:
+            if (win.get("eligible_from"), win.get("due")) != (m.get("eligible_from"), m.get("due")):
+                m["moved"] = {"from": [m.get("eligible_from"), m.get("due")], "at": now[:10]}
+                m["eligible_from"], m["due"] = win.get("eligible_from"), win.get("due")
+            m["status"] = "current"
+        ms.append(m)
+    return {"status": "planned", "said": "silent", "ids": ids, "milestones": ms, "expand": None,
+            "waves": (req.get("waves") or []) + [{"key": key, "ids": ids, "at": now}]}
+
+
 def _finish(persona: str, end_id: str, gen: int, **fields) -> bool:
     D = _D()
     with D._locked(persona):
@@ -466,7 +763,7 @@ def _worker(persona: str, end_id: str, gen: int, req: dict) -> None:
             raw = _call_model(payload, persona)
         except Exception as exc:  # noqa: BLE001 — a spend refusal or a dead call
             raw, outcome = "", f"call_failed:{type(exc).__name__}"
-        size, steps, errors = validate(D._extract_json(raw), req, payload)
+        size, steps, errors, ms = _check(raw, req, payload)
         bigger = bool(size and _RANK[size] > _RANK.get(req["size"], 1) and not req.get("size_confirmed"))
         if outcome == "failed" and errors and not bigger:
             # One re-ask, told what was wrong (§ 4.3). Not after a failed call — a spend refusal
@@ -476,7 +773,7 @@ def _worker(persona: str, end_id: str, gen: int, req: dict) -> None:
                 raw = _call_model({**payload, "previous_errors": errors[:8]}, persona)
             except Exception as exc:  # noqa: BLE001
                 raw, outcome = "", f"retry_call_failed:{type(exc).__name__}"
-            size, steps, errors = validate(D._extract_json(raw), req, payload)
+            size, steps, errors, ms = _check(raw, req, payload)
         if size and _RANK[size] > _RANK.get(req["size"], 1) and not req.get("size_confirmed"):
             # R3: bigger than it was vetted as — nothing is written; it goes back for vetting at
             # the larger depth.
@@ -492,13 +789,11 @@ def _worker(persona: str, end_id: str, gen: int, req: dict) -> None:
                 _finish(persona, end_id, gen, status="queued", call_failures=tries,
                         not_before=retry_at)
                 return
-            _finish(persona, end_id, gen, status="needs_plan", said=None, call_failures=tries,
-                    error=outcome)
+            _fail(persona, end_id, gen, req, outcome, call_failures=tries)
             return
         if outcome != "failed" or errors:
             outcome = outcome if outcome != "failed" else "invalid"
-            _finish(persona, end_id, gen, status="needs_plan", said=None,
-                    error="; ".join(errors[:4]) if errors else outcome)
+            _fail(persona, end_id, gen, req, "; ".join(errors[:4]) if errors else outcome)
             return
         end = _end(end_id, persona)
         why = _end_usable(end)
@@ -515,12 +810,16 @@ def _worker(persona: str, end_id: str, gen: int, req: dict) -> None:
         res = _O().open_plan(_open_steps_for(req, steps), persona=persona, created_by="project_planner")
         if not res.get("ok"):
             outcome = "refused"
-            _finish(persona, end_id, gen, status="needs_plan", said=None,
-                    error=str(res.get("error") or "refused")[:200])
+            _fail(persona, end_id, gen, req, str(res.get("error") or "refused")[:200])
             return
         outcome = "planned"
-        _finish(persona, end_id, gen, status="planned", said=None,
-                ids=[v for k, v in res["ids"].items() if k != "__end"],
+        ids = [v for k, v in res["ids"].items() if k != "__end"]
+        if req.get("size") == "L":
+            outcome = "expanded" if req.get("expand") else "planned"
+            _finish(persona, end_id, gen, **_wave_fields(req, payload, ids, ms),
+                    adopted=res.get("adopted") or [], planner_size=size)
+            return
+        _finish(persona, end_id, gen, status="planned", said=None, ids=ids,
                 adopted=res.get("adopted") or [], planner_size=size)
     finally:
         if outcome == "superseded":
@@ -544,9 +843,21 @@ def sweep_unplanned(persona: str | None = None) -> int:
     today = D._today()
     st = _load(persona)
     queued = 0
+    wave = _wave_flag()
     for gid, g in O._goal_index().items():
-        if (str(g.get("status") or "active") != "active" or str(g.get("size") or "").upper() != "M"
+        size = str(g.get("size") or "").upper()
+        if (str(g.get("status") or "active") != "active" or size not in ("M", "L")
                 or not g.get("vetted") or gid in st["requests"]):
+            continue
+        if size == "L":
+            # Rolling wave (§ 17): an L goal talked through in full, with its weekly time on
+            # record, is planned once like an M one. Off: L goals are never queued (phase 2).
+            end = _end(gid, persona)
+            if (wave and end and not _end_usable(end) and _full_pass(end)
+                    and end.get("weekly_minutes") and not _open_steps(gid, persona)
+                    and not (O._d(end.get("deadline")) and O._d(end["deadline"]) <= today)):
+                _queue(end, "L", persona, weekly_minutes=end["weekly_minutes"], by="sweep")
+                queued += 1
             continue
         dl = O._d(g.get("due"))
         if not dl or dl <= today or _open_steps(gid, persona):
@@ -556,6 +867,100 @@ def sweep_unplanned(persona: str | None = None) -> int:
             _queue(end, "M", persona, by="sweep")
             queued += 1
     return queued
+
+
+def advance_waves(persona: str | None = None) -> int:
+    """Every tick, under `rolling_wave` (§ 17): an L plan whose current milestone has no open step
+    left moves on. With at least one of its steps done, the milestone is done and the next outline
+    is queued for expansion — the same queue, worker and daily cap (§ 10 R8), so it starts in this
+    tick if the cap allows; no reshuffle (R5). With none done it is `stalled`: nothing more is
+    expanded, and the re-vet asks about the goal. Code only; returns how many were queued."""
+    if not _wave_flag():
+        return 0
+    persona = resolve_persona(persona)
+    D, O = _D(), _O()
+    st = _load(persona)                 # the plan record first: a worker finishing between the
+    rows = {t["id"]: t for t in O._load(persona)}   # two reads leaves steps open, never stalled
+    todo = []
+    for rid, r in st["requests"].items():
+        if r.get("size") != "L" or r.get("status") != "planned" or not r.get("milestones"):
+            continue
+        cur = next((m for m in r["milestones"] if m.get("status") == "current"), None)
+        if not cur:
+            continue
+        ids = r.get("ids") or []
+        if any((rows.get(i) or {}).get("status") == "open" for i in ids):
+            continue
+        end = _end(rid, persona)
+        if _end_usable(end):
+            continue                                # parked, declined or done: nothing to move
+        # Steps the goal's own parking closed (`close_plan_of`) are neither done nor ignored
+        # (Fable L3): taken on again, the milestone is simply planned afresh.
+        by_goal = bool(ids) and all(any(isinstance(h, dict) and h.get("event") ==
+                                        "closed_with_end_state"
+                                        for h in (rows.get(i) or {}).get("history") or [])
+                                    for i in ids if (rows.get(i) or {}).get("status") != "done")
+        done_any = any((rows.get(i) or {}).get("status") == "done" for i in ids)
+        todo.append((rid, cur["key"], "done" if done_any else "parked" if by_goal else "none"))
+    if not todo:
+        return 0
+    now = D._now().isoformat(timespec="seconds")
+    queued = 0
+    with D._locked(persona):
+        st = _load(persona)
+        for rid, key, how in todo:
+            r = st["requests"].get(rid) or {}
+            if r.get("status") != "planned":
+                continue
+            ms = r.get("milestones") or []
+            cur = next((m for m in ms if m.get("key") == key and m.get("status") == "current"), None)
+            if not cur:
+                continue
+            if how == "parked":
+                r.update(status="queued", expand=key, queued_at=now, by="wave")
+                queued += 1
+                _log("project_wave_queued", persona, end=rid, milestone=key, by="retaken")
+                continue
+            if how == "none":
+                cur.update(status="stalled", stalled_at=now)
+                _log("project_wave_stalled", persona, end=rid, milestone=key)
+                continue
+            cur.update(status="done", done_at=now)
+            nxt = next((m for m in ms if m.get("status") == "pending"), None)
+            if not nxt:
+                r["waves_done"] = now[:10]
+                _log("project_waves_done", persona, end=rid)
+                continue
+            r.update(status="queued", expand=nxt["key"], queued_at=now, by="wave")
+            r.pop("call_failures", None)
+            r.pop("not_before", None)
+            queued += 1
+            _log("project_wave_queued", persona, end=rid, milestone=nxt["key"])
+        _save(st, persona)
+    return queued
+
+
+def replan_stalled(goal_id: str, persona: str | None = None) -> bool:
+    """A stalled milestone the user has chosen to keep (a re-vet answered `active`) is broken
+    into fresh steps — queued, under the same cap. False when there is nothing stalled."""
+    if not _wave_flag():
+        return False
+    persona = resolve_persona(persona)
+    D = _D()
+    if not _full_pass(_end(goal_id, persona)):
+        return False                       # the depth lapsed: talked through again first (L3)
+    with D._locked(persona):
+        st = _load(persona)
+        r = st["requests"].get(goal_id) or {}
+        cur = next((m for m in r.get("milestones") or [] if m.get("status") == "stalled"), None)
+        if not cur or r.get("status") in ("queued", "inflight"):
+            return False
+        cur["status"] = "pending"
+        r.update(status="queued", expand=cur["key"],
+                 queued_at=D._now().isoformat(timespec="seconds"), by="revet")
+        _save(st, persona)
+    _log("project_wave_queued", persona, end=goal_id, milestone=cur["key"], by="revet")
+    return True
 
 
 def has_plan(goal_id: str, persona: str | None = None) -> bool:
@@ -595,19 +1000,33 @@ def notices(persona: str | None = None) -> list[dict]:
             n["steps"] = len(steps)
         if r["status"] == "resize":
             n["planner_size"] = r.get("planner_size")
+        if r["status"] == "needs_plan" and r.get("wave_failed"):
+            n["stage"] = next((m.get("what") for m in r.get("milestones") or []
+                               if m.get("key") == r["wave_failed"]), None)
         out.append(n)
+    if D._flag("projected_finish"):
+        # A finish that moved past its date (§ 4.5, § 17), said once as Important — the day
+        # plan's block routes `late` items there; stamped like every other notice.
+        from tools.goal_network import finish_notices
+        out += finish_notices(st)
     return out
 
 
 def render(items: list[dict]) -> list[str]:
     lines = []
     for n in items:
+        if n["status"] == "late":
+            continue                               # rendered under Important (goal_network)
         if n["status"] == "planned":
             first = (f" Its first step — {n['first']} — is on their list from {n['from']}."
                      if n.get("first") else "")
             lines.append(f"\"{n['title']}\" is planned.{first} Say once, in a few everyday "
                          f"words, that it's planned and what its first step is; never list the "
                          f"other steps (read_plan has them if they ask).")
+        elif n["status"] == "needs_plan" and n.get("stage"):
+            lines.append(f"The next stage of \"{n['title']}\" — {n['stage']} — could not be "
+                         f"broken into steps. Say once that you'll work out that next part with "
+                         f"them, and ask one question about it.")
         elif n["status"] == "needs_plan":
             lines.append(f"\"{n['title']}\" could not be broken into steps. Say once that you'll "
                          f"need to work out what's involved with them, and ask one question "
@@ -629,6 +1048,12 @@ def mark_offered(ids: list[str], persona: str | None = None) -> None:
         with D._locked(persona):
             st = _load(persona)
             for i in ids:
+                if i.startswith("late:"):
+                    from tools.goal_network import mark_late_offered
+                    r = st["requests"].get(i[5:])
+                    if r:
+                        mark_late_offered(r)
+                    continue
                 r = st["requests"].get(i)
                 if r:
                     r["offered_at"] = now
@@ -653,6 +1078,13 @@ def note_said(reply: str, persona: str | None = None) -> int:
     live = [r for r in st["requests"].values() if not r.get("said") and D._dt(r.get("offered_at"))
             and now - D._dt(r["offered_at"]) <= _SAID_WINDOW]
     hits = []
+    # A finish alert on offer (§ 17): said only within the offer window, when the reply names it
+    # and carries the new date or the fix (Fable S2 — never on a stray "later").
+    from tools.goal_network import late_said
+    for r in st["requests"].values():
+        al = (r.get("finish") or {}).get("alert") or {}
+        if al.get("offers") and not al.get("said") and late_said(r, reply, now, _SAID_WINDOW):
+            hits.append("late:" + r["id"])
     for r in live:
         sig = _SIGNALS.get(r.get("status") or "")
         if not (sig and sig.search(reply)):
@@ -666,6 +1098,11 @@ def note_said(reply: str, persona: str | None = None) -> int:
     with D._locked(persona):
         st = _load(persona)
         for i in hits:
+            if i.startswith("late:"):
+                from tools.goal_network import mark_late_said
+                if i[5:] in st["requests"]:
+                    mark_late_said(st["requests"][i[5:]], now.isoformat(timespec="seconds"))
+                continue
             if i in st["requests"]:
                 st["requests"][i]["said"] = now.isoformat(timespec="seconds")
         _save(st, persona)
@@ -697,7 +1134,8 @@ def read_plan(part_of: str = "") -> str:
         return f"{title}: {state}."
     rows.sort(key=lambda t: (t.get("eligible_from") or t.get("due") or "", t.get("due") or ""))
     today = D._today()
-    lines = [f"{title}" + (f" — due {req.get('deadline')}" if req.get("deadline") else "") + ":"]
+    due = (end or {}).get("deadline") if end else req.get("deadline")      # the date now
+    lines = [f"{title}" + (f" — due {due}" if due else "") + ":"]
     for t in rows:
         if t.get("status") != "open":
             mark = t.get("status")
@@ -709,6 +1147,12 @@ def read_plan(part_of: str = "") -> str:
             mark = "now"
         lines.append(f"- {t['what']} ({mark}; by {t.get('due')}"
                      + (f", ~{t['minutes']} min" if t.get("minutes") else "") + ")")
+    # A rolling-wave plan's later milestones are outlines, not steps (§ 17): named, with their
+    # rough window, so the whole map is still the whole map.
+    for m in req.get("milestones") or []:
+        if m.get("status") == "pending":
+            lines.append(f"- later: {m.get('what')} (an outline, broken into steps when it comes "
+                         f"due; around {m.get('eligible_from')} to {m.get('due')})")
     return "\n".join(lines)
 
 

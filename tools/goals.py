@@ -110,6 +110,14 @@ def _next_id(goals: list, horizon: str) -> str:
     return f"{prefix}{n}"
 
 
+def _wave_on() -> bool:
+    try:
+        from tools import day_plan_config as C
+        return C.flag("rolling_wave")
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _calling_agent() -> str:
     """The agent whose tool call this is, from the request trace; "" when none is bound (a
     direct call, a test). Read, never trusted from an argument a model fills in."""
@@ -201,6 +209,29 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
         if not when:
             return "Error: a parked goal needs `revisit_on` (YYYY-MM-DD), the day to ask again."
         g["revisit_on"] = when
+    # The depth of an L vet (goal network phase 3 § 17): "full" only when the Goals Interviewer
+    # records it — read from the call trace, never an argument a model fills in — and a later
+    # re-vet that keeps the goal never lowers it. Rolling wave plans only a "full" one (Mike,
+    # 2026-11-24: "2 questions isn't nearly enough for an L goal").
+    # Fable diff review L9: "full" is written only while `rolling_wave` is on — off, the marker is
+    # phase 2's ("short"), and no Interviewer vet made before part B's re-interview exists can
+    # license wave planning the day the flag is flipped. L3: a parked or declined verdict carries
+    # the depth through, so a goal parked and taken on again keeps what it was talked through.
+    prev = g.get("vetted") if isinstance(g.get("vetted"), dict) else {}
+    depth_pass = None
+    if size == "L" and verdict == "active":
+        depth_pass = ("full" if prev.get("pass") == "full" or (
+            _calling_agent() == "goals_interviewer" and _wave_on()) else "short")
+    elif verdict in ("parked", "declined"):
+        depth_pass = prev.get("pass")
+    # The re-vet clock's anchor (Fable S6): when the goal was TAKEN ON — set on a fresh take-on,
+    # never moved by a re-vet that keeps it, so a "keep" answer does not push the next check-in
+    # out by a quarter. A goal already current with no anchor keeps its last vetting date.
+    was_current = str(g.get("status") or "") in CURRENT
+    if verdict == "active":
+        if not was_current or not g.get("taken_on"):
+            g["taken_on"] = (prev.get("date") if was_current and prev.get("date")
+                             else datetime.now().strftime("%Y-%m-%d"))
     g["status"] = verdict
     if size in _SIZES:
         g["size"] = size
@@ -211,8 +242,15 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
         ("displaces", str(displaces or "").strip() or None),
         ("priority", str(priority or "").strip() or None),
         ("by", by or _calling_agent() or None),
-        ("pass", "short" if size == "L" and verdict == "active" else None)) if v}
+        ("pass", depth_pass)) if v}
     _write(data)
+    # A goal asked about again (re-vet) — this verdict is the answer: recorded for the monthly
+    # review, and a stalled plan kept is given fresh steps. Never blocks the verdict.
+    try:
+        from tools.goal_network import note_answer
+        note_answer(str(g["id"]), verdict)
+    except Exception:  # noqa: BLE001
+        pass
     if verdict in ("parked", "declined"):
         _close_steps(str(g["id"]), verdict)
     elif verdict == "active":
@@ -400,6 +438,14 @@ def update_goal(
                 _write(data)
                 if fields.get("status") in ("parked", "declined", "completed"):
                     _close_steps(goal_id, fields["status"])
+                if fields.get("due"):
+                    # A new date is how an obligation's re-vet is answered ("is the date still
+                    # right?") — recorded like a vet's verdict (Fable L10). Never blocks.
+                    try:
+                        from tools.goal_network import note_answer
+                        note_answer(goal_id, "date_changed")
+                    except Exception:  # noqa: BLE001
+                        pass
                 return (f"Updated {h} goal {goal_id}: "
                         f"{', '.join(sorted(fields))} changed.")
 

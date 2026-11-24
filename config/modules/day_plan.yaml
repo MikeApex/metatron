@@ -104,6 +104,57 @@ flags:
   # satisfaction). Recording only — nothing a user sees. Off: nothing is written.
   # ON at the phase 3 deploy (Mike, 2026-11-23), so the first monthly review has a month to read.
   ranking_signals: true
+  # GOAL–TASK NETWORK PHASE 3, PART A (2026-11-24; goal_task_network_plan § 17). All three OFF;
+  # each off restores phase 2 exactly. Tuning in `goal_network:` below.
+  # `rolling_wave`: a large (L) goal the Goals Interviewer has talked through in full (Mike,
+  # 2026-11-24: "2 questions isn't nearly enough for an L goal") is planned one milestone at a
+  # time — the next milestone as small steps, later ones as rough outlines kept on the plan
+  # record, never on the task list — and the next is broken into steps when the last step of the
+  # current one closes, on the same queue and daily cap. Off: plan_project refuses an L goal.
+  rolling_wave: false
+  # `projected_finish`: each planned goal's likely finish is worked out daily from what is left
+  # and the pace the user actually keeps; when it passes the goal's date, or slips by more than
+  # the margin below, it is said once as Important with the new date and one fix. Code only.
+  projected_finish: false
+  # `revet`: a goal whose steps keep slipping (trigger 1), or a large goal at 2 weeks, 6 weeks,
+  # then each quarter (trigger 2), is asked about once — in the weekly look back (Mike,
+  # 2026-11-24), at most one goal a week — as a question, never a verdict. Detection is code.
+  # The asking and the answer are kept in ranking_signals.jsonl for the monthly review.
+  revet: false
+
+# Goal–task network phase 3, part A — one home for its tuning (plan § 17). Here, not a new file,
+# because the project planner's limits already live in `limits:` below and the loader re-reads
+# this file on change.
+goal_network:
+  # An L goal with no date of its own is planned no further out than this. Heuristic.
+  l_horizon_days: 365
+  # At most this many milestones in one L plan (the next, broken into steps, plus outlines).
+  max_milestones: 8
+  # The time a week a planned goal is assumed to get when the user gave none. Replaced by the
+  # pace actually kept (estimated minutes of done steps per week) once `pace_min_steps` steps of
+  # that plan are done — "durations correct from actuals" (§ 4.5). Heuristic.
+  default_weekly_minutes: 150
+  pace_min_steps: 2
+  # The finish is said again only when it slips later than the last date said by more than this
+  # (days), by size. Crossing the goal's own date is always said, once. Heuristic.
+  finish_margin_days: {M: 3, L: 14}
+  revet:
+    # Trigger 1: a goal's steps slipped, were skipped or got "not yet" on at least
+    # `noncompliance_days` distinct days within `window_days`. 4 in 7 is the worked example
+    # (plan § 4.2): repotting the basement plants proposed on at least four mornings 11-12 →
+    # 11-18, not done. After it fires it is quiet until answered, or `rearm_days` pass.
+    window_days: 7
+    noncompliance_days: 4
+    rearm_days: 28
+    # Trigger 2: days after the goal was vetted, then every `every_days` (plan § 4.2: "about 2
+    # weeks, 6 weeks, then each quarter"). L only — an M goal has one end date, and projected
+    # finish watches it. Obligations never get trigger 2: nobody chooses whether to file taxes.
+    checkpoints_days: {L: [14, 42]}
+    every_days: {L: 91}
+    # At most this many goals asked about a week, and a question unsaid after this many weekly
+    # reviews is let go.
+    per_week: 1
+    max_shows: 3
 
 replaces_jobs: [companion_checkin]
 

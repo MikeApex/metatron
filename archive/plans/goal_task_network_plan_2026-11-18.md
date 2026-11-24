@@ -561,3 +561,141 @@ HMRC and complete the tailoring questions"* — a step still waiting on it — o
 8. *"Disappointing a parent is likely vital, not missable"* (social cost); *"Personal trainer is a
    goal step"*; the brokerage backup and the insurance review confirmed vital. Recorded through
    the back-burner walkthrough (check 4), so the corrections land as Mike's own (`stated`).
+
+## 17. Phase 3, part A built — large goals in waves, finish dates watched, goals re-checked (2026-11-24)
+
+Built in one Opus 5.5 session from `archive/handoffs/2026-11-23-goal-network-phase-3a-build-prompt.md`.
+**Every new behaviour is behind its own flag, all OFF; nothing deployed.** Fable 5.2 reviewed the
+diff (six structural, eleven local findings, all reproduced or reasoned against the code, all
+fixed — table below).
+
+**Mike's rulings this session (2026-11-24):**
+1. **Where a re-vet lands:** one line in the weekly look back, at most one goal a week (option a).
+   *"As rec, but let's move the cap on the weekly to 5 questions."* — `ranking.yaml`
+   `weekly.questions_max` 2 → 5, which also lets more of the ranking's slipping questions through.
+   It had been 2 since the ranking's Fable review (#7: five questions in a first look back reads as
+   being managed); Mike ruled with the cap named.
+2. **When an L goal is planned:** *"Wait for full pass. 2 questions isn't nearly enough for an L
+   goal."* — rolling wave plans only an L goal whose `vetted.pass` is `full`, which only the Goals
+   Interviewer writes (read from the call trace) and only while `rolling_wave` is on. **Part B's
+   re-interview is the only path that will write it; until then rolling waves are inert for every
+   real goal**, and `rolling_wave` must not be switched on before part B lands.
+3. **The language playbook** is left to the end, with Mike involved — the end of this chat or a
+   new one. No dependency was missed: rolling waves plan without a playbook, and the attaching
+   code (`applies_when`) is built and tested against a stand-in.
+
+**Built.**
+1. **Rolling wave** (`rolling_wave`; `tools/project_plan.py`). `plan_project` accepts size L for a
+   fully vetted goal with weekly time (argument, or `weekly_minutes` on the goal). The planner
+   (Red: `project_planner.md` § A large goal) returns `milestones` — outcomes, each a window and a
+   total estimate, no 90-minute cap — and steps for the first only. **Deviation: outlines live on
+   the plan record (`projects.json` → `requests.<id>.milestones`), not as hidden `part_of` rows**,
+   so no task-list reader can place, show, judge, park or dedupe against one (the R7 leak class);
+   only the current milestone's steps are rows, as § 8 Ancillary asks. `advance_waves` (every tick)
+   queues the next expansion on the same queue, worker and daily cap when the current milestone's
+   last step closes with at least one done; with none done it is **stalled** (no more steps for a
+   user ignoring these; the re-vet asks), and steps closed by the goal's own parking re-plan the
+   milestone on re-activation. An expansion is said to no one. A failed expansion retries the next
+   day (3 tries), then is said as "the next stage". A late milestone keeps its length (its window is
+   moved and recorded). `read_plan` lists the outlines. An L goal keeps its weekly time
+   (`allocation_gaps`) while planned. The sweep plans a fully vetted L goal once.
+2. **Projected finish** (`projected_finish`; `tools/goal_network.py`). Daily: open steps in
+   prerequisite order, then outlines, one at a time at the weekly time given (else 150, then the
+   pace actually kept once two steps are done — estimated minutes of done steps per week since the
+   plan began; **not for L**, whose milestone minutes include practice no step records). Waiting
+   (`eligible_from`) and prerequisites respected. Said once, as an Important line in the day plan
+   block, when it crosses the goal's live date; said again only when the work grew or the pace fell
+   AND it moved later by more than `finish_margin_days` (M 3, L 14), at most twice a crossing; an
+   undated L goal only on such a slip. One fix: minutes a week, or a date when waiting alone runs
+   past it, when no extra time is needed, or when the need is implausible. Never said on a
+   `default` pace. Stamped said only inside the 15-minute offer window, naming the goal and carrying
+   the date or the fix.
+3. **Re-vet triggers 1 and 2** (`revet`; `tools/goal_network.py`, `tools/ranking_review.py`).
+   Trigger 1: a goal's steps slipped (the day planner's slip record, which now keeps its recent
+   dates), were dismissed, got "not yet" (the tap log now carries the task id), or a matching
+   intention was judged unfulfilled by the Accountability Index — on 4 distinct days in 7 (the
+   basement-plants evidence, § 4.2) — or a milestone stalled. Quiet until answered or 28 days.
+   Trigger 2: L goals at 14 and 42 days from when they were **taken on** (`taken_on`, not moved by a
+   "keep"), then every 91. Obligations never get trigger 2, and trigger 1 asks only about their
+   date and what would help. Each fires once per checkpoint; one goal a week goes into the look
+   back as `GOAL CHECK`, first among its questions, replacing a guarded question about one of that
+   goal's own tasks; a show counts once per week; let go after 3 weekly reviews unsaid. The answer
+   is `update_goal vet` (or a new `due` for an obligation). `revet_asked` / `revet_answer` rows go
+   to `ranking_signals.jsonl` (`source: goal_network`, ids and counts only), behind
+   `ranking_signals`. Conduct: one sentence in `synthesizer_scheduled_sessions.md` § Weekly review.
+4. **The playbook matcher:** `applies_when: a, b | c, d` — a word (or a phrase with a space) from
+   every group — so one language playbook covers every language; "public speaking" and "Bulgarian
+   taxes" do not match.
+
+**Config home:** a `goal_network:` block in `config/modules/day_plan.yaml`, beside the project
+planner's limits — one file the loader already re-reads on change, not a new one.
+
+**Tests.** `tests/test_goal_network_phase3.py` 41/41 (fixture personas, every meter stubbed; one
+check per review and verify finding). Phase 1 38/38, phase 2 36/36, `test_ranking_v2.py` 58/58 (the cap check
+now pins its cap at 2 to test the mechanism, and asserts 5 ships), `test_task_ranking.py` 21/21,
+the fixture runner 7/7, QA sweep 12/12. Known clean-HEAD failures unchanged: round-2 F8,
+`task_ledger_consult`'s dated event, the multi-user push `KeyError`. **Live planner pass**
+(`METATRON_LIVE_WAVE=1`, two reasoning-tier calls on a fixture goal, ~$0.05): a first wave of five
+outcome milestones and six steps, then an expansion of seven steps inside the second milestone's
+window — both valid.
+
+**Fable 5.2 diff review — all accepted and fixed:**
+
+| # | What a user would see | Fix |
+|---|---|---|
+| S1 | Two steps of a large goal done, and next day "it has slipped by months" | L pace is the weekly time given, never step minutes |
+| S2 | A finish alert recorded as said when the reply never said it ("we can look at the garden later") | offer window; title word plus a date or the fix; generic words dropped |
+| S3 | Moving the date — the alert's own advice — did not stop the alert | the end state's live date, read daily and in the planner's payload |
+| S4 | An untouched late plan re-alerted every 4 days, asking for 1,425 more minutes a week | a re-alert needs more work or a slower pace, at most twice a crossing; implausible needs become a date |
+| S5a | Planning a stalled L goal again erased its milestone map | an existing map is kept; the stuck milestone is expanded |
+| S5b | A failed expansion said "could not be broken into steps" about a goal already under way, and froze | retried next day, three times; then said as the next stage |
+| S6 | One "keep" pushed the next check-in from six weeks to most of a year | anchored to `taken_on`, which a keep does not move |
+| L1 | A new crossing never shown after an earlier unsaid alert; a stale alert read out after recovery | offers reset per crossing; back on time withdraws it |
+| L2 | A tight plan with no weekly time given alerted on day one with an invented history | no alert on a default pace; no "more minutes" when none are needed |
+| L3 | Re-taking a parked L goal asked "none of its steps got done?"; parking dropped the full pass | park-closed steps re-plan the milestone; the pass is carried through |
+| L4 | A milestone's steps could appear weeks before it starts | step `eligible_from` ≥ the milestone's |
+| L5 | One slip this week plus three six weeks ago read as "4 of the last 7 days" | the slip record keeps its dates; an old count is a run only if it fits |
+| L6 | An `at_risk` goal was never asked about | `goals.CURRENT` |
+| L7 | The goal check vanished after one review rendered it three times | one show per week |
+| L8 | Re-vet rows written with `ranking_signals` off | gated |
+| L9 | Three flag-off differences from phase 2 | `allocation_gaps` and the `full` marker gated on `rolling_wave`; the cap is Mike's ruling |
+| L10 | The weekly conduct asked an obligation whether it still fits; a new date never recorded as the answer | conduct carries the exception; a `due` change answers it |
+| L11 | Checks whose names claimed more than they proved | each finding has its own check, the plants now through the real slip recorder |
+
+**Fable verify pass (same reviewer, re-ran its reproductions):** 17 of 19 fixed. Found and fixed:
+(N1) the L2 fix silenced every alert on a default pace, so an ignored M plan with no weekly time was
+never told even past its date — now said once on hard facts only (the date passed, a step past its
+own date, or the waiting alone runs past it), with a new date as the fix and no pace claim; (N2)
+"maybe", "decide" and "mark" still read as month names — an alert now counts as said only with its
+OWN new date (weekday in full, or day number with its month) or the fix's words; (N3) `plan_project`
+in the minutes before a tick could re-plan a finished milestone — it now closes it and plans the
+next; (N4) `read_plan`'s header showed the queued date — now the live one.
+
+**Tier note:** agent files left the Red tier on 2026-11-24 (Mike, another chat, `10000b5`), so the
+`project_planner.md` edit is Amber; it was still made in the main session, never delegated.
+
+**Inert with every flag off, but not byte-identical to phase 2:** the slip record gains `recent`;
+the "not yet" log row gains `ref` (an id); `vet_goal` writes `taken_on`; `applies_when` is read if
+a playbook carries it (none does). Nothing reads any of them with the flags off.
+
+**Costs.**
+- *Build:* this session (Opus 5.5, high) plus the Fable review and verify — within the prompt's
+  ~$40–80 + ~$15–30.
+- *Run:* rolling wave — one reasoning-tier planner call per milestone (~$0.02–0.04; a retry at
+  most doubles one), a few a month per L goal, under the existing `project_plans_per_day` (6).
+  Projected finish and re-vet detection — code, zero tokens. A finish alert adds ~60 tokens to a
+  brief; a goal check ~100 to a weekly-review turn the user already has.
+- *Ancillary:* a few hundred bytes per plan on `projects.json`, rewritten daily; the slip record's
+  14 dates per slipping task; a few signal rows a month. The cap at 5 lets up to three more
+  questions into a weekly review.
+- *Unseen:* a false "late" or an unwanted goal check costs the user's attention, which no meter
+  reports — bounded by one alert per crossing (two re-alerts at most), no alert on an invented
+  pace, one goal a week, and let-go after three reviews.
+- *What persists:* milestone outlines, finish state and re-vet records on the plan record, owned by
+  their plan request and inert when the flags are off; nothing bills by time.
+
+**Not verified, for the live check** (`archive/handoffs/2026-11-24-goal-network-phase-3a-live-check-prompt.md`):
+whether Synth says a finish alert once and in its own words; whether a goal check is put as a
+question; the real pace on `mike`'s tax plan; and, after part B, a real L goal over two weeks.
+**Not built (part B):** the Goals Interviewer's re-interview, trigger 3, the `mike` goals
+walkthrough — `archive/handoffs/2026-11-24-goal-network-phase-3b-build-prompt.md`.

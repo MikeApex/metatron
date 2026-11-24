@@ -634,6 +634,18 @@ def weekly_material(persona: str, today: date, st: dict) -> dict:
         bt = next(((d or {}).get("back_burner") for _, d in sorted(trace.items(), reverse=True)
                    if (d or {}).get("back_burner")), {}) or {}
     live = _flag("back_burner") and not _flag("back_burner_dry_run")
+    # A goal asked about again (goal network phase 3 § 17, Mike 2026-11-24: it lands here, at
+    # most one goal a week). First among the questions — there is at most one, and it is about a
+    # whole goal — and it takes the place of a guarded question about one of that goal's own
+    # tasks, so the look back never asks about the same thing twice.
+    try:
+        from tools.goal_network import weekly_revet
+        revets = weekly_revet(persona, today)
+    except Exception:  # noqa: BLE001 — a fault here never costs the look back
+        revets = []
+    revet_goals = {gid for gid, _ in revets}
+    for gid, line in revets:
+        slipping.append(("revet", gid, line))
     if _flag("back_burner"):
         why_words = {"person": "it concerns someone", "obligation": "it is a money or legal matter",
                      "health": "it is about health", "goal": "it serves a goal",
@@ -641,6 +653,8 @@ def weekly_material(persona: str, today: date, st: dict) -> dict:
                      "contacts unreadable": "it may concern someone"}
         for r in bt.get("guarded") or []:
             t = by_id.get(r["task_id"])
+            if t and (t.get("goal_id") in revet_goals or t.get("part_of") in revet_goals):
+                continue
             if t and t.get("status") == "open" and not r.get("asked"):
                 slipping.append(("guarded", t["id"],
                                  f"\"{_title(t)}\" — not mentioned in {r['silent']} days, and "
@@ -685,8 +699,8 @@ def _shown_slipping(slipping: list[tuple[str, str, str]], wc: dict) -> tuple[lis
     `questions_max` questions a week (guarded, then keep-reschedule-drop) — the rest wait for
     next week, said as a count — and the small things about to be parked up to `slipping_max`
     in all."""
-    qmax, total = int(wc.get("questions_max", 2)), int(wc.get("slipping_max", 5))
-    qs = [x for x in slipping if x[0] in ("guarded", "weekly")]
+    qmax, total = int(wc.get("questions_max", 5)), int(wc.get("slipping_max", 5))
+    qs = [x for x in slipping if x[0] in ("revet", "guarded", "weekly")]
     notes = [x for x in slipping if x[0] == "notice"]
     shown = qs[:qmax]
     shown += notes[:max(0, total - len(shown))]
@@ -729,11 +743,18 @@ def weekly_block(persona: str | None, session: str | None, weekly: bool = False,
         lines.append("MOVED: " + ("; ".join(m["moved"]) if m["moved"] else "nothing this week"))
         if m["clash"]:
             lines.append("CLASH HELD: " + m["clash"])
-        if shown:
+        goal_checks = [x for k, _, x in shown if k == "revet"]
+        if goal_checks:
+            lines.append("GOAL CHECK (one question, never a verdict): " + "; ".join(goal_checks))
+        slip_lines = [x for k, _, x in shown if k != "revet"]
+        if slip_lines:
             lines.append("SLIPPING (guarded first; name each one): "
-                         + "; ".join(x for _, _, x in shown) + (f"; {extra}" if extra else ""))
+                         + "; ".join(slip_lines) + (f"; {extra}" if extra else ""))
         if m["clock"]:
             lines.append("ONE CLOCK: " + m["clock"])
+        if goal_checks:
+            from tools.goal_network import mark_shown
+            mark_shown([tid for k, tid, _ in shown if k == "revet"], persona)
         return "\n".join(lines)
     # The offer: a user turn, no weekly review yet, not said, at most once a day (Fable #8).
     if not user_turn or session is not None or has_weekly_review(persona):
@@ -785,6 +806,7 @@ def note_said(reply_text: str, persona: str | None = None) -> int:
     today = now.date().isoformat()
     sents = [(x, O._task_tokens(x)) for x in _sentences(reply)]
     n = 0
+    revet_said: list[str] = []
     with D._locked(persona):
         st = RK.load_state(persona)
         wo = st.get("weekly_offer") or {}
@@ -800,8 +822,20 @@ def note_said(reply_text: str, persona: str | None = None) -> int:
             seen = (st.get("back_burner") or {}).get("seen") or {}
             weekly = st.get("weekly") or {}
             said = set()
+            goals = None
             for e in pending:
                 for kind, tid in e.get("items") or []:
+                    if kind == "revet":
+                        # A goal, not a task: named by its title, asked as a question.
+                        if goals is None:
+                            goals = O._goal_index()
+                        gtoks = O._task_tokens(str((goals.get(tid) or {}).get("title") or ""))
+                        # One shared word is enough: at most one goal check is on offer a
+                        # week, and "how's the Bulgarian going?" names it with one.
+                        if any(toks & gtoks and _ASK_WORDS.search(x) for x, toks in sents):
+                            said.add(tid)
+                            revet_said.append(tid)
+                        continue
                     t = tasks.get(tid)
                     if not t:
                         continue
@@ -821,4 +855,8 @@ def note_said(reply_text: str, persona: str | None = None) -> int:
             st["weekly_offered"] = [{**e, "items": [i for i in e.get("items") or []
                                                     if i[1] not in said]} for e in pending]
         RK.save_state(st, persona)
+    if revet_said:
+        # After the lock: the re-vet's own record and its `revet_asked` signal row.
+        from tools.goal_network import mark_said
+        mark_said(revet_said, persona)
     return n

@@ -79,7 +79,7 @@ _DEFAULTS: dict = {
     "lookups": {"enabled": False, "per_day": 5, "refuse_figures": True},
     # Phase 3.
     "back_burner": {"days": 21, "notice_days": 14, "notice_lead_days": 7, "cod": 5},
-    "weekly": {"moved_max": 3, "moved_days": 7, "slipping_max": 5, "questions_max": 2,
+    "weekly": {"moved_max": 3, "moved_days": 7, "slipping_max": 5, "questions_max": 5,
                "clock_min_ratio": 0.8, "offer_max_shows": 3},
 }
 

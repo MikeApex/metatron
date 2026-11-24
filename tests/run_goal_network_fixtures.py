@@ -21,6 +21,7 @@ by the same validator code applies in production (~$0.02).
 
     python3 tests/run_goal_network_fixtures.py
     METATRON_LIVE=1 python3 tests/run_goal_network_fixtures.py
+    METATRON_LIVE_WAVE=1 python3 tests/run_goal_network_fixtures.py    # phase 3: an L goal's waves
 """
 from __future__ import annotations
 
@@ -299,6 +300,60 @@ def live_planner_pass(base: Path) -> int:
         return 1 if errs or size != "M" else 0
 
 
+def live_wave_pass(base: Path) -> int:
+    """METATRON_LIVE_WAVE=1, phase 3 part A (plan § 17): the planner's REAL first wave for one L
+    goal (milestone outlines + the first milestone's steps), then its REAL expansion of the second
+    milestone — both judged by the production validator. Two calls, ~$0.04–0.08."""
+    persona = "danny_park"
+    with P.persona_scope(persona):
+        d = _setup(persona, base / "live_wave")
+        _CLOCK["now"] = datetime.combine(TODAY, time(9, 0))
+        C._OVERRIDE = {"flags": {**_FLAGS, "rolling_wave": True}}
+        v = TODAY.isoformat()
+        (d / "config" / "goals.yaml").write_text(
+            "long:\n- id: l1\n  title: Become conversational in Spanish\n  status: active\n"
+            "  size: L\n  weekly_minutes: 150\n  shareable_what: hold an everyday conversation "
+            "with a native speaker\n"
+            f"  vetted: {{date: '{v}', depth: L, pass: full, priority: normal, displaces: TV}}\n")
+        O._GOAL_CACHE.update(key=None)
+        out = PP.plan_project("l1", size="L", note="complete beginner; can do a weekly lesson")
+        assert out.startswith("Queued"), out
+        req = PP._load()["requests"]["l1"]
+        payload = PP._payload(req, persona)
+        PP._MODEL_CALL = None
+        bad = 0
+        try:
+            raw = PP._call_model(payload, persona)
+            size, steps, errs, ms = PP._check(raw, req, payload)
+            print(f"\nLIVE rolling wave, first: size {size}, {len(ms)} milestones, {len(steps)} "
+                  f"steps, {'VALID' if not errs else 'INVALID'}")
+            for m in ms:
+                print(f"    [{m['status']:<7}] {m['eligible_from']} → {m['due']}  "
+                      f"{m['minutes']:>5} min  {m['what']}")
+            for st in steps:
+                print(f"      step {st['ef']} → {st['due']}  {st['minutes']:>3} min  {st['what']}")
+            for e in errs:
+                print(f"    ! {e}")
+            bad += bool(errs) or size != "L" or len(ms) < 2
+            if not errs and len(ms) >= 2:
+                req2 = {**req, "milestones": ms, "expand": ms[1]["key"], "status": "queued"}
+                p2 = PP._payload(req2, persona)
+                raw2 = PP._call_model(p2, persona)
+                size2, steps2, errs2, _ = PP._check(raw2, req2, p2)
+                w = p2["wave"]["milestone"]
+                print(f"LIVE rolling wave, expand {ms[1]['key']} ({w['eligible_from']} → "
+                      f"{w['due']}): {len(steps2)} steps, {'VALID' if not errs2 else 'INVALID'}")
+                for st in steps2:
+                    print(f"      step {st['ef']} → {st['due']}  {st['minutes']:>3} min  {st['what']}")
+                for e in errs2:
+                    print(f"    ! {e}")
+                bad += bool(errs2)
+        finally:
+            PP._MODEL_CALL = _stub_planner
+            C._OVERRIDE = None
+        return 1 if bad else 0
+
+
 def main() -> int:
     base = Path(tempfile.mkdtemp(prefix="goal_network_fixtures_"))
     failed = 0
@@ -318,6 +373,8 @@ def main() -> int:
     print(f"\n{len(PERSONAS) - failed} passed, {failed} failed, {len(PERSONAS)} total")
     if os.environ.get("METATRON_LIVE") == "1":
         failed += live_planner_pass(base)
+    if os.environ.get("METATRON_LIVE_WAVE") == "1":
+        failed += live_wave_pass(base)
     return 1 if failed else 0
 
 
