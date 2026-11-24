@@ -122,7 +122,7 @@ def _():
         assert not _events(sb)
     obs = report["observations"]
     assert len(obs) == 3, obs
-    assert obs[0]["scale"] == "7-day" and obs[1]["scale"] == "30-day", obs
+    assert [o["scale"] for o in obs] == ["7-day", "30-day", "30-day"], obs
     assert [o["confidence_level"] for o in obs] == ["weak", "moderate", "strong"], obs
     assert obs[2]["observation"] == "All logged writing happens before noon.", obs[2]
     assert obs[0]["evidence"].startswith("Logged sleep_hours"), obs[0]
@@ -178,17 +178,24 @@ _SCHEMA = [{"name": "read_recent_insights", "description": "x",
 _HANDLERS = {"read_recent_insights": lambda **k: '{"tool": "result body"}'}
 
 
-def _loop(fake, **kw):
-    with patched([(ORC.openai, "OpenAI", fake)]):
-        return ORC._openai_compat_loop("sys", "go", _SCHEMA, dict(_HANDLERS), api_key="k",
-                                       base_url="https://example.googleapis.com", model="m", **kw)
+def _loop(fake, rec=None, handlers=None, **kw):
+    TR._set_current_agent(rec)
+    try:
+        with patched([(ORC.openai, "OpenAI", fake)]):
+            return ORC._openai_compat_loop("sys", "go", _SCHEMA, dict(handlers or _HANDLERS),
+                                           api_key="k", base_url="https://example.googleapis.com",
+                                           model="m", **kw)
+    finally:
+        TR._set_current_agent(None)
 
 
 @check("3. exhaustion: 8 tool rounds, then exactly one call with no tools and the final prompt; "
        "its reply is returned")
 def _():
     fake = _Fake(8, REPLY)
-    got = _loop(fake, final_round=True, final_prompt=PR.FINAL_PROMPT)
+    rec = _rec()
+    got = _loop(fake, rec, final_round=True, final_prompt=PR.FINAL_PROMPT)
+    assert rec.reply_source == "model", rec.reply_source
     assert len(fake.calls) == 9, len(fake.calls)
     assert all("tools" in c for c in fake.calls[:8])
     last = fake.calls[8]
@@ -200,29 +207,94 @@ def _():
 @check("3b. pin: final_round=False (every other caller) returns the last tool result, unchanged")
 def _():
     fake = _Fake(8, REPLY)
-    got = _loop(fake)
+    rec = _rec()
+    got = _loop(fake, rec)
     assert len(fake.calls) == 8 and got == '{"tool": "result body"}', (len(fake.calls), got)
+    assert rec.reply_source == "tool_result", rec.reply_source
     import inspect
     sig = inspect.signature(ORC._openai_compat_loop)
     assert sig.parameters["final_round"].default is False
     assert inspect.signature(ORC.run_session_gemini).parameters["final_round"].default is False
 
 
-@check("3c. _run_single_agent sets the final round for pattern_miner only")
+@check("3c. _run_single_agent sets the final round for pattern_miner only — on the cloud "
+       "(Gemini), OpenAI and local (Ollama) routes alike; the local loop hands its text back")
 def _():
-    seen: dict[str, dict] = {}
+    seen: dict[tuple[str, str], dict] = {}
 
-    def fake_gemini(system_prompt, user_input, tool_schemas, tool_handlers, **kw):
-        seen[TR.get_current_agent().agent] = kw
-        return "done"
-    with sandbox(), patched([(ORC, "run_session_gemini", fake_gemini)]):
-        ORC._run_single_agent("pattern_miner", "x", persona=PERSONA, provider="gemini",
+    def fake(route):
+        def run(system_prompt, user_input, tool_schemas, tool_handlers, **kw):
+            seen[(route, TR.get_current_agent().agent)] = kw
+            return "done"
+        return run
+    with sandbox(), patched([(ORC, "run_session_gemini", fake("gemini")),
+                             (ORC, "run_session_openai", fake("openai")),
+                             (ORC, "run_session_ollama", fake("ollama"))]):
+        for route in ("gemini", "openai", "ollama"):
+            for agent in ("pattern_miner", "goals_interviewer"):
+                ORC._run_single_agent(agent, "x", persona=PERSONA, provider=route,
+                                      model_override="m")
+    for route in ("gemini", "openai", "ollama"):
+        pm, other = seen[(route, "pattern_miner")], seen[(route, "goals_interviewer")]
+        assert pm.get("final_round") is True and pm.get("final_prompt") == PR.FINAL_PROMPT, route
+        assert "final_round" not in other and "return_text" not in other, (route, other)
+    assert seen[("ollama", "pattern_miner")].get("return_text") is True
+    assert seen[("gemini", "pattern_miner")]["max_output_tokens"] >= 16384      # review C
+
+
+@check("3d. the local Ollama loop: 8 tool rounds, then one call with no tools; its text is "
+       "returned and recorded as a model reply")
+def _():
+    calls: list[dict] = []
+
+    def chat(**kw):
+        calls.append(kw)
+        if kw.get("stream"):
+            tc = SimpleNamespace(function=SimpleNamespace(name="read_recent_insights",
+                                                          arguments={}))
+            chunk = SimpleNamespace(message=SimpleNamespace(tool_calls=[tc], content=None),
+                                    prompt_eval_count=1, eval_count=1, done_reason="stop")
+            return iter([chunk])
+        return SimpleNamespace(message=SimpleNamespace(content="<think>x</think>" + REPLY),
+                               done_reason="stop", prompt_eval_count=1, eval_count=1)
+    import ollama
+    rec = _rec()
+    TR._set_current_agent(rec)
+    try:
+        with patched([(ollama, "chat", chat)]):
+            got = ORC.run_session_ollama("sys", "go", _SCHEMA, dict(_HANDLERS),
+                                         final_round=True, final_prompt=PR.FINAL_PROMPT,
+                                         return_text=True)
+    finally:
+        TR._set_current_agent(None)
+    assert len(calls) == 9 and "tools" not in calls[8], [sorted(c) for c in calls[8:]]
+    assert calls[8]["messages"][-1]["content"].endswith(PR.FINAL_PROMPT)
+    assert got == REPLY.strip() and rec.reply_source == "model"
+
+
+@check("3e. on the local route the Pattern Miner's block is held to local_cap_chars; the cloud "
+       "route is not")
+def _():
+    big = {k: (lambda kind: (lambda agent, e, ctx: (f"{kind} heading", "x" * 30000, False)))(k)
+           for k in PF._READERS}
+    cap = int(PF.load_config()["local_cap_chars"])
+    assert cap == 16000
+    TR.start_request_trace("weekly", PERSONA, is_proactive=True)
+    TR.get_trace().scheduled_job = "weekly_pattern_miner"
+    try:
+        with sandbox(), patched([(PF, "_READERS", big)]):
+            local = PF.build("pattern_miner", "d", "", PERSONA, local=True)
+            cloud = PF.build("pattern_miner", "d", "", PERSONA)
+    finally:
+        TR.set_trace(None)
+    assert len(local) <= cap + 400 and "cut to fit the local model" in local, len(local)
+    assert len(cloud) > 6 * 19000, len(cloud)
+    seen: dict = {}
+    with sandbox(), patched([(PF, "build", lambda *a, **k: seen.update(k) or ""),
+                             (ORC, "run_session_ollama", lambda *a, **k: "")]):
+        ORC._run_single_agent("pattern_miner", "x", persona=PERSONA, provider="ollama",
                               model_override="m")
-        ORC._run_single_agent("goals_interviewer", "x", persona=PERSONA, provider="gemini",
-                              model_override="m")
-    assert seen["pattern_miner"].get("final_round") is True
-    assert seen["pattern_miner"].get("final_prompt") == PR.FINAL_PROMPT
-    assert "final_round" not in seen["goals_interviewer"], seen["goals_interviewer"]
+    assert seen.get("local") is True, seen
 
 
 # --- 4. an invalid reply writes nothing ---------------------------------------------------------
@@ -247,6 +319,45 @@ def _():
             assert len(ev) == i and ev[-1]["event_type"] == "PATTERN_REPORT_MISSING", ev
             assert ev[-1]["source_agent"] == "pattern_miner"
             assert "2026-08-30" in ev[-1]["detail"], ev[-1]
+
+
+@check("4b. a reply cut off at the output ceiling is never written (event reason: truncated)")
+def _():
+    with sandbox() as sb:
+        rec = _rec()
+        rec.reply_source, rec.reply_finish_reason = "model", "length"
+        status = PR.write_from_reply(REPLY, rec, PERSONA, today=TODAY)
+        assert _insights(sb) == [] and "truncated" in status, status
+        ev = _events(sb)
+        assert len(ev) == 1 and ev[0]["event_type"] == "PATTERN_REPORT_MISSING"
+        assert "truncated" in ev[0]["detail"], ev[0]
+        rec.reply_finish_reason = "stop"
+        PR.write_from_reply(REPLY, rec, PERSONA, today=TODAY)
+        assert len(_insights(sb)) == 1
+
+
+_OLD_INSIGHTS = [{"date": "2026-08-30", "observations": [{
+    "evidence": "[EVIDENCE] five short nights", "observation": "[OBSERVATION] flat afternoons",
+    "confidence": "[CONFIDENCE] moderate"}]}]
+
+
+@check("4c. a list-shaped read_recent_insights result carrying old [EVIDENCE] text is refused — "
+       "at the source (the loop marks it a tool result) and, failing that, by its repr body")
+def _():
+    body = str(_OLD_INSIGHTS)                      # what dispatch hands back for a list result
+    assert body.startswith("[{'date'") and "[EVIDENCE]" in body
+    fake = _Fake(8, REPLY)
+    rec = _rec()
+    got = _loop(fake, rec, handlers={"read_recent_insights": lambda **k: body})
+    assert got == body and rec.reply_source == "tool_result"
+    with sandbox() as sb:
+        status = PR.write_from_reply(got, rec, PERSONA, today=TODAY)
+        assert "tool result" in status and _insights(sb) == [], status
+        status = PR.write_from_reply(body, _rec(), PERSONA, today=TODAY)     # no marker
+        assert status.startswith("no report") and _insights(sb) == [], status
+        assert len(_events(sb)) == 2
+    assert PR.is_tool_result_body(body) and PR.is_tool_result_body(json.dumps(_OLD_INSIGHTS))
+    assert not PR.is_tool_result_body(REPLY) and not PR.is_tool_result_body("[EVIDENCE] x")
 
 
 # --- 5. bands before 2026-08-09 -----------------------------------------------------------------
@@ -349,6 +460,16 @@ def _():
 
 # --- 8. end to end on the scheduled path --------------------------------------------------------
 
+_JOB_PROMPT = "Run a full pattern analysis for this week, the past 30 days, and the past 90 days."
+
+
+def _seed_schedule(sb, agent: str = "pattern_miner") -> None:
+    import yaml
+    (sb["config"] / "scheduler.yaml").write_text(yaml.safe_dump({"schedules": {
+        "weekly_pattern_miner": {"enabled": True, "day": "sunday", "time": "09:00",
+                                 "agent": agent, "prompt": _JOB_PROMPT}}}))
+
+
 def _seed_logs(sb, days: int = 10):
     logs = sb["data"] / "logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -358,8 +479,9 @@ def _seed_logs(sb, days: int = 10):
             {"health": {"sleep_hours": 6 + i % 3}, "wellbeing": {"mood": "neutral"}}))
 
 
-@check("8. the scheduled run (run_session, proactive): the fixed reads arrive in the USER message, "
-       "the report is written by code and the tracker gains patterns only")
+@check("8. the scheduler's weekly job (run_session(scheduled_job=True), the /internal/session "
+       "path): the fixed reads arrive in the USER message, the report is written by code and the "
+       "tracker gains patterns only")
 def _():
     got: dict = {}
 
@@ -372,9 +494,10 @@ def _():
                                        {"keys": ["a", "b"], "similarity": 0.9,
                                         "values": ["x", "x."]}])]):
         _seed_logs(sb)
+        _seed_schedule(sb)
         seed = _seed_tracker(sb)
-        ORC.run_session("pattern_miner", "Run a full pattern analysis.", persona=PERSONA,
-                        provider="gemini", model_override="m", proactive=True)
+        ORC.run_session("pattern_miner", _JOB_PROMPT, persona=PERSONA, provider="gemini",
+                        model_override="m", proactive=True, scheduled_job=True)
         files = _insights(sb)
         data = json.loads((sb["data"] / "context.json").read_text())
     user, system = got["user"], got["system"]
@@ -384,7 +507,10 @@ def _():
                   "read_baseline_periods()", '"keys": ["a", "b"]',
                   "7-day window", "90-day window"):
         assert piece in user, (piece, user[:3000])
-    assert user.rstrip().endswith("Run a full pattern analysis.")
+    assert user.rstrip().endswith(_JOB_PROMPT)
+    server_src = (ROOT / "core" / "server.py").read_text()
+    assert "proactive=True,\n                                      scheduled_job=True)" in \
+        server_src, "the /internal/session route no longer marks the scheduled run"
     assert got["kw"].get("final_round") is True
     assert len(files) == 1, files
     assert data["follow_ups"] == seed["follow_ups"] and data["held_items"] == seed["held_items"]
@@ -392,17 +518,20 @@ def _():
     assert len(data["patterns"]) == len(seed["patterns"]) + 3
 
 
-@check("8b. a Pattern Miner run inside a user's turn (run_subagent / Coordinator dispatch) gets no "
-       "bulk reads, and code writes no report or event from it")
+@check("8b. no marker, no procedure: a user's-turn run, a proactive run without the scheduler's "
+       "marker (a fire-and-forget hand-off), a marked run whose job is another agent's, and a "
+       "Coordinator dispatch on a proactive pipeline get no bulk reads and write nothing")
 def _():
-    got: dict = {}
+    got: list[str] = []
 
     def fake_gemini(system_prompt, user_input, tool_schemas, tool_handlers, **kw):
-        got.update(user=user_input)
-        return "Prose only."
+        got.append(user_input)
+        return REPLY                                   # valid: only the marker keeps it out
     with sandbox() as sb, patched([(ORC, "run_session_gemini", fake_gemini),
                                    (ORC, "_spend_gate", lambda *a, **k: None)]):
         _seed_logs(sb)
+        _seed_schedule(sb)
+        # 1. inside a user's turn (run_subagent / the Coordinator's dispatch)
         TR.start_request_trace("how is my sleep", PERSONA, is_proactive=False)
         try:
             ORC.run_session("pattern_miner", "check sleep", persona=PERSONA, provider="gemini",
@@ -410,8 +539,29 @@ def _():
         finally:
             TR.set_trace(None)
             TR._set_current_agent(None)
-        assert _insights(sb) == [] and _events(sb) == []
-    assert "[PREFETCHED" not in got["user"]
+        # 2. a proactive run with no marker — how a fire-and-forget hand-off arrives, even
+        #    carrying the job's own prompt
+        ORC.run_session("pattern_miner", _JOB_PROMPT, persona=PERSONA, provider="gemini",
+                        model_override="m", proactive=True)
+        # 3. marked, but the matched job belongs to another agent
+        _seed_schedule(sb, agent="physical_health")
+        ORC.run_session("pattern_miner", _JOB_PROMPT, persona=PERSONA, provider="gemini",
+                        model_override="m", proactive=True, scheduled_job=True)
+        _seed_schedule(sb)
+        # 4. dispatched by the Coordinator on a proactive pipeline — even if a marker were set,
+        #    the Pattern Miner is not the request's root agent
+        TR.start_request_trace(_JOB_PROMPT, PERSONA, is_proactive=True)
+        TR.get_trace().scheduled_job = "weekly_pattern_miner"
+        coord = TR.push_agent("coordinator", "gemini", "m")
+        try:
+            ORC._run_single_agent("pattern_miner", _JOB_PROMPT, persona=PERSONA,
+                                  provider="gemini", model_override="m")
+        finally:
+            TR.pop_agent(coord)
+            TR.set_trace(None)
+            TR._set_current_agent(None)
+        assert _insights(sb) == [] and _events(sb) == [], (_insights(sb), _events(sb))
+    assert len(got) == 4 and all("[PREFETCHED" not in u for u in got), [u[:200] for u in got]
 
 
 if __name__ == "__main__":

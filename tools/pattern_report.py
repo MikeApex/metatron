@@ -20,10 +20,12 @@ What lives here, each tested in tests/test_pattern_report.py:
    (`wellbeing.mood`, `wellbeing.intensity`, `health.energy`); `sleep_hours` is kept —
    pattern_miner.md's own rule, applied by code.
 3. **The report is written by code only from a valid final reply**, and only when the run did
-   not write one itself. Valid = at least one block carrying [EVIDENCE], [OBSERVATION] and
-   [CONFIDENCE], and not a tool-result body. Anything else writes NOTHING (the last real report
-   stays the most recent) and files a PATTERN_REPORT_MISSING quality event, so a failing Sunday
-   reaches the machine log instead of vanishing again.
+   not write one itself. Valid = the loop marked the text as a MODEL reply (never its last tool
+   result — the loop records which, on the agent record), the reply was not cut off at the output
+   ceiling, it is not a tool-result body (JSON or Python repr — the second line of defence), and
+   at least one block carries [EVIDENCE], [OBSERVATION] and [CONFIDENCE]. Anything else writes
+   NOTHING (the last real report stays the most recent) and files a PATTERN_REPORT_MISSING
+   quality event, so a failing Sunday reaches the machine log instead of vanishing again.
 4. **The tracker gets patterns only**, through Stage 2's `merge_pattern_findings` — never the
    replace-semantics writer. Follow-ups, open threads, held items and clinical threads are
    untouched.
@@ -34,6 +36,7 @@ call is made in this module.
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
@@ -181,12 +184,36 @@ def is_tool_result_body(text: str) -> bool:
         return True
     if t.lower().startswith(_TOOL_RESULT_PREFIXES):
         return True
-    if t[0] in "[{":
+    if t[0] in "[{(":
         try:
             return isinstance(json.loads(t), (dict, list))
         except ValueError:
+            pass
+        # A tool's list/dict result passed through str() is a Python repr, not JSON.
+        try:
+            return isinstance(ast.literal_eval(t), (dict, list, tuple))
+        except (ValueError, SyntaxError, MemoryError, RecursionError):
             return False
     return False
+
+
+# The provider's stop reasons for a reply cut off at its output ceiling.
+_TRUNCATED = {"length", "max_tokens", "max_output_tokens"}
+
+
+def source_refusal(agent_rec) -> str:
+    """Why the loop's own record rules the reply out, or "" — the source check (Fable review
+    C, D): the loop returned its last tool result, its final round failed, or the reply was cut
+    off at the output ceiling."""
+    source = str(getattr(agent_rec, "reply_source", "") or "")
+    finish = str(getattr(agent_rec, "reply_finish_reason", "") or "").lower()
+    if source == "tool_result":
+        return "the run ended on a tool result, not a model reply"
+    if source == "none":
+        return "the final round failed, so there was no reply"
+    if finish in _TRUNCATED:
+        return "the final reply was truncated at the output ceiling"
+    return ""
 
 
 def confidence_level(text: str) -> str:
@@ -242,10 +269,14 @@ def parse_blocks(text: str) -> tuple[list[dict], str]:
                 pending_heading = heading
         current[tag] = value.strip()
     observations: list[dict] = []
+    current_scale = ""
     for b in blocks:
+        # A scale heading governs every block under it until the next one.
+        found = _SCALE_RE.search(b.get("_heading") or "")
+        if found:
+            current_scale = found.group(0).lower().replace(" ", "-")
         if not all(b.get(k) for k in _REQUIRED):
             continue
-        scale = _SCALE_RE.search(b.get("_heading") or "")
         observations.append({
             "evidence": b.get("evidence", ""),
             "observation": b.get("observation", ""),
@@ -253,7 +284,7 @@ def parse_blocks(text: str) -> tuple[list[dict], str]:
             "confidence": b.get("confidence", ""),
             "action": b.get("action", ""),
             "confidence_level": confidence_level(b.get("confidence", "")),
-            "scale": scale.group(0).lower().replace(" ", "-") if scale else "",
+            "scale": current_scale,
         })
     return observations, "\n\n".join(n for n in notes if n).strip()
 
@@ -330,7 +361,10 @@ def write_from_reply(reply: str, agent_rec=None, persona: str | None = None,
     try:
         if _called_ok(agent_rec, "write_insight_report"):
             return "report written by the run itself — nothing written by code"
-        ok, reason = validate(reply)
+        reason = source_refusal(agent_rec)
+        ok = not reason
+        if ok:
+            ok, reason = validate(reply)
         if not ok:
             last = _last_report_date(persona)
             detail = (f"weekly Pattern Miner run ended without a report: {reason}. Nothing was "

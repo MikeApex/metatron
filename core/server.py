@@ -2206,7 +2206,8 @@ async def internal_session(req: InternalSessionRequest, request: Request) -> dic
         # The default pool, not _INDEX_EXECUTOR: a multi-minute review must not hold up
         # every user's memory writes behind it.
         response = await loop.run_in_executor(
-            None, lambda: run_session(req.agent, req.input, persona=persona, proactive=True))
+            None, lambda: run_session(req.agent, req.input, persona=persona, proactive=True,
+                                      scheduled_job=True))
     except Exception as e:
         logger.exception(f"[internal_session] persona={persona} agent={req.agent}")
         raise HTTPException(status_code=500, detail=str(e))

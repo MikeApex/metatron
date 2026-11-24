@@ -97,6 +97,12 @@ class AgentRecord:
     # current when that same record was pushed. Never serialised (see
     # _agent_to_dict) and kept out of repr/compare so a parent chain cannot recurse.
     parent: AgentRecord | None = field(default=None, repr=False, compare=False)
+    # Stage 4 #20 (Fable review C/D): what the loop's returned text IS — "model" (a model reply),
+    # "tool_result" (the rounds ran out and the loop returned its last tool result) or "none" (a
+    # final round that failed) — and the provider's stop reason for it ("length" = cut off).
+    # Set by the loop that ran this agent; read by tools/pattern_report. Never serialised.
+    reply_source: str = ""
+    reply_finish_reason: str = ""
 
     def ensure_turn(self, turn_num: int) -> TurnRecord:
         while len(self.turns) < turn_num:
@@ -176,6 +182,11 @@ class RequestTrace:
         # in front of them this request. Prefetch leaves no tool-call record, so
         # _file_wisdom_proposals reads this to force those agents' proposals to `observed`.
         self.prefetched_untrusted_agents: set[str] = set()
+        # Stage 4 #20 (Fable review B): the scheduler's job key when this request IS a scheduled
+        # single-agent job, set by run_session(scheduled_job=True) — the /internal/session path —
+        # and only when the persona's scheduler.yaml names this agent for that job. None on every
+        # other request, proactive or not (a Coordinator pipeline, a fire-and-forget run).
+        self.scheduled_job: str | None = None
         self.start_mono = time.monotonic()
         self._lock = threading.Lock()  # guards pipeline/subagent list mutations from worker threads
 

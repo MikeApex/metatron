@@ -17,6 +17,11 @@ enabled: true
 read_timeout_s: 4
 # Each read's text cap. An agent config over it is replaced by its key list.
 cap_chars: 6000
+# The Pattern Miner's whole block on the LOCAL route (Ollama qwen3:14b, num_ctx 16,384 tokens):
+# 16,000 characters ≈ 4–5k tokens, leaving room for its instruction file and goals (~3.5k), its 16
+# tool schemas (~2.5k), a few tool rounds and the report itself (~3k). Each section is cut in
+# proportion; the log window keeps its newest entries. The cloud route is not capped here.
+local_cap_chars: 16000
 
 agents:
   logistics:

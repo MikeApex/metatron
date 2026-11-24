@@ -81,6 +81,8 @@ def _():
         if analysis:
             assert PF.plan_for(agent, cfg) == [], "pattern_miner prefetched outside its run"
             TR.start_request_trace("weekly", PERSONA, is_proactive=True)
+            assert PF.plan_for(agent, cfg) == [], "proactive alone is not the scheduler's job"
+            TR.get_trace().scheduled_job = "weekly_pattern_miner"
         try:
             got = [e["read"] for e in PF.plan_for(agent, cfg)]
             assert got == _yaml_kinds(agent), (agent, got)

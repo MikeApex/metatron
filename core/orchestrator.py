@@ -401,6 +401,23 @@ def session_kind(user_input: str, persona: str | None = None) -> str | None:
     return best[0] if best else None
 
 
+def scheduled_job_for(agent: str, user_input: str, persona: str | None = None) -> str | None:
+    """The scheduler.yaml job key this single-agent run is, or None — the prompt must match a
+    configured job (`session_kind`) whose `agent` is this agent (Stage 4 #20, Fable review B)."""
+    kind = session_kind(user_input, persona)
+    if not kind:
+        return None
+    try:
+        import yaml
+        path = persona_config_dir(persona) / "scheduler.yaml"
+        cfg = (yaml.safe_load(path.read_text()) or {}) if path.exists() else {}
+        entry = (cfg.get("schedules") or {}).get(kind) or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[scheduled_job] scheduler.yaml unreadable: {exc}")
+        return None
+    return kind if isinstance(entry, dict) and entry.get("agent") == agent else None
+
+
 def carries_weekly_review(kind: str | None, persona: str | None = None) -> bool:
     """Whether THIS session should also carry the week-ahead horizon digest.
 
@@ -2551,7 +2568,7 @@ _CONTEXT_CLOSE = "[/CONTEXT]"
 # silently unsalvageable, which is the exact failure this repair layer exists to end.
 # `clinical_threads` arrived from a parallel session on 2026-08-08; it is the one
 # with a safety cost if dropped.
-_CONTEXT_KEYS = ("open_threads", "patterns", "follow_ups", "held_items", "held_dropped",
+_CONTEXT_KEYS = ("open_threads", "patterns", "follow_ups", "held_items",
                  "clinical_threads", "dev_request", "routing_miss")
 
 
@@ -2812,10 +2829,10 @@ def persist_context_block(ctx: dict | None, user_text: str | None = None) -> Non
             open_threads=ctx.get("open_threads", []),
             patterns=ctx.get("patterns", []),
             follow_ups=ctx.get("follow_ups", []),
-            held_items=ctx.get("held_items"),          # merged; None / [] change nothing (M4)
+            # M4: absent key (None) keeps them; a list, [] included, replaces them, dates carried.
+            held_items=ctx.get("held_items"),
             clinical_threads=ctx.get("clinical_threads"),
             user_text=user_text,
-            held_dropped=ctx.get("held_dropped"),      # the only way a held item leaves
         )
         _trace("[PIPELINE] context_tracker  written  (inline block)")
     except PersonaError:
@@ -3414,31 +3431,54 @@ def _anthropic_stream(
         messages.append({"role": "user", "content": tool_results})
 
 
+def _note_reply(source: str, finish_reason: str = "") -> None:
+    """Record on the running agent's record what the loop is about to return (see
+    AgentRecord.reply_source). Never raises."""
+    try:
+        rec = _tr.get_current_agent()
+        if rec is not None:
+            rec.reply_source = source
+            rec.reply_finish_reason = str(finish_reason or "")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def run_session_openai(system_prompt: str, user_input: str,
                         tool_schemas: list[dict], tool_handlers: dict,
                         model: str | None = None,
-                        history: list[dict] | None = None) -> str:
-    """Agentic loop using the OpenAI API."""
+                        history: list[dict] | None = None,
+                        final_round: bool = False,
+                        final_prompt: str | None = None) -> str:
+    """Agentic loop using the OpenAI API. final_round / final_prompt: see _openai_compat_loop
+    (Stage 4 #20 — only the Pattern Miner sets it)."""
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise EnvironmentError("OPENAI_API_KEY is not set.")
     return _openai_compat_loop(
         system_prompt, user_input, tool_schemas, tool_handlers,
         api_key=api_key, base_url=None, model=model or OPENAI_MODEL,
-        history=history,
+        history=history, final_round=final_round, final_prompt=final_prompt,
     )
 
 
 def run_session_ollama(system_prompt: str, user_input: str,
                        tool_schemas: list[dict], tool_handlers: dict,
                        model: str | None = None, base_url: str | None = None,
-                       history: list[dict] | None = None) -> str:
+                       history: list[dict] | None = None,
+                       final_round: bool = False,
+                       final_prompt: str | None = None,
+                       return_text: bool = False) -> str:
     """Agentic loop using the native Ollama Python SDK with streaming output.
 
     Streams tokens to stdout as they're generated so the terminal never appears
     frozen. Filters <think>...</think> blocks if thinking mode fires despite
     think=False. Returns empty string (output already printed); run_interactive
     checks for this and skips its own print.
+
+    Stage 4 #20 (Fable review E), set only for the Pattern Miner on the local route:
+    `return_text` returns the reply instead of "" (code writes its report from it), and
+    `final_round` makes one tools-off call with `final_prompt` when the 8 rounds run out —
+    the same round _openai_compat_loop makes. Every other caller is unchanged.
     """
 
     # The schemas handed to this runner are already filtered to what this
@@ -3540,7 +3580,8 @@ def run_session_ollama(system_prompt: str, user_input: str,
                 history.append({"role": "user", "content": user_input})
                 history.append({"role": "assistant", "content": full_content})
             full_response = full_content
-            return ""  # already printed to stdout
+            _note_reply("model", getattr(final_chunk, "done_reason", "") or "")
+            return full_content if return_text else ""  # else: already printed to stdout
 
         # Tool call turn — show which tool is running, then continue the loop
         messages.append({
@@ -3559,6 +3600,30 @@ def run_session_ollama(system_prompt: str, user_input: str,
                 print(f"  [calling {tc.function.name}]", flush=True)
             tool_result = dispatch_tool(tc.function.name, args, tool_handlers, _allowed=_allowed_names)
             messages.append({"role": "tool", "content": tool_result})
+
+    if final_round:
+        # Out of rounds: one tools-off call (no `tools`), the final prompt as a user message.
+        text = ""
+        try:
+            resp = _ollama.chat(
+                model=_model,
+                messages=messages + [{"role": "user",
+                                      "content": f"/no_think {final_prompt or _FINAL_REPLY_PROMPT}"}],
+                think=False, options={"num_ctx": 16384}, stream=False,
+            )
+            text = _re.sub(r"<think>.*?</think>", "", resp.message.content or "",
+                           flags=_re.DOTALL).strip()
+            _note_reply("model", getattr(resp, "done_reason", "") or "")
+            _tr.record_turn_tokens(_tr.get_current_agent(), 9,
+                                   getattr(resp, "prompt_eval_count", 0) or 0,
+                                   getattr(resp, "eval_count", 0) or 0, output_text=text)
+        except Exception as exc:  # noqa: BLE001 — the caller decides what "" means
+            _note_reply("none")
+            logger.warning(f"[reply_limits] ollama final round failed: {exc}")
+        if history is not None:
+            history.append({"role": "user", "content": user_input})
+            history.append({"role": "assistant", "content": text})
+        return text
 
     if history is not None:
         history.append({"role": "user", "content": user_input})
@@ -4629,7 +4694,10 @@ _REPLY_OUTPUT_TOKENS = 4096
 # is what it produces. If it is still cut at 16,384, the answer is a thinking cap, not more room.
 # project_planner (goal–task network phase 2): a dozen dated steps is ~1.5k tokens of JSON, and
 # a cut-off reply is a wasted call plus its retry — same room as the day planner, billed as produced.
-_WIDE_OUTPUT_AGENTS = {"day_planner": 16384, "project_planner": 16384}
+# pattern_miner (Stage 4 #20, Fable review C): the weekly report is several five-field blocks at
+# each of three scales — a cut-off report is never stored (tools/pattern_report), so a ceiling it
+# can hit is a lost week. Once a week, billed as produced.
+_WIDE_OUTPUT_AGENTS = {"day_planner": 16384, "project_planner": 16384, "pattern_miner": 16384}
 
 # It was (Mike, 2026-10-28): 1 of 6 live reshuffles at 16,384 still ran out — 15,726 thinking +
 # 654 out — and the two longest-thinking runs were the reject and the cut-off, so the cap targets
@@ -5477,6 +5545,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
         # Return on any non-tool-call finish
         if choice.finish_reason != "tool_calls" or not message.tool_calls:
             messages.append(message)
+            _note_reply("model", choice.finish_reason)
             if history is not None:
                 history.append({"role": "user", "content": user_input_display or user_input})
                 history.append({"role": "assistant", "content": result})
@@ -5524,12 +5593,14 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
             )
             message = response.choices[0].message
             result = (message.content or "").strip()
+            _note_reply("model", response.choices[0].finish_reason)
             if response.usage:
                 _tr.record_turn_tokens(
                     _tr.get_current_agent(), turn_num, response.usage.prompt_tokens,
                     getattr(response.usage, "completion_tokens", 0) or 0,
                     _reasoning_tokens_openai(response.usage), output_text=message.content or "")
         except Exception as _final_exc:  # noqa: BLE001 — the caller decides what "" means
+            _note_reply("none")
             _log_api_failure(f"openai_compat[{_provider_label}]", model, _final_exc,
                              turn=turn_num, extra="final round")
         if history is not None:
@@ -5537,8 +5608,10 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
             history.append({"role": "assistant", "content": result})
         return result
 
-    # Fallback if max iterations reached — return whatever content we have
+    # Fallback if max iterations reached — return whatever content we have. That is the last
+    # TOOL RESULT, not a model reply, and the record says so (Stage 4 #20, Fable review D).
     result = messages[-1].get("content") or ""
+    _note_reply("tool_result")
     if history is not None:
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": result})
@@ -6065,8 +6138,11 @@ def _run_single_agent(agent_name: str, user_input: str,
         if prefetch is None:
             try:
                 from core import prefetch as _prefetch
+                # On the local route the block must fit the local model's context window
+                # (Fable review E; the cap is config/modules/prefetch.yaml local_cap_chars).
                 prefetch = _prefetch.build(agent_name, user_input, "", persona,
-                                           user_turn=False, bare=bare)
+                                           user_turn=False, bare=bare,
+                                           local=(provider == "ollama"))
             except Exception as exc:  # noqa: BLE001 — a hint, never a cost
                 logger.warning(f"[prefetch] {agent_name}: {exc}")
                 prefetch = ""
@@ -6103,13 +6179,18 @@ def _run_single_agent(agent_name: str, user_input: str,
 
     _agent_rec = _tr.push_agent(agent_name, provider or "", model_override or "", context_sections)
     try:
+        # Stage 4 #20: the Pattern Miner gets a tools-off final round on every route that runs
+        # it (review L4; Fable review E), and its text back from the local loop.
+        _pm = agent_name == "pattern_miner"
+        _final = {"final_round": True, "final_prompt": _pm_final_prompt()} if _pm else {}
         if provider == "openai":
             result = run_session_openai(system_prompt, augmented_input, tool_schemas, tool_handlers,
-                                        model=model_override, history=history)
+                                        model=model_override, history=history, **_final)
         elif provider == "ollama":
             result = run_session_ollama(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                         model=model_override, base_url=base_url_override,
-                                        history=history)
+                                        history=history,
+                                        **({**_final, "return_text": True} if _pm else {}))
         elif provider == "gemini":
             if agent_name == "research_agent":
                 # Tools are passed now (2026-08-04). Before this, the grounded path took
@@ -6127,10 +6208,6 @@ def _run_single_agent(agent_name: str, user_input: str,
                                                    thinking_budget=_SYNTH_THINKING_BUDGET
                                                    if agent_name == "synthesizer" else None)
             else:
-                # Stage 4 #20 (review L4): the Pattern Miner alone gets a tools-off final round,
-                # so a run that spends its rounds still ends with its report text.
-                _final = ({"final_round": True, "final_prompt": _pm_final_prompt()}
-                          if agent_name == "pattern_miner" else {})
                 result = run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                             model=model_override, history=history,
                                             max_output_tokens=_WIDE_OUTPUT_AGENTS.get(agent_name, 4096),
@@ -9518,7 +9595,8 @@ def run_session(agent_name: str, user_input: str,
                 complexity: str | None = None,
                 history: list[dict] | None = None,
                 bare: bool = False, proactive: bool = False,
-                thinking_budget: int | None = None) -> str:
+                thinking_budget: int | None = None,
+                scheduled_job: bool = False) -> str:
     """
     Run a single conversation session.
 
@@ -9538,6 +9616,10 @@ def run_session(agent_name: str, user_input: str,
                         a user session (tools/analytics.py counts every non-proactive trace).
         thinking_budget: overrides the agent's plain-path cap for this one call — the day
                         planner's retry after a cut reply asks for 0 (tools/day_plan.py).
+        scheduled_job:  set ONLY by the scheduler's single-agent path (core/server.py
+                        /internal/session). Marks the trace with the job key when the prompt is
+                        a configured job for this agent — what the weekly Pattern Miner's fixed
+                        reads and code-written report key on (core/prefetch.pattern_miner_run).
     """
     with persona_scope(resolve_persona(persona)) as bound:
         if agent_name == "coordinator":
@@ -9558,6 +9640,12 @@ def run_session(agent_name: str, user_input: str,
         _owns_trace = _tr.get_trace() is None
         if _owns_trace:
             _tr.start_request_trace(user_input, bound, is_proactive=proactive)
+            if scheduled_job:
+                _job = scheduled_job_for(agent_name, user_input, bound)
+                _tr.get_trace().scheduled_job = _job
+                if _job is None:
+                    logger.warning(f"[scheduled_job] {agent_name}: scheduled run matched no "
+                                   f"configured job for this agent — run as unscheduled")
             # Gate here for the same reason: an owned trace means nothing upstream
             # ran _spend_gate(). Scheduled sessions previously bypassed the daily
             # stop entirely — the pipeline entry points were its only callers.

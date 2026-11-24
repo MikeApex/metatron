@@ -118,15 +118,17 @@ def _excluded(agent: str) -> bool:
 
 
 def pattern_miner_run(rec=None) -> bool:
-    """Is this the weekly Pattern Miner's own run — a scheduled (proactive) request whose root
-    agent is the Pattern Miner? Before its agent record exists (`rec` None): the trace is
-    proactive and no agent has started. After: `rec` is the trace's root. A Pattern Miner the
-    Coordinator names on a user's turn, or a run_subagent consult, is neither — it gets no
-    bulk reads, and code writes no report from it."""
+    """Is this the scheduler's own Pattern Miner job? Keyed on the explicit marker the scheduled
+    single-agent path sets (`trace.scheduled_job`, set by run_session(scheduled_job=True) from
+    /internal/session only when scheduler.yaml names the Pattern Miner for the matched job) —
+    never on "proactive" alone. And the Pattern Miner must be the request's root agent: before
+    its record exists (`rec` None) no agent has started; after, `rec` is the root. A Pattern Miner
+    the Coordinator dispatches (on any turn, proactive included), a run_subagent consult or a
+    fire-and-forget run gets no bulk reads, and code writes no report from it."""
     try:
         from core import trace as _tr
         t = _tr.get_trace()
-        if t is None or not getattr(t, "is_proactive", False):
+        if t is None or not getattr(t, "scheduled_job", None):
             return False
         if rec is None:
             return not t.pipeline
@@ -454,8 +456,13 @@ def _today(now: datetime):
 
 def build(agent: str, directive: str = "", user_text: str = "", persona: str | None = None,
           user_turn: bool = False, *, bare: bool = False,
-          calendar_future: Future | None = None, now: datetime | None = None) -> str:
+          calendar_future: Future | None = None, now: datetime | None = None,
+          local: bool = False) -> str:
     """The PREFETCHED block for `agent`, or "" when it has none.
+
+    `local`: the agent runs on the local model. For the Pattern Miner the whole block is then
+    held to `local_cap_chars` (prefetch.yaml) so it fits the local context window — each section
+    cut in proportion, newest log entries kept (Fable review E).
 
     `directive` and `user_text` are carried for the providers that resolve names from them
     (4c); nothing here reads the user's words on a turn that has none (`user_turn` False
@@ -520,12 +527,27 @@ def build(agent: str, directive: str = "", user_text: str = "", persona: str | N
             sections.append(f"### {heading}\n{text}")
         if not sections:
             return ""
+        if local and agent in _ANALYSIS_AGENTS:
+            sections = _fit_sections(sections, int(cfg.get("local_cap_chars") or 16000))
         if untrusted:
             _mark_untrusted(agent)
         return _HEADING.format(hhmm=now.strftime("%H:%M")) + "\n\n" + "\n\n".join(sections)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[prefetch] {agent}: nothing prefetched: {exc}")
         return ""
+
+
+def _fit_sections(sections: list[str], cap: int) -> list[str]:
+    """Cut each section to its proportional share of `cap` characters, with a note saying so."""
+    total = sum(len(s) for s in sections)
+    if total <= cap:
+        return sections
+    note = "\n… (cut to fit the local model's context — call the tool for the rest)"
+    out = []
+    for s in sections:
+        share = max(200, int(cap * len(s) / total) - len(note))
+        out.append(s if len(s) <= share else s[:share] + note)
+    return out
 
 
 def _monotonic() -> float:

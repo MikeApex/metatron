@@ -190,11 +190,12 @@ def test_case4_other_categories_never_capped():
                follow_ups=[f"f{i}" for i in range(8)], held_items=held,
                clinical_threads=clinical)
         data = json.loads(path.read_text())
-    # Stage 4 M4: held items are stored dated ({"text", "held_since"}); a new bare string is
-    # stamped today and a dated one keeps its date. All eight survive — none is capped.
+    # Stage 4 M4: held items are stored dated ({"text", "held_since"}); with nothing stored to
+    # match, every one is new and stamped today (a date is never taken from the caller). All
+    # eight survive — none is capped.
     assert [h["text"] for h in data["held_items"]] == [
         h if isinstance(h, str) else h["text"] for h in held]
-    assert [h["held_since"] for h in data["held_items"][4:]] == [_ago(3)] * 4
+    assert {h["held_since"] for h in data["held_items"]} == {_ago(0)}
     assert len(data["clinical_threads"]) == 7
     assert len(data["patterns"]) == 8 and len(data["follow_ups"]) == 8
 

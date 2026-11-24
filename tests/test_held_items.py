@@ -1,11 +1,13 @@
 """
-tests/test_held_items.py — held items get a date, are shown back, and are merged, never replaced
-(instructions-to-code Stage 4, 4e: M4, with build-time amendment 1).
+tests/test_held_items.py — held items get a date and are shown back to the Synthesizer
+(instructions-to-code Stage 4, 4e: M4, as the driver ruled after the Fable diff review — build-time
+amendment 1 reversed).
 
-Plan: archive/plans/instructions_to_code_stage4_evidence_plan_2026-11-23.md § 1 M4 tests 1–6, as
-amended: an incoming list is MERGED (deduplicated by text, each keeping its first `held_since`);
-an item leaves only through an explicit `held_dropped` list; `[]` and an omitted key change
-nothing. Tmp persona dir; no model, no network.
+Plan: archive/plans/instructions_to_code_stage4_evidence_plan_2026-11-23.md § 1 M4 tests 1–6. The
+rule: an absent key keeps the stored list; a present list, `[]` included, replaces it; each item
+keeps the first `held_since` of the stored item it matches (exact text, else token-set
+similarity >= 0.8 with the template words removed); a disappearing item is archived. Tmp persona
+dir; no model, no network.
 
     python3 tests/test_held_items.py
 """
@@ -83,66 +85,103 @@ def _held(path: Path) -> list[dict]:
     return json.loads(path.read_text())["held_items"]
 
 
-@check("amendment 1: an explicit [] and an omitted key both leave the stored items and dates")
+@check("re-sending both stored items (verbatim, or with the rendered '(held N days)' suffix) "
+       "keeps both dates")
 def _():
     with tracker(_seed()) as path:
-        _write(held_items=[])
+        _write(held_items=[A, f"{B} (held 3 days)"])
         assert _held(path) == STORED, _held(path)
+        assert "dropped_held_items" not in json.loads(path.read_text())
+
+
+@check("an omitted key keeps the stored list unchanged (writer and [CONTEXT] block alike)")
+def _():
+    with tracker(_seed()) as path:
         _write()                                   # key omitted → None
         assert _held(path) == STORED, _held(path)
         ORC.persist_context_block({"open_threads": ["chase the quote"], "follow_ups": ["f"]})
         assert _held(path) == STORED, _held(path)
+    with tracker(_seed(held_items=["Held: a legacy string"])) as path:
+        _write()
+        assert _held(path) == ["Held: a legacy string"], _held(path)    # exactly as stored
+
+
+@check("[] clears the list and archives every item (dated, never deleted, never loaded)")
+def _():
+    with tracker(_seed()) as path:
         ORC.persist_context_block({"open_threads": [], "patterns": [], "follow_ups": [],
                                    "held_items": []})
-        assert _held(path) == STORED, _held(path)
+        assert _held(path) == [], _held(path)
+        raw = json.loads(path.read_text())
+        assert [h["text"] for h in raw["dropped_held_items"]] == [A, B]
+        assert all(h["dropped_on"] == TODAY for h in raw["dropped_held_items"])
+        assert raw["dropped_held_items"][0]["held_since"] == ago(9)
+        assert "dropped_held_items" not in CT.read_context_tracker()
 
 
-@check("amendment 1: [new] on top of two stored items keeps both, each with its first date; the "
-       "new one is stamped today")
+@check("a list replaces the stored one: a kept item keeps its date, a new one is stamped today, "
+       "one left out is archived")
 def _():
     new = "Held: the spending dip this month — mention at the weekly review"
     with tracker(_seed()) as path:
-        _write(held_items=[new])
+        _write(held_items=[A, new])
         got = _held(path)
-    assert got == STORED + [{"text": new, "held_since": TODAY}], got
-
-
-@check("M4.1 re-sent text keeps its held_since (also with the rendered '(held N days)' suffix); "
-       "reworded text inherits it; genuinely new text is stamped today")
-def _():
-    reworded = "Held: SLEEP_POOR flag — user stressed today, raise when mood improves"
-    with tracker(_seed()) as path:
-        _write(held_items=[A, f"{B} (held 3 days)", reworded])
-        got = _held(path)
-    assert got[:2] == STORED, got
-    assert got[2] == {"text": reworded, "held_since": ago(9)}, got
-    assert len(got) == 3
-
-
-@check("amendment 1: held_dropped is the only way out — exact, suffixed or reworded-unique; an "
-       "ambiguous drop removes nothing; dropped items are archived, never loaded")
-def _():
-    with tracker(_seed()) as path:
-        _write(held_dropped=[f"{B} (held 3 days)"])
-        assert _held(path) == STORED[:1], _held(path)
         raw = json.loads(path.read_text())
-        assert raw["dropped_held_items"][0]["text"] == B
-        assert raw["dropped_held_items"][0]["dropped_on"] == TODAY
-        assert "dropped_held_items" not in CT.read_context_tracker()
-        # Raised and dropped in the same block: the drop wins.
-        new = "Held: a note about the weekend plans — raise on Friday"
-        ORC.persist_context_block({"held_items": [new], "held_dropped": [new]})
-        assert _held(path) == STORED[:1], _held(path)
-        # A reworded drop that matches exactly one stored item drops it.
-        _write(held_items=[B])
-        _write(held_dropped=["SLEEP_POOR flag: user was stressed, surface when mood lifts"])
-        assert [h["text"] for h in _held(path)] == [B], _held(path)
-        # Ambiguous: shares anchors with two items → nothing is removed.
-        _write(held_items=["Held: gym membership renewal — second note after deadline week"])
-        before = _held(path)
-        _write(held_dropped=["gym membership renewal deadline week"])
-        assert _held(path) == before, _held(path)
-        assert len(json.loads(path.read_text())["dropped_held_items"]) == 3
+    assert got == [STORED[0], {"text": new, "held_since": TODAY}], got
+    assert [h["text"] for h in raw["dropped_held_items"]] == [B]
+
+
+@check("a reworded item keeps its date (similarity >= 0.8 once the template words are removed)")
+def _():
+    reworded = "Held: SLEEP_POOR — user already stressed; surface when the mood lifts"
+    with tracker(_seed()) as path:
+        _write(held_items=[reworded, B])
+        got = _held(path)
+    assert got == [{"text": reworded, "held_since": ago(9)}, STORED[1]], got
+    assert CT._held_similarity(CT._held_tokens(A), CT._held_tokens(reworded)) >= 0.8
+
+
+@check("two DIFFERENT template-shaped items do not share a date")
+def _():
+    other = "Held: ENERGY_CRASH flag — user was already stressed, surface when mood lifts"
+    with tracker(_seed()) as path:
+        _write(held_items=[A, other])
+        got = _held(path)
+    assert got == [STORED[0], {"text": other, "held_since": TODAY}], got
+    # Left alone, the template words would make them look alike; removed, they do not.
+    assert CT._held_similarity(CT._held_tokens(A), CT._held_tokens(other)) < 0.8
+    # And one stored item never lends its date to two incoming items.
+    with tracker(_seed(held_items=[STORED[0]])) as path:
+        _write(held_items=[A, A.replace("already ", "")])
+        got = _held(path)
+    assert [h["held_since"] for h in got] == [ago(9), TODAY], got
+
+
+@check("no growth across 5 reworded re-sends: still two items, both dates kept")
+def _():
+    a_words = ["Held: SLEEP_POOR flag — user was already stressed, surface when mood lifts",
+               "Held: SLEEP_POOR — user was already stressed, surface when the mood lifts",
+               "Held: SLEEP_POOR flag; user already stressed — surface when mood lifts",
+               "Held: SLEEP_POOR flag — user already stressed, surface when the mood lifts",
+               "Held: SLEEP_POOR — already stressed, surface when mood lifts"]
+    b_words = ["Held: the gym membership renewal — raise after the deadline week",
+               "Held: gym membership renewal — raise after the deadline week",
+               "Held: the gym membership renewal, raise after the deadline week",
+               "Held: gym membership renewal: raise after the deadline week",
+               "Held: the gym membership renewal — raise it after the deadline week"]
+    with tracker(_seed()) as path:
+        for a, b in zip(a_words, b_words):
+            _write(held_items=[a, b])
+            got = _held(path)
+            assert len(got) == 2, got
+            assert [h["held_since"] for h in got] == [ago(9), ago(3)], (a, b, got)
+
+
+@check("held_dropped is gone: no [CONTEXT] key, no writer parameter")
+def _():
+    import inspect
+    assert "held_dropped" not in ORC._CONTEXT_KEYS
+    assert "held_dropped" not in inspect.signature(CT.write_context_tracker).parameters
 
 
 @check("M4.2 a legacy bare string is normalised on read, with no date invented")

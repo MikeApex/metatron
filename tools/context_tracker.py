@@ -483,22 +483,32 @@ def _normalize_open_threads(raw: list | None) -> list[dict]:
     return out
 
 
-# --- Held items (Stage 4 M4, build-time amendment 1, 2026-11-23) -----------------------------
+# --- Held items (Stage 4 M4, 2026-11-23; the driver's ruling after the Fable diff review) -----
 # What a user notices: something the assistant chose to hold back ("mention the sleep pattern
 # when you're less stressed") is eventually raised or consciously dropped, instead of vanishing.
 #
-# Before this, `held_items` was replace-semantics and never rendered into any prompt, so the
-# Synthesizer could not re-send what it held and each write erased the last — and the
-# Synthesizer is told to send every key every turn, usually as `[]`. Now:
+# Before this, `held_items` was never rendered into any prompt, so the Synthesizer could not
+# re-send what it held, and an omitted key erased every item. Now code shows the Synthesizer the
+# held list on every turn (core/orchestrator._held_items_line), so the list it writes back is a
+# rewrite of a list it saw — and omitting an item is how it says "raised" or "dismissed":
 #   - each entry is `{"text", "held_since"}` (legacy bare strings read as `held_since: None`);
-#   - an incoming list is MERGED into the stored one: deduplicated by text, each entry keeping
-#     its first `held_since`; a reworded entry (the open-thread anchor identity) is added beside
-#     the original but inherits its date, so rewording never resets the clock;
-#   - `[]` and an omitted key change nothing;
-#   - an item leaves only when named in an explicit `held_dropped` list (the Synthesizer raised
-#     it or dismissed it). A dropped item is archived on disk (`dropped_held_items`, never
-#     loaded), not deleted.
+#   - key ABSENT (a partial salvage, a short reply) → the stored list is kept unchanged;
+#   - key PRESENT, `[]` included → the incoming list REPLACES the stored one;
+#   - an incoming item keeps the first `held_since` of the stored item it matches — by exact
+#     normalised text, else by token-set similarity >= 0.8 computed after removing the field
+#     template's words (synthesizer.md's `held_items` example: "Held: <FLAG> flag — user was …,
+#     surface when …"). Never the open threads' 2-anchor rule: two different template-shaped
+#     items share most of their words. One stored item lends its date to at most one incoming
+#     item. No match → today;
+#   - an item that disappears is archived on disk (`dropped_held_items`, never loaded), never
+#     deleted.
+# Build-time amendment 1 (merge, plus an explicit `held_dropped` list) was reversed by the driver:
+# no agent file names `held_dropped`, and with the list rendered back each turn, omission is the
+# reliable signal.
 _DROPPED_HELD_CAP = 50
+_HELD_SIMILARITY = 0.8
+_HELD_TEMPLATE_WORDS = frozenset({"held", "flag", "user", "surface", "when", "was"})
+_HELD_TOKEN_RE = re.compile(r"[a-z0-9_']+")
 
 # The render the Synthesizer sees ends each item with "(held N days)"; a copy sent back with it
 # attached is the same item.
@@ -538,37 +548,62 @@ def _normalize_held_items(raw) -> list[dict]:
     return out
 
 
-def _merge_held_items(incoming, dropped, existing, today: str) -> tuple[list[dict], list[dict]]:
-    """(kept, newly_dropped). `incoming` None or [] adds nothing; nothing leaves except through
-    `dropped`. A drop matches an item by exact text, else by anchor identity when exactly one
-    stored item matches — an ambiguous drop removes nothing (keeping is the safe error)."""
-    kept = _normalize_held_items(existing)
-    keys = {_held_key(h["text"]) for h in kept}
-    dated = sorted(((_anchor_tokens(h["text"]), h["held_since"]) for h in kept if h["held_since"]),
-                   key=lambda pair: (pair[1], sorted(pair[0])))
-    for item in incoming if isinstance(incoming, list) else []:
-        text = _held_text(item)
-        if not text or _held_key(text) in keys:
-            continue
-        since = _valid_iso(item.get("held_since")) if isinstance(item, dict) else None
-        since = since or _carried_added(text, dated) or today
-        kept.append({"text": text, "held_since": since})
-        keys.add(_held_key(text))
+def _held_tokens(text: str) -> frozenset[str]:
+    """The item's words with the field template's words removed — what tells two items apart."""
+    return frozenset(_HELD_TOKEN_RE.findall(str(text or "").casefold())) - _HELD_TEMPLATE_WORDS
 
-    newly_dropped: list[dict] = []
-    for d in dropped if isinstance(dropped, list) else []:
-        text = _held_text(d)
-        if not text:
+
+def _held_similarity(a: frozenset[str], b: frozenset[str]) -> float:
+    """Token-set (Jaccard) similarity; 0 when either side has no words of its own."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _merge_held_items(incoming, existing, today: str) -> tuple[list | None, list[dict]]:
+    """(held, newly_dropped). `incoming` None (key absent) → (None, []): the caller keeps the
+    stored list exactly. A list (`[]` included) replaces it — see the block above for how each
+    item's date is carried and why. Dates come only from stored items, never from the caller."""
+    if not isinstance(incoming, list):
+        return None, []
+    stored = _normalize_held_items(existing)
+    texts: list[str] = []
+    seen: set[str] = set()
+    for item in incoming:
+        text = _held_text(item)
+        if text and _held_key(text) not in seen:
+            seen.add(_held_key(text))
+            texts.append(text)
+
+    since: dict[int, str | None] = {}
+    used: set[int] = set()
+    by_key = {_held_key(h["text"]): i for i, h in enumerate(stored)}
+    for n, text in enumerate(texts):                       # 1. exact normalised text
+        i = by_key.get(_held_key(text))
+        if i is not None and i not in used:
+            since[n] = stored[i]["held_since"]
+            used.add(i)
+    for n, text in enumerate(texts):                       # 2. token-set similarity
+        if n in since:
             continue
-        idx = [i for i, h in enumerate(kept) if _held_key(h["text"]) == _held_key(text)]
-        if not idx:
-            key = _anchor_tokens(text)
-            idx = [i for i, h in enumerate(kept) if _same_thread(key, _anchor_tokens(h["text"]))]
-            if len(idx) != 1:
+        mine = _held_tokens(text)
+        best: tuple[float, str, int] | None = None
+        for i, h in enumerate(stored):
+            if i in used:
                 continue
-        item = kept.pop(idx[0])
-        newly_dropped.append({**item, "dropped_on": today})
-    return kept, newly_dropped
+            sim = _held_similarity(mine, _held_tokens(h["text"]))
+            if sim >= _HELD_SIMILARITY:
+                cand = (sim, h["held_since"] or "", i)
+                # Highest similarity; on a tie the oldest date (the safe direction for an age).
+                if best is None or cand[0] > best[0] or (cand[0] == best[0] and cand[1] < best[1]):
+                    best = cand
+        if best is not None:
+            since[n] = stored[best[2]]["held_since"]
+            used.add(best[2])
+    held = [{"text": t, "held_since": since[n] if n in since else today}
+            for n, t in enumerate(texts)]
+    dropped = [{**h, "dropped_on": today} for i, h in enumerate(stored) if i not in used]
+    return held, dropped
 
 
 def held_days(held_since: str | None, today: date | None = None) -> int | None:
@@ -1612,7 +1647,6 @@ def write_context_tracker(
     held_items: list | None = None,
     clinical_threads: list[dict] | None = None,
     user_text: str | None = None,
-    held_dropped: list | None = None,
 ) -> str:
     """
     Update the session context at close of each exchange.
@@ -1641,9 +1675,10 @@ def write_context_tracker(
                               surface when mood is better"].
                       Held items that age across multiple sessions without
                       surfacing should be escalated, not silently dropped.
-                      MERGED, never replaced (Stage 4 M4): each new text is added and
-                      stamped `held_since`; a stored item keeps its first date; None and
-                      [] change nothing. See the block above `_DROPPED_HELD_CAP`.
+                      Stage 4 M4: None (key absent) keeps the stored list unchanged; a list,
+                      `[]` included, replaces it — each item keeping the first `held_since` of
+                      the stored item it matches, and an item that disappears archived to
+                      `dropped_held_items`. See the block above `_DROPPED_HELD_CAP`.
         clinical_threads: Open clinical concerns, each a dict with 'flag'
                       (e.g. "CLINICAL_CONCERN: SUICIDAL_IDEATION",
                       "MEDICATION_MISSED_CRITICAL"), 'status'
@@ -1656,8 +1691,6 @@ def write_context_tracker(
                       Optional; defaults to None so existing callers are unaffected. Used only
                       to grant a past-cutoff open thread grace when the user's words plausibly
                       reference it — see `_user_engages_thread`.
-        held_dropped: Held items the Synthesizer raised or dismissed this turn — the only way
-                      one leaves. Archived to `dropped_held_items` on disk, never loaded.
 
     Returns:
         Confirmation string, plus any status changes or refusals.
@@ -1783,8 +1816,9 @@ def write_context_tracker(
     if len(expired_open_threads) > _EXPIRED_OPEN_THREADS_CAP:
         expired_open_threads = expired_open_threads[-_EXPIRED_OPEN_THREADS_CAP:]
 
-    held, newly_dropped_held = _merge_held_items(
-        held_items, held_dropped, existing.get("held_items"), today)
+    held, newly_dropped_held = _merge_held_items(held_items, existing.get("held_items"), today)
+    if held is None:                       # key absent: the stored list, exactly as it was
+        held = existing.get("held_items") if isinstance(existing.get("held_items"), list) else []
     dropped_held = existing.get("dropped_held_items")
     dropped_held = list(dropped_held) if isinstance(dropped_held, list) else []
     if newly_dropped_held:
