@@ -108,7 +108,12 @@ MACHINE_TYPES = {"TOOL_DENIED", "RULE_CONFLICT", "SELF_APPLIED", "UNGROUNDED_ANS
                  # Synthesizer reply ran out of tool rounds and was answered from what had
                  # been done so far. A recurring signature is a question that keeps
                  # running out of rounds.
-                 "CHAIN_LIMIT_REACHED"}
+                 "CHAIN_LIMIT_REACHED",
+                 # Stage 4 #20, 2026-11-23 (tools/pattern_report.write_from_reply): the
+                 # weekly Pattern Miner run ended without a valid report, so nothing was
+                 # written. It wrote none for 12 straight Sundays unseen; this is the line
+                 # that makes the next failing Sunday visible.
+                 "PATTERN_REPORT_MISSING"}
 
 WANTED = USER_TYPES | MACHINE_TYPES
 
@@ -186,6 +191,7 @@ LABELS = {
     # not here, because an event is a signal and the output is a document.
     "BUILD_CHECK_FAILED": "a build landing failed its checks and was reverted",
     "CHAIN_LIMIT_REACHED": "a reply ran out of tool rounds before it finished",
+    "PATTERN_REPORT_MISSING": "the weekly pattern analysis wrote no report",
 }
 
 ROOT = Path(__file__).resolve().parent.parent

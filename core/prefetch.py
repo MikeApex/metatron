@@ -70,7 +70,18 @@ READ_TOOLS: dict[str, str] = {
     "data_object": "read_data_object",
     "counters": "read_log",
     "skill_habits": "list_tasks",
+    # The weekly Pattern Miner's fixed steps 1, 2, 3b and 4, and M16's baseline row (4e).
+    "recent_insights": "read_recent_insights",
+    "wisdom": "read_wisdom",
+    "log_windows": "get_log_window",
+    "wisdom_duplicates": "find_duplicate_wisdom",
+    "baseline_row": "get_baseline_context",
+    "baseline_periods": "read_baseline_periods",
 }
+
+# Not an evidence agent (it gets no PROACTIVE_FLAGS and no headline), but its fixed reads are
+# made by code — on its scheduled single-agent run only (see `pattern_miner_run`).
+_ANALYSIS_AGENTS = frozenset({"pattern_miner"})
 
 # Which reads put text written by someone other than the user in front of the model.
 _UNTRUSTED_KINDS = {"calendar"}
@@ -100,8 +111,28 @@ def _eligible_agents() -> frozenset[str]:
 
 def _excluded(agent: str) -> bool:
     from core.orchestrator import _UNTRUSTED_OUTPUT_AGENTS
+    if agent in _ANALYSIS_AGENTS:
+        return not pattern_miner_run()
     return agent == "research_agent" or agent in _UNTRUSTED_OUTPUT_AGENTS \
         or agent not in _eligible_agents()
+
+
+def pattern_miner_run(rec=None) -> bool:
+    """Is this the weekly Pattern Miner's own run — a scheduled (proactive) request whose root
+    agent is the Pattern Miner? Before its agent record exists (`rec` None): the trace is
+    proactive and no agent has started. After: `rec` is the trace's root. A Pattern Miner the
+    Coordinator names on a user's turn, or a run_subagent consult, is neither — it gets no
+    bulk reads, and code writes no report from it."""
+    try:
+        from core import trace as _tr
+        t = _tr.get_trace()
+        if t is None or not getattr(t, "is_proactive", False):
+            return False
+        if rec is None:
+            return not t.pipeline
+        return bool(t.pipeline) and t.pipeline[0] is rec
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def plan_for(agent: str, cfg: dict | None = None) -> list[dict]:
@@ -271,6 +302,87 @@ def _read_skill_habits(agent: str, e: dict, ctx: dict) -> tuple[str, str, bool]:
                     "`domain: learning` starts one).", False)
 
 
+# --- the Pattern Miner's fixed reads (#20, M16) --------------------------------------------------
+
+def _entry_cap(e: dict, ctx: dict) -> int:
+    return int(e.get("cap_chars") or ctx["cap"])
+
+
+def _read_recent_insights(agent: str, e: dict, ctx: dict) -> tuple[str, str, bool]:
+    from tools.pattern_miner import read_recent_insights
+    n = int(e.get("n") or 2)
+    got = read_recent_insights(n=n)
+    text = (json.dumps(got, ensure_ascii=False, indent=1) if got
+            else "no earlier report on file.")
+    return (f"read_recent_insights(n={n}) — what has already been surfaced",
+            _cap(text, _entry_cap(e, ctx)), False)
+
+
+def _read_wisdom(agent: str, e: dict, ctx: dict) -> tuple[str, str, bool]:
+    from tools.wisdom import read_wisdom
+    got = read_wisdom()
+    text = json.dumps(got, ensure_ascii=False) if got else "the wisdom store is empty."
+    return ("read_wisdom() — documented patterns (newest first, capped)",
+            _cap(text, _entry_cap(e, ctx)), False)
+
+
+def _read_log_windows(agent: str, e: dict, ctx: dict) -> tuple[str, str, bool]:
+    """One read of the widest window, most recent `max_entries` kept, bands before 2026-08-09
+    stripped. The 7- and 30-day windows are subsets of it (≤ 30 entries each, so always inside
+    the most recent 45) — listed by their dates, not sent twice."""
+    from tools.pattern_miner import get_log_window
+    from tools.pattern_report import BANDS_FROM, strip_free_text_bands, windows
+    cap_n = int(e.get("max_entries") or 45)
+    wins = windows(ctx["today"])
+    widest = max(wins, key=lambda w: w[0])
+    entries = get_log_window(widest[1].isoformat(), widest[2].isoformat())
+    shown = strip_free_text_bands(entries[-cap_n:] if cap_n else entries)
+    lines = []
+    for n, start, end in wins:
+        count = sum(1 for x in entries if start.isoformat() <= str(x.get("date", "")) <= end.isoformat())
+        lines.append(f"- {n}-day window {start.isoformat()} → {end.isoformat()}: "
+                     f"{count} day{'s' if count != 1 else ''} logged")
+    head = "\n".join(lines)
+    if cap_n and len(entries) > cap_n:
+        head += (f"\n(the {widest[0]}-day window holds {len(entries)} logged days; the most "
+                 f"recent {cap_n} are below — call `get_log_window` for earlier ones)")
+    head += (f"\nEntries dated before {BANDS_FROM.isoformat()} have their free-text bands "
+             f"(`wellbeing.mood`, `wellbeing.intensity`, `health.energy`) removed; "
+             f"`sleep_hours` is kept.")
+    body = "\n".join(json.dumps(x, ensure_ascii=False, default=str) for x in reversed(shown))
+    text = f"{head}\n\nNewest first:\n{body}" if shown else f"{head}\n\nno logs in the window."
+    return ("get_log_window — the analysis windows", _cap(text, _entry_cap(e, ctx)), False)
+
+
+def _read_wisdom_duplicates(agent: str, e: dict, ctx: dict) -> tuple[str, str, bool]:
+    from tools.wisdom import find_duplicate_wisdom
+    groups = find_duplicate_wisdom()
+    text = (json.dumps(groups, ensure_ascii=False) if groups
+            else "no near-duplicate groups found.")
+    return ("find_duplicate_wisdom() — groups to consolidate with `merge_wisdom_entries`",
+            _cap(text, _entry_cap(e, ctx)), False)
+
+
+def _read_baseline_row(agent: str, e: dict, ctx: dict) -> tuple[str, str, bool]:
+    from tools.baselines import get_baseline_context
+    from tools.pattern_report import baseline_label, data_span, windows
+    lines = [f"Your baseline row: {baseline_label(data_span())}"]
+    for n, start, end in windows(ctx["today"]):
+        got = get_baseline_context(start.isoformat(), end.isoformat())
+        names = [str(p.get("label") or p.get("name") or p.get("id") or "?") for p in got]
+        lines.append(f"- {n}-day window overlaps labelled baseline period"
+                     f"{'s' if len(names) != 1 else ''}: {', '.join(names) if names else 'none'}")
+    return ("your baseline row for the data span, and the labelled periods each window overlaps",
+            "\n".join(lines), False)
+
+
+def _read_baseline_periods(agent: str, e: dict, ctx: dict) -> tuple[str, str, bool]:
+    from tools.baselines import read_baseline_periods
+    got = read_baseline_periods()
+    text = json.dumps(got, ensure_ascii=False) if got else "no labelled baseline periods."
+    return ("read_baseline_periods() — labelled periods", _cap(text, _entry_cap(e, ctx)), False)
+
+
 _READERS: dict[str, Callable[[str, dict, dict], tuple[str, str, bool]]] = {
     "agent_config": _read_agent_config,
     "open_tasks": _read_open_tasks,
@@ -280,6 +392,12 @@ _READERS: dict[str, Callable[[str, dict, dict], tuple[str, str, bool]]] = {
     "data_object": _read_data_object,
     "counters": _read_counters,
     "skill_habits": _read_skill_habits,
+    "recent_insights": _read_recent_insights,
+    "wisdom": _read_wisdom,
+    "log_windows": _read_log_windows,
+    "wisdom_duplicates": _read_wisdom_duplicates,
+    "baseline_row": _read_baseline_row,
+    "baseline_periods": _read_baseline_periods,
 }
 
 
@@ -381,7 +499,10 @@ def build(agent: str, directive: str = "", user_text: str = "", persona: str | N
         # outsider text.
         plan = sorted(plan, key=lambda e: e.get("read") in _UNTRUSTED_KINDS)
         futures = [(e, _submit(lambda e=e: _work(e), f"prefetch-{agent}")) for e in plan]
-        deadline = _monotonic() + ctx["timeout"]
+        # An entry may carry its own `timeout_s` (the Pattern Miner's duplicate scan loads the
+        # embedder); the budget is the longest one asked for, never less than the default.
+        budget = max([ctx["timeout"]] + [float(e.get("timeout_s") or 0) for e in plan])
+        deadline = _monotonic() + budget
         sections: list[str] = []
         untrusted = False
         for e, fut in futures:
@@ -480,4 +601,66 @@ def parse_proactive_flags(coord_output: str) -> str:
 def flags_block(coord_output: str) -> str:
     body = parse_proactive_flags(coord_output)
     return f"{PROACTIVE_FLAGS_HEADING}:\n{body}" if body else ""
+
+
+# --- #6 (4e): the Pattern Miner headline -------------------------------------------------------
+
+HEADLINE_MAX_AGE_DAYS = 14
+_HEADLINE_MAX_ITEMS = 3
+_HEADLINE_MAX_WORDS = 60
+
+
+def _report_date(report: dict) -> datetime | None:
+    for key in ("date", "generated_at"):
+        raw = str(report.get(key) or "")[:10]
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
+def pattern_headline(persona: str | None = None, today=None) -> str:
+    """Up to 3 moderate-or-strong observations from the latest Pattern Miner report, each at
+    most 60 words, with the report's date — or "" when the report is missing, older than 14
+    days, or has no observation of that confidence (a shapeless report). A stale report is
+    how a pattern-from-nothing happens, so it is never passed. Never raises."""
+    try:
+        from core.persona import persona_scope, resolve_persona
+        from tools.pattern_miner import read_recent_insights
+        from tools.pattern_report import confidence_level
+        p = resolve_persona(persona)
+        with persona_scope(p):
+            got = read_recent_insights(n=1)
+            if today is None:
+                today = _local_now().date()
+        if not got or not isinstance(got[0], dict):
+            return ""
+        report = got[0]
+        when = _report_date(report)
+        if when is None or (today - when.date()).days > HEADLINE_MAX_AGE_DAYS \
+                or when.date() > today:
+            return ""
+        lines: list[str] = []
+        for o in report.get("observations") or []:
+            if not isinstance(o, dict):
+                continue
+            level = o.get("confidence_level") or confidence_level(str(o.get("confidence") or ""))
+            text = " ".join(str(o.get("observation") or "").split())
+            if level not in ("moderate", "strong") or not text:
+                continue
+            words = text.split()
+            if len(words) > _HEADLINE_MAX_WORDS:
+                text = " ".join(words[:_HEADLINE_MAX_WORDS]) + " …"
+            lines.append(f"- {text} (confidence: {level})")
+            if len(lines) >= _HEADLINE_MAX_ITEMS:
+                break
+        if not lines:
+            return ""
+        return (f"PATTERN MINER HEADLINE (weekly report of {when.date().isoformat()} — patterns "
+                f"in the user's own logs; hypotheses to weigh, not facts to announce):\n"
+                + "\n".join(lines))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[prefetch] Pattern Miner headline unavailable: {exc}")
+        return ""
 

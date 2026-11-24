@@ -986,6 +986,20 @@ def _relative_age(days_ago: int) -> str:
     return f"{days_ago} days ago"
 
 
+def _held_items_line(raw) -> str:
+    """`**Held back (not yet raised):** <text> (held N days) | …`, or "" when nothing is held.
+    Stage 4 M4 — no cap (S7.1); an item whose start was never recorded says so."""
+    from tools.context_tracker import _normalize_held_items, held_days
+
+    parts = []
+    for h in _normalize_held_items(raw):
+        n = held_days(h["held_since"])
+        age = ("held, start not recorded" if n is None else "held since today" if n == 0
+               else f"held {n} day{'s' if n != 1 else ''}")
+        parts.append(f"{h['text']} ({age})")
+    return ("**Held back (not yet raised):** " + " | ".join(parts)) if parts else ""
+
+
 def _age_annotated(text: str, added: str | None) -> str:
     """
     `text` with the age of the record behind it, when that age is known.
@@ -1272,6 +1286,12 @@ def load_recent_context(persona: str | None = None, days: int = 5, audience: str
                 if _ledger:
                     follow_ups = [_ledger_annotate(f, _ledger) for f in follow_ups]
                 lines.append("**Follow up on:** " + " | ".join(follow_ups))
+            # Stage 4 M4: what the Synthesizer chose to hold back, with how long — shown to the
+            # Synthesizer only (it is the one that holds, raises and drops them), all entries.
+            if audience == "synthesizer":
+                held = _held_items_line(tracker.get("held_items"))
+                if held:
+                    lines.append(held)
             sections.append("\n".join(lines))
         except Exception:
             pass
@@ -2531,7 +2551,7 @@ _CONTEXT_CLOSE = "[/CONTEXT]"
 # silently unsalvageable, which is the exact failure this repair layer exists to end.
 # `clinical_threads` arrived from a parallel session on 2026-08-08; it is the one
 # with a safety cost if dropped.
-_CONTEXT_KEYS = ("open_threads", "patterns", "follow_ups", "held_items",
+_CONTEXT_KEYS = ("open_threads", "patterns", "follow_ups", "held_items", "held_dropped",
                  "clinical_threads", "dev_request", "routing_miss")
 
 
@@ -2792,9 +2812,10 @@ def persist_context_block(ctx: dict | None, user_text: str | None = None) -> Non
             open_threads=ctx.get("open_threads", []),
             patterns=ctx.get("patterns", []),
             follow_ups=ctx.get("follow_ups", []),
-            held_items=ctx.get("held_items"),
+            held_items=ctx.get("held_items"),          # merged; None / [] change nothing (M4)
             clinical_threads=ctx.get("clinical_threads"),
             user_text=user_text,
+            held_dropped=ctx.get("held_dropped"),      # the only way a held item leaves
         )
         _trace("[PIPELINE] context_tracker  written  (inline block)")
     except PersonaError:
@@ -4070,7 +4091,9 @@ def run_session_gemini(system_prompt: str, user_input: str,
                        model: str | None = None,
                        history: list[dict] | None = None,
                        max_output_tokens: int = 4096,
-                       thinking_budget: int | None = None) -> str:
+                       thinking_budget: int | None = None,
+                       final_round: bool = False,
+                       final_prompt: str | None = None) -> str:
     """Agentic loop via Vertex AI OpenAI-compat endpoint (or AI Studio OpenAI-compat).
 
     Uses _openai_compat_loop rather than the native genai SDK to avoid Vertex's
@@ -4079,6 +4102,9 @@ def run_session_gemini(system_prompt: str, user_input: str,
     request. The thought_signature workaround lives in _openai_compat_loop.
 
     thinking_budget: Google's thinking_config, carried in the compat body's nested extra_body.
+
+    final_round / final_prompt: passed to _openai_compat_loop — one tools-off round when the
+    rounds run out (Stage 4 #20; only the Pattern Miner sets it).
     """
     api_key, base_url, model_name = _resolve_gemini_credentials(model)
     extra_body = ({"extra_body": {"google": {"thinking_config": {
@@ -4087,6 +4113,7 @@ def run_session_gemini(system_prompt: str, user_input: str,
         system_prompt, user_input, tool_schemas, tool_handlers,
         api_key=api_key, base_url=base_url, model=model_name,
         history=history, max_output_tokens=max_output_tokens, extra_body=extra_body,
+        final_round=final_round, final_prompt=final_prompt,
     )
 
 
@@ -5376,11 +5403,19 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
                          extra_body: dict | None = None,
                          history: list[dict] | None = None,
                          user_input_display: str | None = None,
-                         max_output_tokens: int = 4096) -> str:
+                         max_output_tokens: int = 4096,
+                         final_round: bool = False,
+                         final_prompt: str | None = None) -> str:
     """Shared agentic loop for OpenAI-compatible APIs (OpenAI, Ollama, Gemini).
 
     user_input_display: the clean version stored in history (omits control tokens
     prepended to user_input for model-specific behaviour, e.g. /no_think).
+
+    final_round: when the rounds run out on a tool call, make ONE more call with no tools and
+    `final_prompt` (default `_FINAL_REPLY_PROMPT`) appended as a user message, and return its
+    reply — the streaming and native loops' round (Stage 4 #20, review L4). False (every caller
+    but the Pattern Miner) keeps the old return: the last message, i.e. the last tool result.
+    The weekly Pattern Miner hit this on 12 of 12 measured Sundays and wrote no report.
     """
 
     # The schemas handed to this runner are already filtered to what this
@@ -5471,6 +5506,36 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
             # thought_signature) while reducing tool_calls to only tc0 (the signed call).
             messages.append(message.model_copy(update={"tool_calls": [tc0]}))
             messages.append({"role": "tool", "tool_call_id": tc0.id, "content": result})
+
+    if final_round:
+        # Out of rounds with the last message a tool result. One tools-off call, mirroring
+        # _openai_compat_stream's round: `tools` omitted, the final prompt as a user message.
+        result = ""
+        turn_num = max_iterations + 1
+        token_kwarg = "max_completion_tokens" if model.startswith("o") else "max_tokens"
+        _trace(f"[API] {base_url or 'openai'}/{model}  turn={turn_num}  final round (tools off)")
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                **{token_kwarg: max_output_tokens},
+                messages=messages + [{"role": "user",
+                                      "content": final_prompt or _FINAL_REPLY_PROMPT}],
+                **({"extra_body": extra_body} if extra_body else {}),
+            )
+            message = response.choices[0].message
+            result = (message.content or "").strip()
+            if response.usage:
+                _tr.record_turn_tokens(
+                    _tr.get_current_agent(), turn_num, response.usage.prompt_tokens,
+                    getattr(response.usage, "completion_tokens", 0) or 0,
+                    _reasoning_tokens_openai(response.usage), output_text=message.content or "")
+        except Exception as _final_exc:  # noqa: BLE001 — the caller decides what "" means
+            _log_api_failure(f"openai_compat[{_provider_label}]", model, _final_exc,
+                             turn=turn_num, extra="final round")
+        if history is not None:
+            history.append({"role": "user", "content": user_input_display or user_input})
+            history.append({"role": "assistant", "content": result})
+        return result
 
     # Fallback if max iterations reached — return whatever content we have
     result = messages[-1].get("content") or ""
@@ -6062,12 +6127,17 @@ def _run_single_agent(agent_name: str, user_input: str,
                                                    thinking_budget=_SYNTH_THINKING_BUDGET
                                                    if agent_name == "synthesizer" else None)
             else:
+                # Stage 4 #20 (review L4): the Pattern Miner alone gets a tools-off final round,
+                # so a run that spends its rounds still ends with its report text.
+                _final = ({"final_round": True, "final_prompt": _pm_final_prompt()}
+                          if agent_name == "pattern_miner" else {})
                 result = run_session_gemini(system_prompt, augmented_input, tool_schemas, tool_handlers,
                                             model=model_override, history=history,
                                             max_output_tokens=_WIDE_OUTPUT_AGENTS.get(agent_name, 4096),
                                             thinking_budget=thinking_budget
                                             if thinking_budget is not None
-                                            else _PLAIN_THINKING_CAPS.get(agent_name))
+                                            else _PLAIN_THINKING_CAPS.get(agent_name),
+                                            **_final)
         else:
             from core.router import log_model_error
             log_model_error(agent_name, provider or "unknown", model_override, f"unrecognised provider '{provider}' — no session started")
@@ -6077,6 +6147,20 @@ def _run_single_agent(agent_name: str, user_input: str,
             )
     finally:
         _tr.pop_agent(_agent_rec)
+
+    # Stage 4 #20: the weekly run's report is written by code from its final reply — only on its
+    # own scheduled run, only from a valid reply, and only if the run did not write one itself.
+    # An invalid reply writes nothing and files PATTERN_REPORT_MISSING (tools/pattern_report.py).
+    if agent_name == "pattern_miner" and not bare:
+        try:
+            from core.prefetch import pattern_miner_run
+            if pattern_miner_run(_agent_rec):
+                from tools.pattern_report import write_from_reply
+                _trace(f"[PATTERN_REPORT] {write_from_reply(result, _agent_rec, persona)}")
+        except PersonaError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — never fails the scheduled job
+            logger.warning(f"[pattern_report] post-run hook: {exc}")
 
     # A specialist whose writes fail still returns a confident prose summary, and
     # the Synthesizer sees only that summary — so it reports success. On 2026-08-02
@@ -6106,6 +6190,23 @@ def _run_single_agent(agent_name: str, user_input: str,
 
 
 _COUNTED_SLOT_KEY = "counted"
+
+
+def _pm_final_prompt() -> str:
+    from tools.pattern_report import FINAL_PROMPT
+    return FINAL_PROMPT
+
+
+def _pattern_headline(persona: str | None) -> str:
+    """#6 (4e) — see core/prefetch.pattern_headline. "" on any failure."""
+    try:
+        from core.prefetch import pattern_headline
+        return pattern_headline(persona)
+    except PersonaError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[PIPELINE] Pattern Miner headline: {exc}")
+        return ""
 
 
 def _speculative_calendar(persona: str | None):
@@ -7772,6 +7873,9 @@ def _dispatch_from_coordinator(
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[PIPELINE] PROACTIVE_FLAGS not parsed: {exc}")
         _flags = ""
+    # #6 (4e): the latest Pattern Miner report's headline, read once — "" when it is missing,
+    # shapeless or older than 14 days. Same recipients as the flags.
+    _headline = _pattern_headline(persona)
 
     for spec in specialists:
         if not isinstance(spec, dict):
@@ -7833,10 +7937,13 @@ def _dispatch_from_coordinator(
         # personal specialists only — never the Research Agent (review L2), the Diarist, a
         # fire-and-forget run or a code-only agent — and never the fixed tone-only Mental
         # Wellbeing directive of a scheduled brief or close (Stage 2 D4: it raises nothing).
-        if (_flags and not is_ff and agent in _EVIDENCE_AGENTS
-                and not (agent == "mental_wellbeing" and not user_turn
-                         and session in _FIXED_SESSION_KINDS)):
+        _evidence_ok = (not is_ff and agent in _EVIDENCE_AGENTS
+                        and not (agent == "mental_wellbeing" and not user_turn
+                                 and session in _FIXED_SESSION_KINDS))
+        if _flags and _evidence_ok:
             directive = f"{directive}\n\n{_flags}"
+        if _headline and _evidence_ok:
+            directive = f"{directive}\n\n{_headline}"
 
         if is_ff:
             # Collected, NOT started — see the deferral note below the blocking loop.
@@ -8755,6 +8862,8 @@ def run_pipeline_session(user_input: str,
         horizon_text = "" if nudge else _horizon_block(persona, session=kind,
                                                        uncapped=not plan_text,
                                                        user_turn=not is_proactive)
+        # #6 (4e): the Pattern Miner headline, once. Never on a day-plan nudge. Mirrors the twin.
+        pm_headline = "" if nudge else _pattern_headline(persona)
         synthesizer_input = (
             f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
             f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
@@ -8767,6 +8876,7 @@ def run_pipeline_session(user_input: str,
             + (f"\n\n{dose_note}" if dose_note else "")
             + (f"\n\n{med_line}" if med_line else "")
             + (f"\n\n{counted_line}" if counted_line else "")
+            + (f"\n\n{pm_headline}" if pm_headline else "")
             + (f"\n\n{crisis_text}" if crisis_text else "")
             + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
             + (f"\n\n{signoff_note}" if signoff_note else "")
@@ -9082,6 +9192,8 @@ def _run_pipeline_session_stream_inner(
     horizon_text = "" if nudge else _horizon_block(persona, session=kind,
                                                    uncapped=not plan_text,
                                                    user_turn=not is_proactive)
+    # #6 (4e): the Pattern Miner headline, once — mirrors the non-streaming twin.
+    pm_headline = "" if nudge else _pattern_headline(persona)
     synthesizer_input = (
         f"{proactive_prefix}{receipt_line}{synth_label}:\n{user_input}{attach_note}\n\n"
         f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
@@ -9094,6 +9206,7 @@ def _run_pipeline_session_stream_inner(
         + (f"\n\n{dose_note}" if dose_note else "")
         + (f"\n\n{med_line}" if med_line else "")
         + (f"\n\n{counted_line}" if counted_line else "")
+        + (f"\n\n{pm_headline}" if pm_headline else "")
         + (f"\n\n{crisis_text}" if crisis_text else "")
         + (f"\n\n{capture_turn.note}" if capture_turn and capture_turn.note else "")
         + (f"\n\n{signoff_note}" if signoff_note else "")

@@ -73,13 +73,23 @@ def _yaml_kinds(agent: str) -> list[str]:
 @check("1. each specialist gets exactly its yaml list, in order, every entry granted")
 def _():
     cfg = PF.load_config()
-    assert set(cfg["agents"]) <= ORC._EVIDENCE_AGENTS, set(cfg["agents"]) - ORC._EVIDENCE_AGENTS
+    allowed = ORC._EVIDENCE_AGENTS | PF._ANALYSIS_AGENTS
+    assert set(cfg["agents"]) <= allowed, set(cfg["agents"]) - allowed
     for agent in cfg["agents"]:
-        got = [e["read"] for e in PF.plan_for(agent, cfg)]
-        assert got == _yaml_kinds(agent), (agent, got)
-        seen: list = []
-        with sandbox(), _stub_readers(seen):
-            block = PF.build(agent, "d", "", PERSONA, now=NOW)
+        # The Pattern Miner's reads are made on its own scheduled run only (4e).
+        analysis = agent in PF._ANALYSIS_AGENTS
+        if analysis:
+            assert PF.plan_for(agent, cfg) == [], "pattern_miner prefetched outside its run"
+            TR.start_request_trace("weekly", PERSONA, is_proactive=True)
+        try:
+            got = [e["read"] for e in PF.plan_for(agent, cfg)]
+            assert got == _yaml_kinds(agent), (agent, got)
+            seen: list = []
+            with sandbox(), _stub_readers(seen):
+                block = PF.build(agent, "d", "", PERSONA, now=NOW)
+        finally:
+            if analysis:
+                TR.set_trace(None)
         assert [k for _, k, _, _ in seen] == got or sorted(k for _, k, _, _ in seen) == sorted(got)
         for kind in got:
             assert f"### {kind} heading" in block, (agent, kind)
@@ -738,6 +748,88 @@ def _():
     assert 0 < len(got) <= 600 and got.count("\n- ") <= 4, got
     assert PF.parse_proactive_flags("PROACTIVE_FLAGS:\n- a\n- b\nSPECIALISTS_TO_CALL: []") == \
         "- a\n- b"
+
+
+# --- #6 (4e): the Pattern Miner headline -------------------------------------------------------
+
+def _report(sb, day: str, observations) -> None:
+    d = sb["data"] / "insights"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{day}.json").write_text(json.dumps({"date": day, "observations": observations}))
+
+
+_OBS = [
+    {"observation": "Short-sleep days are followed by a flat afternoon.", "confidence":
+        "7 days, trailing — weak"},
+    {"observation": "Exercise days carry a positive mood far more often.",
+     "confidence": "30 days, moderate"},
+    {"observation": " ".join(["word"] * 80), "confidence_level": "strong"},
+    {"observation": "All logged writing happens before noon.", "confidence": "strong"},
+    {"observation": "A fourth qualifying one is cut by the cap.", "confidence": "strong"},
+]
+
+
+@check("#6.4 headline: up to 3 moderate/strong observations, ≤ 60 words each, dated; omitted when "
+       "the report is older than 14 days, missing, or shapeless")
+def _():
+    today = NOW.date()
+    with sandbox() as sb:
+        assert PF.pattern_headline(PERSONA, today=today) == ""                 # missing
+        _report(sb, "2026-11-15", _OBS)
+        got = PF.pattern_headline(PERSONA, today=today)
+        assert got.startswith("PATTERN MINER HEADLINE (weekly report of 2026-11-15"), got
+        lines = got.splitlines()[1:]
+        assert len(lines) == 3 and "flat afternoon" not in got, got
+        assert "fourth qualifying" not in got
+        assert lines[1].count("word") == 60 and lines[1].endswith("… (confidence: strong)"), lines
+        assert PF.pattern_headline(PERSONA, today=today.replace(day=30)) == ""   # 15 days old
+        assert PF.pattern_headline(PERSONA, today=today.replace(day=29)) != ""   # exactly 14
+        # Shapeless: string observations, weak-only, no date.
+        for obs in (["a bare string"], [_OBS[0]], "not a list", []):
+            _report(sb, "2026-11-19", obs)
+            assert PF.pattern_headline(PERSONA, today=today) == "", obs
+        (sb["data"] / "insights" / "2026-11-19.json").write_text(json.dumps(
+            {"observations": _OBS}))
+        assert PF.pattern_headline(PERSONA, today=today) == ""                 # undated
+
+
+@check("#6.4b the headline reaches every blocking _EVIDENCE_AGENTS directive — never "
+       "research_agent, the Diarist, a fire-and-forget run or the fixed tone-only MW directive")
+def _():
+    head = "PATTERN MINER HEADLINE (weekly report of 2026-11-15 — x):\n- y (confidence: strong)"
+    with sandbox(), patched([(ORC, "_pattern_headline", lambda p: head)]):
+        blocking, background = _dispatch_capture(_FLAGS_COORD, user_turn=True,
+                                                 user_text="plan friday", bg=2)
+        sched, _ = _dispatch_capture(_FLAGS_COORD, user_turn=False, session="morning_brief", bg=0)
+    assert blocking["logistics"].endswith(head) and blocking["physical_health"].endswith(head)
+    assert blocking["research_agent"] == "opening hours of the pool"
+    assert all(head not in d for d in background.values())
+    assert sched["mental_wellbeing"] == ORC._whole_person_directive("mental_wellbeing",
+                                                                    "morning_brief")
+    assert head in sched["physical_health"]
+    with sandbox(), patched([(ORC, "_pattern_headline", lambda p: "")]):
+        blocking, _ = _dispatch_capture(_FLAGS_COORD, user_turn=True, user_text="x", bg=2)
+    assert "PATTERN MINER HEADLINE" not in blocking["logistics"]
+
+
+@check("#6.4c both twins put the headline into the Synthesizer's input, once")
+def _():
+    from tests.support.stage3_fixtures import Script, collect_stream, coordinator_package, \
+        pipeline
+    head = "PATTERN MINER HEADLINE (weekly report of 2026-11-15 — x):\n- y (confidence: strong)"
+    spec = [{"agent": "physical_health", "directive": "Sleep check."}]
+    for stream in (False, True):
+        s = Script({"coordinator": coordinator_package(spec), "physical_health": "SLEEP: ok"})
+        with sandbox(), pipeline(s, extra=[(ORC, "_pattern_headline", lambda p: head)]):
+            if stream:
+                collect_stream(ORC.run_pipeline_session_stream("hi", persona=PERSONA,
+                                                               provider="openai"))
+            else:
+                ORC.run_pipeline_session("hi", persona=PERSONA, provider="openai")
+        synth = s.last("synthesizer")
+        assert synth.count(head) == 1, (stream, synth[-1500:])
+        assert head in s.last("physical_health"), stream
+        assert "PATTERN MINER HEADLINE" not in s.last("coordinator")
 
 
 # --- #15: skill-practice habits --------------------------------------------------------------

@@ -483,6 +483,102 @@ def _normalize_open_threads(raw: list | None) -> list[dict]:
     return out
 
 
+# --- Held items (Stage 4 M4, build-time amendment 1, 2026-11-23) -----------------------------
+# What a user notices: something the assistant chose to hold back ("mention the sleep pattern
+# when you're less stressed") is eventually raised or consciously dropped, instead of vanishing.
+#
+# Before this, `held_items` was replace-semantics and never rendered into any prompt, so the
+# Synthesizer could not re-send what it held and each write erased the last — and the
+# Synthesizer is told to send every key every turn, usually as `[]`. Now:
+#   - each entry is `{"text", "held_since"}` (legacy bare strings read as `held_since: None`);
+#   - an incoming list is MERGED into the stored one: deduplicated by text, each entry keeping
+#     its first `held_since`; a reworded entry (the open-thread anchor identity) is added beside
+#     the original but inherits its date, so rewording never resets the clock;
+#   - `[]` and an omitted key change nothing;
+#   - an item leaves only when named in an explicit `held_dropped` list (the Synthesizer raised
+#     it or dismissed it). A dropped item is archived on disk (`dropped_held_items`, never
+#     loaded), not deleted.
+_DROPPED_HELD_CAP = 50
+
+# The render the Synthesizer sees ends each item with "(held N days)"; a copy sent back with it
+# attached is the same item.
+_HELD_SUFFIX_RE = re.compile(
+    r"\s*\((?:held \d+ days?|held since today|held, start not recorded)\)\s*$", re.IGNORECASE)
+
+
+def _held_text(item) -> str:
+    text = item.get("text") if isinstance(item, dict) else item
+    text = " ".join(str(text or "").split())
+    return _HELD_SUFFIX_RE.sub("", text).strip()
+
+
+def _held_key(text: str) -> str:
+    return " ".join(str(text or "").split()).casefold()
+
+
+def _valid_iso(value) -> str | None:
+    try:
+        return date.fromisoformat(str(value)).isoformat() if value else None
+    except ValueError:
+        return None
+
+
+def _normalize_held_items(raw) -> list[dict]:
+    """Read-time migration, as `_normalize_open_threads`: a legacy bare string reads as
+    `{"text": ..., "held_since": None}` — never today, so an old item is not reported as new."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for item in raw if isinstance(raw, list) else []:
+        text = _held_text(item)
+        if not text or _held_key(text) in seen:
+            continue
+        seen.add(_held_key(text))
+        since = _valid_iso(item.get("held_since")) if isinstance(item, dict) else None
+        out.append({"text": text, "held_since": since})
+    return out
+
+
+def _merge_held_items(incoming, dropped, existing, today: str) -> tuple[list[dict], list[dict]]:
+    """(kept, newly_dropped). `incoming` None or [] adds nothing; nothing leaves except through
+    `dropped`. A drop matches an item by exact text, else by anchor identity when exactly one
+    stored item matches — an ambiguous drop removes nothing (keeping is the safe error)."""
+    kept = _normalize_held_items(existing)
+    keys = {_held_key(h["text"]) for h in kept}
+    dated = sorted(((_anchor_tokens(h["text"]), h["held_since"]) for h in kept if h["held_since"]),
+                   key=lambda pair: (pair[1], sorted(pair[0])))
+    for item in incoming if isinstance(incoming, list) else []:
+        text = _held_text(item)
+        if not text or _held_key(text) in keys:
+            continue
+        since = _valid_iso(item.get("held_since")) if isinstance(item, dict) else None
+        since = since or _carried_added(text, dated) or today
+        kept.append({"text": text, "held_since": since})
+        keys.add(_held_key(text))
+
+    newly_dropped: list[dict] = []
+    for d in dropped if isinstance(dropped, list) else []:
+        text = _held_text(d)
+        if not text:
+            continue
+        idx = [i for i, h in enumerate(kept) if _held_key(h["text"]) == _held_key(text)]
+        if not idx:
+            key = _anchor_tokens(text)
+            idx = [i for i, h in enumerate(kept) if _same_thread(key, _anchor_tokens(h["text"]))]
+            if len(idx) != 1:
+                continue
+        item = kept.pop(idx[0])
+        newly_dropped.append({**item, "dropped_on": today})
+    return kept, newly_dropped
+
+
+def held_days(held_since: str | None, today: date | None = None) -> int | None:
+    """Whole days an item has been held, or None when its start was never recorded."""
+    since = _valid_iso(held_since)
+    if since is None:
+        return None
+    return max(0, ((today or date.today()) - date.fromisoformat(since)).days)
+
+
 # --- The open-thread cap (Stage 2 #4, review S7.1, 2026-11-23) -------------------------------
 # The Synthesizer's instruction asks for at most five per category, and the open list still grew
 # past it, so a stale sixth topic kept resurfacing. Code backstops `open_threads` only: it is the
@@ -710,7 +806,8 @@ def _recover_from_lastgood() -> dict:
     """The carried keys from `.lastgood`, or {} if it is missing or unreadable too.
 
     Only what is carried forward rather than rewritten each turn: clinical threads (merge, not
-    replace — they must not be deletable) and `_CARRIED_KEYS`. Open threads, patterns and
+    replace — they must not be deletable), held items and their drop archive (merged since
+    Stage 4 M4, so no later write restates them) and `_CARRIED_KEYS`. Open threads, patterns and
     follow-ups are restated by the next ordinary write, so a stale copy of them is not restored.
     """
     try:
@@ -719,7 +816,8 @@ def _recover_from_lastgood() -> dict:
         return {}
     if not isinstance(good, dict):
         return {}
-    kept = {k: good[k] for k in ("clinical_threads", *_CARRIED_KEYS) if k in good}
+    kept = {k: good[k] for k in ("clinical_threads", "held_items", "dropped_held_items",
+                                 *_CARRIED_KEYS) if k in good}
     if kept:
         logger.warning("[context_tracker] tracker unreadable or missing — carried %s from %s",
                        sorted(kept), _lastgood_path().name)
@@ -930,7 +1028,9 @@ def _context_fingerprint(data: dict) -> str:
         ),
         "patterns": sorted(str(p) for p in (data.get("patterns") or [])),
         "follow_ups": sorted(str(f) for f in (data.get("follow_ups") or [])),
-        "held_items": sorted(str(h) for h in (data.get("held_items") or [])),
+        # Text only (M4): a legacy string and its dated dict are the same item, and an item's
+        # age growing by a day is not "something new".
+        "held_items": sorted(h["text"] for h in _normalize_held_items(data.get("held_items"))),
         "clinical": sorted(
             f"{t.get('flag')}:{t.get('status')}" for t in (data.get("clinical_threads") or [])
         ),
@@ -1250,7 +1350,8 @@ def read_context_tracker() -> dict:
             "something ongoing, say plainly that you cannot get to it at the moment."
         )}
     # Backfill fields for trackers written before they existed.
-    data.setdefault("held_items", [])
+    data["held_items"] = _normalize_held_items(data.get("held_items"))
+    data.pop("dropped_held_items", None)      # archived, never loaded (M4)
     data.setdefault("clinical_threads", [])
     # Migrate pre-timestamp open_threads (bare strings) rather than crashing on old data.
     data["open_threads"] = _normalize_open_threads(data.get("open_threads"))
@@ -1508,9 +1609,10 @@ def write_context_tracker(
     open_threads: list,
     patterns: list[str],
     follow_ups: list[str],
-    held_items: list[str] | None = None,
+    held_items: list | None = None,
     clinical_threads: list[dict] | None = None,
     user_text: str | None = None,
+    held_dropped: list | None = None,
 ) -> str:
     """
     Update the session context at close of each exchange.
@@ -1539,6 +1641,9 @@ def write_context_tracker(
                               surface when mood is better"].
                       Held items that age across multiple sessions without
                       surfacing should be escalated, not silently dropped.
+                      MERGED, never replaced (Stage 4 M4): each new text is added and
+                      stamped `held_since`; a stored item keeps its first date; None and
+                      [] change nothing. See the block above `_DROPPED_HELD_CAP`.
         clinical_threads: Open clinical concerns, each a dict with 'flag'
                       (e.g. "CLINICAL_CONCERN: SUICIDAL_IDEATION",
                       "MEDICATION_MISSED_CRITICAL"), 'status'
@@ -1551,6 +1656,8 @@ def write_context_tracker(
                       Optional; defaults to None so existing callers are unaffected. Used only
                       to grant a past-cutoff open thread grace when the user's words plausibly
                       reference it — see `_user_engages_thread`.
+        held_dropped: Held items the Synthesizer raised or dismissed this turn — the only way
+                      one leaves. Archived to `dropped_held_items` on disk, never loaded.
 
     Returns:
         Confirmation string, plus any status changes or refusals.
@@ -1676,15 +1783,24 @@ def write_context_tracker(
     if len(expired_open_threads) > _EXPIRED_OPEN_THREADS_CAP:
         expired_open_threads = expired_open_threads[-_EXPIRED_OPEN_THREADS_CAP:]
 
+    held, newly_dropped_held = _merge_held_items(
+        held_items, held_dropped, existing.get("held_items"), today)
+    dropped_held = existing.get("dropped_held_items")
+    dropped_held = list(dropped_held) if isinstance(dropped_held, list) else []
+    if newly_dropped_held:
+        dropped_held = (dropped_held + newly_dropped_held)[-_DROPPED_HELD_CAP:]
+
     tracker = {
         "last_session": today,
         "open_threads": stamped_open_threads,
         "patterns": patterns,
         "follow_ups": follow_ups,
-        "held_items": held_items or [],
+        "held_items": held,
         "clinical_threads": threads,
         "expired_open_threads": expired_open_threads,
     }
+    if dropped_held:
+        tracker["dropped_held_items"] = dropped_held
 
     # [DB-0809-02] This dict is rebuilt from scratch every turn, so any key not named above is
     # erased by the next ordinary write. The asked-state and scheduled-run bookkeeping are

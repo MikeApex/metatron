@@ -51,3 +51,16 @@ agents:
     - {read: agent_config}
     - {read: counters}
     - {read: skill_habits}                  # #15: skill practice as ledger habits
+  # #20 / M16 (4e): the weekly Pattern Miner's fixed steps 1, 2, 3b and 4, and its baseline row
+  # for the data span. Made on its scheduled single-agent run only (core/prefetch.py
+  # pattern_miner_run) — never when the Coordinator names it on a user's turn. Off the real-time
+  # path, so the caps and the duplicate scan's budget are wider. Cost: ≈40–60k input tokens once a
+  # week, re-sent on each of ~3–4 remaining rounds (≈$0.10–0.18/week); today it spends 8 rounds
+  # producing nothing.
+  pattern_miner:
+    - {read: recent_insights, n: 2, cap_chars: 20000}
+    - {read: wisdom, cap_chars: 20000}
+    - {read: log_windows, max_entries: 45, cap_chars: 120000}   # 7/30/90 days, one read
+    - {read: wisdom_duplicates, cap_chars: 12000, timeout_s: 60}   # loads the embedder
+    - {read: baseline_row}
+    - {read: baseline_periods, cap_chars: 12000}
