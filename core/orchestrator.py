@@ -3574,6 +3574,8 @@ def run_session_ollama(system_prompt: str, user_input: str,
             print("\n", flush=True)
 
         full_content = "".join(content_parts)
+        if full_content.strip():
+            full_response = full_content   # the last model text, for a run that runs out of rounds
 
         if not tool_calls:
             if history is not None:
@@ -3625,10 +3627,14 @@ def run_session_ollama(system_prompt: str, user_input: str,
             history.append({"role": "assistant", "content": text})
         return text
 
+    # Out of rounds with no final round: the last model text, or "" if none — as
+    # _openai_compat_loop returns what it has. This returned an undefined name (NameError) until
+    # the Stage 4 4e review.
+    _note_reply("model" if full_response.strip() else "none")
     if history is not None:
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": full_response})
-    return result
+    return full_response
 
 
 def _get_vertex_bearer_token() -> str:

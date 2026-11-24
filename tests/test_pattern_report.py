@@ -272,6 +272,38 @@ def _():
     assert got == REPLY.strip() and rec.reply_source == "model"
 
 
+@check("3d2. the local Ollama loop out of rounds WITHOUT a final round returns the last model "
+       "text, or \"\" if none — it no longer raises")
+def _():
+    import ollama
+
+    def make_chat(texts):
+        calls: list[dict] = []
+
+        def chat(**kw):
+            calls.append(kw)
+            n = len(calls)
+            tc = SimpleNamespace(function=SimpleNamespace(name="read_recent_insights",
+                                                          arguments={}))
+            chunk = SimpleNamespace(message=SimpleNamespace(tool_calls=[tc],
+                                                            content=texts.get(n)),
+                                    prompt_eval_count=1, eval_count=1, done_reason="stop")
+            return iter([chunk])
+        return chat, calls
+    for texts, expect in (({2: "Checking the logs.", 5: "Now the wisdom store."},
+                           "Now the wisdom store."), ({}, "")):
+        chat, calls = make_chat(texts)
+        rec = _rec()
+        TR._set_current_agent(rec)
+        try:
+            with patched([(ollama, "chat", chat)]):
+                got = ORC.run_session_ollama("sys", "go", _SCHEMA, dict(_HANDLERS))
+        finally:
+            TR._set_current_agent(None)
+        assert len(calls) == 8 and got == expect, (len(calls), got)
+        assert rec.reply_source == ("model" if expect else "none"), rec.reply_source
+
+
 @check("3e. on the local route the Pattern Miner's block is held to local_cap_chars; the cloud "
        "route is not")
 def _():
