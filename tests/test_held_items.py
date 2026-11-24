@@ -177,6 +177,32 @@ def _():
             assert [h["held_since"] for h in got] == [ago(9), ago(3)], (a, b, got)
 
 
+@check("a [CONTEXT] block cut off inside `held_items` (at the '[' or mid-item) drops the key, so "
+       "the stored list is kept; a closed array in a block cut later still replaces it")
+def _():
+    head = ('Reply.\n[CONTEXT]\n{"open_threads": ["chase the quote"], "patterns": ["p"], '
+            '"follow_ups": ["f"], ')
+    cuts = (head + '"held_items": [',
+            head + f'"held_items": ["{A}", "Held: the gym membership ren',
+            head + '"held_items": ["Held: something new"')
+    for raw in cuts:
+        visible, ctx = ORC.split_context_block(raw)
+        assert visible == "Reply." and ctx is not None, raw
+        assert "held_items" not in ctx, (raw[-40:], ctx)
+        with tracker(_seed()) as path:
+            ORC.persist_context_block(ctx)
+            assert _held(path) == STORED, _held(path)
+    # Closed in the raw text, cut afterwards: the list is whole, so it replaces the stored one.
+    _, ctx = ORC.split_context_block(head + f'"held_items": ["{A}"], "clinical_threads": [')
+    assert ctx["held_items"] == [A], ctx
+    with tracker(_seed()) as path:
+        ORC.persist_context_block(ctx)
+        assert _held(path) == STORED[:1], _held(path)
+    # A clean block is never touched.
+    _, ctx = ORC.split_context_block(head + '"held_items": []}\n[/CONTEXT]')
+    assert ctx["held_items"] == []
+
+
 @check("held_dropped is gone: no [CONTEXT] key, no writer parameter")
 def _():
     import inspect

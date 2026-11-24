@@ -2682,6 +2682,8 @@ def _repair_context_json(raw: str) -> tuple[dict | None, str]:
         except Exception:
             continue
         if isinstance(parsed, dict):
+            if how in ("truncation closed", "single quotes converted"):
+                parsed = _drop_unclosed_held(parsed, smart)
             return parsed, how
 
     # Last resort: salvage the keys that are individually well-formed. A single
@@ -2700,10 +2702,49 @@ def _repair_context_json(raw: str) -> tuple[dict | None, str]:
             salvaged[key] = json.loads(_balance(value), strict=False)
         except Exception:
             continue
+    salvaged = _drop_unclosed_held(salvaged, smart)
     if salvaged:
         return salvaged, f"partial salvage ({', '.join(sorted(salvaged))})"
 
     return None, "unrecoverable"
+
+
+def _array_closed(text: str, start: int) -> bool:
+    """Does the `[` at `start` close in `text` itself — not only after _balance added closers?"""
+    depth, in_string, escaped = 0, False, False
+    for ch in text[start:]:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == '[':
+            depth += 1
+        elif ch == ']':
+            depth -= 1
+            if depth == 0:
+                return True
+    return False
+
+
+def _drop_unclosed_held(parsed: dict, raw: str) -> dict:
+    """Stage 4 M4 (Fable review): a repaired block whose `held_items` array was cut off in the
+    RAW text loses that key. A present list REPLACES the stored one, so a truncated list would
+    archive every item after the cut; with the key absent the stored list is kept unchanged."""
+    if "held_items" not in parsed:
+        return parsed
+    text = raw if '"' in raw else raw.replace("'", '"')
+    m = _re.search(r'"held_items"\s*:\s*\[', text)
+    if m and not _array_closed(text, m.end() - 1):
+        parsed = {k: v for k, v in parsed.items() if k != "held_items"}
+        logger.warning("[context_block] held_items array was cut off — key dropped, the stored "
+                       "held items are kept")
+    return parsed
 
 
 def _extract_json_value(text: str, start: int) -> str | None:
@@ -3582,7 +3623,8 @@ def run_session_ollama(system_prompt: str, user_input: str,
                 history.append({"role": "user", "content": user_input})
                 history.append({"role": "assistant", "content": full_content})
             full_response = full_content
-            _note_reply("model", getattr(final_chunk, "done_reason", "") or "")
+            _note_reply("model" if full_content.strip() else "none",
+                        getattr(final_chunk, "done_reason", "") or "")
             return full_content if return_text else ""  # else: already printed to stdout
 
         # Tool call turn — show which tool is running, then continue the loop
@@ -3615,7 +3657,7 @@ def run_session_ollama(system_prompt: str, user_input: str,
             )
             text = _re.sub(r"<think>.*?</think>", "", resp.message.content or "",
                            flags=_re.DOTALL).strip()
-            _note_reply("model", getattr(resp, "done_reason", "") or "")
+            _note_reply("model" if text else "none", getattr(resp, "done_reason", "") or "")
             _tr.record_turn_tokens(_tr.get_current_agent(), 9,
                                    getattr(resp, "prompt_eval_count", 0) or 0,
                                    getattr(resp, "eval_count", 0) or 0, output_text=text)
@@ -3634,7 +3676,7 @@ def run_session_ollama(system_prompt: str, user_input: str,
     if history is not None:
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": full_response})
-    return full_response
+    return full_response if return_text else ""     # else: already printed to stdout
 
 
 def _get_vertex_bearer_token() -> str:
@@ -4719,7 +4761,12 @@ _WIDE_OUTPUT_AGENTS = {"day_planner": 16384, "project_planner": 16384, "pattern_
 # cap is what holds a call near the ~$0.02 named beside `project_plans_per_day` (day_plan.yaml).
 # task_judge (ranking § 16): 1,024 — weighing a list against stated values needs little, and the
 # cap holds a call near the ~$0.01 named beside `task_judge_calls_per_day`.
-_PLAIN_THINKING_CAPS = {"day_planner": 0, "project_planner": 4096, "task_judge": 1024}
+# pattern_miner (Stage 4 #20, Fable review): 6,144 — of its 16,384 output ceiling, so at least
+# 10,240 tokens stay for the report itself (three scales of five-field blocks run ~3–6k). Without
+# a cap the thinking could spend the ceiling and the report would be cut — and a cut report is
+# never stored. Once a week, billed as produced.
+_PLAIN_THINKING_CAPS = {"day_planner": 0, "project_planner": 4096, "task_judge": 1024,
+                        "pattern_miner": 6144}
 
 
 # [DB-1026-01] A reply round that ends MAX_TOKENS with no tool call did not finish: its text
@@ -5551,7 +5598,11 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
         # Return on any non-tool-call finish
         if choice.finish_reason != "tool_calls" or not message.tool_calls:
             messages.append(message)
-            _note_reply("model", choice.finish_reason)
+            # A model reply only when this round's message carries text; an empty finish
+            # returns whatever `result` last held — a tool result, or nothing.
+            _note_reply("model" if (message.content or "").strip()
+                        else ("tool_result" if str(result or "").strip() else "none"),
+                        choice.finish_reason)
             if history is not None:
                 history.append({"role": "user", "content": user_input_display or user_input})
                 history.append({"role": "assistant", "content": result})
@@ -5599,7 +5650,7 @@ def _openai_compat_loop(system_prompt: str, user_input: str,
             )
             message = response.choices[0].message
             result = (message.content or "").strip()
-            _note_reply("model", response.choices[0].finish_reason)
+            _note_reply("model" if result else "none", response.choices[0].finish_reason)
             if response.usage:
                 _tr.record_turn_tokens(
                     _tr.get_current_agent(), turn_num, response.usage.prompt_tokens,

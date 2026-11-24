@@ -228,8 +228,24 @@ def confidence_level(text: str) -> str:
 
 def _split_trailing_headings(text: str) -> tuple[str, str]:
     """(content, trailing heading lines) — a scale heading before the next block lands at the
-    end of the previous block's last field."""
+    end of the previous block's last field. A heading-shaped line that is the field's FIRST line
+    (`[CONFIDENCE]` then `**strong**`) is the field's value, never a heading."""
     lines = text.rstrip().splitlines()
+    tail: list[str] = []
+    while lines and (not lines[-1].strip() or _HEADING_RE.match(lines[-1])):
+        tail.insert(0, lines.pop())
+    if not "\n".join(lines).strip():
+        while tail and not tail[0].strip():
+            tail.pop(0)
+        if tail:
+            lines = [tail.pop(0)]
+    return "\n".join(lines).strip(), "\n".join(tail).strip()
+
+
+def _preamble_heading(text: str) -> tuple[str, str]:
+    """(notes, heading) for the text before the first tag: only its trailing heading-shaped
+    lines are a heading; prose ("over the 7-day window I…") is a note, never a scale."""
+    lines = (text or "").rstrip().splitlines()
     tail: list[str] = []
     while lines and (not lines[-1].strip() or _HEADING_RE.match(lines[-1])):
         tail.insert(0, lines.pop())
@@ -243,8 +259,8 @@ def parse_blocks(text: str) -> tuple[list[dict], str]:
     matches = list(_TAG_RE.finditer(text or ""))
     if not matches:
         return [], (text or "").strip()
-    notes = [text[:matches[0].start()].strip()]
-    pending_heading = notes[0]
+    pre_notes, pending_heading = _preamble_heading(text[:matches[0].start()])
+    notes = [pre_notes]
     blocks: list[dict] = []
     current: dict | None = None
     for i, m in enumerate(matches):

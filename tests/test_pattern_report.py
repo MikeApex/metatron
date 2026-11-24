@@ -132,6 +132,26 @@ def _():
     assert "Merged wisdom" not in obs[2]["action"], obs[2]
 
 
+@check("1b. preamble prose naming a scale is a note, not a heading; a heading-shaped preamble "
+       "line is; a bold-only line straight after a tag is that field's value")
+def _():
+    prose = ("Looking across the 7-day window and the wider record, here is what stands out.\n\n"
+             "[EVIDENCE] e1\n[OBSERVATION] o1\n[CONFIDENCE] moderate\n[ACTION] a1\n")
+    obs, notes = PR.parse_blocks(prose)
+    assert len(obs) == 1 and obs[0]["scale"] == "" and "7-day window" in notes, (obs, notes)
+    headed = "Here is the week.\n\n## 30-day\n\n" + prose.split("\n\n", 1)[1]
+    obs, notes = PR.parse_blocks(headed)
+    assert obs[0]["scale"] == "30-day" and notes == "Here is the week.", (obs, notes)
+    bold = ("[EVIDENCE]\n**five short nights in seven**\n[OBSERVATION]\n**afternoons go flat**\n"
+            "[CONFIDENCE]\n**strong**\n\n## 90-day\n\n"
+            "[EVIDENCE] e2\n[OBSERVATION] o2\n[CONFIDENCE]\n**weak**\n[ACTION] a2")
+    obs, _ = PR.parse_blocks(bold)
+    assert len(obs) == 2, obs
+    assert obs[0]["confidence"] == "**strong**" and obs[0]["confidence_level"] == "strong", obs[0]
+    assert obs[0]["observation"] == "**afternoons go flat**", obs[0]
+    assert obs[1]["scale"] == "90-day" and obs[1]["confidence_level"] == "weak", obs[1]
+
+
 # --- 2. the run already wrote it ---------------------------------------------------------------
 
 @check("2. when the run already called write_insight_report, code writes no second report")
@@ -240,6 +260,9 @@ def _():
         assert "final_round" not in other and "return_text" not in other, (route, other)
     assert seen[("ollama", "pattern_miner")].get("return_text") is True
     assert seen[("gemini", "pattern_miner")]["max_output_tokens"] >= 16384      # review C
+    # Thinking is capped so at least 8k of the ceiling stays for the report itself.
+    cap = seen[("gemini", "pattern_miner")]["thinking_budget"]
+    assert cap == ORC._PLAIN_THINKING_CAPS["pattern_miner"] and 0 < cap <= 16384 - 8192, cap
 
 
 @check("3d. the local Ollama loop: 8 tool rounds, then one call with no tools; its text is "
@@ -273,7 +296,8 @@ def _():
 
 
 @check("3d2. the local Ollama loop out of rounds WITHOUT a final round returns the last model "
-       "text, or \"\" if none — it no longer raises")
+       "text (return_text), or \"\" if none — it no longer raises; without return_text it keeps "
+       "the already-printed \"\" contract")
 def _():
     import ollama
 
@@ -297,11 +321,36 @@ def _():
         TR._set_current_agent(rec)
         try:
             with patched([(ollama, "chat", chat)]):
-                got = ORC.run_session_ollama("sys", "go", _SCHEMA, dict(_HANDLERS))
+                got = ORC.run_session_ollama("sys", "go", _SCHEMA, dict(_HANDLERS),
+                                             return_text=True)
         finally:
             TR._set_current_agent(None)
         assert len(calls) == 8 and got == expect, (len(calls), got)
         assert rec.reply_source == ("model" if expect else "none"), rec.reply_source
+        chat, calls = make_chat(texts)
+        with patched([(ollama, "chat", chat)]):
+            assert ORC.run_session_ollama("sys", "go", _SCHEMA, dict(_HANDLERS)) == ""
+
+
+@check("3f. the compat loop notes 'model' only when the returning round carried text: an empty "
+       "finish after tool rounds is the last tool result; an empty first reply is none")
+def _():
+    class _Empty(_Fake):
+        def _create(self, **kw):
+            got = super()._create(**kw)
+            if got.choices[0].finish_reason == "stop":
+                got.choices[0].message.content = None
+            return got
+    rec = _rec()
+    got = _loop(_Empty(2, "ignored"), rec, final_round=True)
+    assert got == '{"tool": "result body"}' and rec.reply_source == "tool_result", \
+        (got, rec.reply_source)
+    rec = _rec()
+    got = _loop(_Empty(0, "ignored"), rec)
+    assert got == "" and rec.reply_source == "none", (got, rec.reply_source)
+    with sandbox() as sb:
+        status = PR.write_from_reply('{"tool": "result body"}', _rec(), PERSONA, today=TODAY)
+        assert status.startswith("no report") and _insights(sb) == []
 
 
 @check("3e. on the local route the Pattern Miner's block is held to local_cap_chars; the cloud "
