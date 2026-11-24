@@ -152,6 +152,34 @@ def _():
     assert r.outputs["logistics"] == "Booked.\n- HOBBY_LAPSE", repr(r.outputs["logistics"])
 
 
+@check("round 3 item 5: a continuation is indented DEEPER than the flag's own line; a sibling "
+       "at the same depth is not swallowed")
+def _():
+    text = ("FLAGS:\n  CONSULT_NEEDED: finance — the fare\n  Fare checked against the travel "
+            "line.\n  PROFILE_GAP: does the user cycle\n    to the station?")
+    r = _lift({"logistics": text})
+    assert "CONSULT_NEEDED: finance — the fare" in r.block, r.block
+    assert "the travel line" not in r.block, r.block
+    assert "PROFILE_GAP: does the user cycle to the station?" in r.block, r.block
+    assert "  Fare checked against the travel line." in r.outputs["logistics"], r.outputs
+
+
+@check("round 3 item 6: a request directly under a bare clinical header stays in that section, "
+       "whatever its indentation or bullet, until a blank line or another header")
+def _():
+    for text in ("MUST_SURFACE:\nCONSULT_NEEDED: physical_health — chest pain",
+                 "CLINICAL_CONCERN:\n    PROFILE_GAP: how long has this lasted?",
+                 "MUST_SURFACE:\nsignpost support today\nRESEARCH_NEEDED: angina warning signs"):
+        r = _lift({"physical_health": text})
+        assert r.outputs["physical_health"] == text and not r.block, (text, r)
+    for text in ("MUST_SURFACE:\nsignpost support\n\nCONSULT_NEEDED: finance — fare",
+                 "MUST_SURFACE:\nsignpost support\nFLAGS:\n- CONSULT_NEEDED: finance — fare",
+                 "MUST_SURFACE: signpost support\nCONSULT_NEEDED: finance — fare"):
+        r = _lift({"physical_health": text})
+        assert "CONSULT_NEEDED: finance — fare" in r.block, (text, r)
+        assert "MUST_SURFACE" in r.outputs["physical_health"], r.outputs
+
+
 @check("4d. research output (untrusted, review item 9): its PROFILE_GAP is never lifted or held; "
        "its consult and lookup lines lift for this turn")
 def _():
@@ -341,9 +369,9 @@ def _run_kw(stream: bool, script: Script, text: str, extra=None, **kw) -> str:
         return ORC.run_pipeline_session(text, persona=PERSONA, provider="openai", **kw)
 
 
-@check("review item 8 / 14: a nudge through each twin, a sign-off-note turn, and a Synthesizer "
-       "call that fails all leave the queue byte-identical; the sign-off-note block carries the "
-       "consult but no profile question")
+@check("review item 8 / 14: a nudge through each twin and a Synthesizer call that fails leave the "
+       "queue byte-identical; a sign-off-note turn shows the consult but no profile question, and "
+       "queues the fresh gap without spending the held one (round 3 item 7)")
 def _():
     for stream in (False, True):
         with sandbox() as sb:
@@ -361,7 +389,15 @@ def _():
             assert "SIGN-OFF:" in synth_in, synth_in[-600:]
             assert "CONSULT_NEEDED: finance — fare" in synth_in
             assert "PROFILE_GAP" not in synth_in.split("COORDINATOR ROUTING PACKAGE:")[0]
-            assert p.read_bytes() == before, "a sign-off-note turn spent the queue"
+            # Round 3 item 7: nothing spent and nothing lost — the held question keeps its
+            # place, this turn's is queued behind it, and no win is recorded.
+            held = json.loads(before)["queue"][0]
+            st = json.loads(p.read_text())
+            assert st["queue"][0] == held, st
+            assert [(e["agent"], e["text"]) for e in st["queue"]] == [
+                ("finance", held["text"]), ("logistics", "does the user cycle?")], st
+            assert st["last_won"] == {}, st
+            p.write_bytes(before)
 
             def boom(*a, **k):
                 raise RuntimeError("model down")

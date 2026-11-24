@@ -106,6 +106,8 @@ _POS_FLAGS = re.compile(r"^[ \t]*(?:(?:[-*•]|\d+[.)])[ \t]*)?(?:\*\*)?FLAGS(?:
 _POS_JSON = re.compile(r'(?:^[ \t]*|[\[,][ \t]*)"$')
 _BULLET = re.compile(r"^[ \t]*(?:[-*•]|\d+[.)])[ \t]+")
 _CONTINUATION = re.compile(r"^[ \t]+(?![-*•][ \t]|\d+[.)][ \t])\S")
+# A section header: an upper-case label and a colon at a line start, no bullet.
+_HEADER = re.compile(r"^[ \t]*(?:\*\*)?[A-Z][A-Z_]{3,}(?:\*\*)?[ \t]*:")
 _MARK = "\x00"
 
 _EXPIRY = timedelta(days=7)
@@ -174,14 +176,18 @@ def _find(text: str) -> list[tuple[int, int, str, str]]:
                     or re.search(r"[,;][ \t]*(?:\*\*)?$", before)):
                 stop = k.start()
                 break
-        # An indented continuation line belongs to the body it continues.
+        # An indented continuation line belongs to the body it continues — only when it is
+        # indented DEEPER than the flag's own line; a sibling at the same depth is not part of
+        # it (review round 3, item 5).
         end_line = line_end
+        own_indent = _indent(text[line_start:line_end])
         if stop == line_end and not in_string:
             while end_line < len(text):
                 nxt_end = text.find("\n", end_line + 1)
                 nxt_end = len(text) if nxt_end == -1 else nxt_end
                 nxt = text[end_line + 1:nxt_end]
-                if not _CONTINUATION.match(nxt) or _STOP_RE.match(nxt.strip()):
+                if (not _CONTINUATION.match(nxt) or _STOP_RE.match(nxt.strip())
+                        or _indent(nxt) <= own_indent):
                     break
                 end_line = nxt_end
             stop = end_line
@@ -196,23 +202,34 @@ def _find(text: str) -> list[tuple[int, int, str, str]]:
     return found
 
 
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" \t"))
+
+
 def _under_clinical(text: str, line_start: int) -> bool:
-    """Is this line a bullet or continuation under a section headed by a clinical token? Then it
-    is part of that section ("MUST_SURFACE:" and its bullets) and is never moved out of it."""
+    """Is this line inside a section headed by a clinical token? Then it is part of that section
+    and is never moved out of it. Walking up to a blank line or a section header:
+      - a BARE clinical header ("MUST_SURFACE:") holds every line under it, whatever its
+        indentation or bullet (review round 3, item 6);
+      - a clinical header with its own text holds the bullets and continuations under it;
+      - any other header ends the section; a clinical body line on the way means inside one."""
     line_end = text.find("\n", line_start)
     line = text[line_start:line_end if line_end != -1 else len(text)]
-    if not (_BULLET.match(line) or _CONTINUATION.match(line)):
-        return False
+    is_item = bool(_BULLET.match(line) or _CONTINUATION.match(line))
     pos = line_start
     while pos > 0:
         prev_start = text.rfind("\n", 0, pos - 1) + 1
         prev = text[prev_start:pos - 1]
         if not prev.strip():
             return False
+        head = _HEADER.match(prev)
+        if head:
+            if not _CLINICAL_RE.search(prev):
+                return False
+            bare = not prev[head.end():].strip(" \t*")
+            return bare or is_item
         if _CLINICAL_RE.search(prev):
             return True
-        if not (_BULLET.match(prev) or _CONTINUATION.match(prev)):
-            return False
         pos = prev_start
     return False
 
@@ -307,15 +324,25 @@ def _rotate(fresh: list[tuple[str, str]], persona: str | None) -> tuple[dict | N
     return pick, queue
 
 
-def commit_rotation(persona: str | None, pick: dict | None, losers: list) -> None:
+def commit_rotation(persona: str | None, pick: dict | None, losers: list,
+                    spent: bool = True) -> None:
     """Write the queue after a turn the Synthesizer runs. Logged, never raised: on a write
-    failure the turn still had its one gap; the losers are simply not held."""
+    failure the turn still had its one gap; the losers are simply not held.
+
+    `spent=False` — a sign-off-note turn, which raises nothing new (review round 3, item 7):
+    the pick was not put to the user, so it goes back in the queue (a held one keeps its place,
+    a fresh one is queued now) and no win is recorded. Nothing is lost."""
     if pick is None and not losers and not _path(persona).exists():
         return
+    if not spent and pick:
+        back = {"agent": pick["agent"], "text": pick["text"],
+                "queued": pick.get("queued") or _now().isoformat(timespec="seconds")}
+        losers = sorted([e for e in losers if e["agent"] != pick["agent"]] + [back],
+                        key=lambda e: e["queued"])[-_CAP:]
     try:
         st = _read(persona)
         last_won = dict(st.get("last_won") or {})
-        if pick:
+        if pick and spent:
             last_won[pick["agent"]] = _now().isoformat(timespec="seconds")
         data = {"queue": [{"agent": e["agent"], "text": e["text"], "queued": e["queued"]}
                           for e in losers][-_CAP:],

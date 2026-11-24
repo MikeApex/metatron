@@ -8639,14 +8639,17 @@ def _requests_text(lifted, signoff_note: str) -> str:
 
 def _commit_requests(lifted, persona: str | None, signoff_note: str = "") -> None:
     """Spend the profile question (write the queue). Called only AFTER the Synthesizer call came
-    back (review item 8), never on a sign-off skip, a sign-off-note turn, a nudge or an empty
-    turn — so a held question is spent only on a reply that carried it."""
-    if lifted is None or signoff_note:
+    back (review item 8), never on a sign-off skip, a nudge or an empty turn — so a held
+    question is spent only on a reply that carried it. On a sign-off-note turn it is queued
+    instead of spent."""
+    if lifted is None:
         return
     try:
         from tools import specialist_requests as SR
         with persona_scope(resolve_persona(persona)):
-            SR.commit_rotation(persona, lifted.pick, lifted.losers)
+            # On a sign-off-note turn the profile question was not shown: it is queued, not
+            # spent, and no win is recorded (review round 3, item 7).
+            SR.commit_rotation(persona, lifted.pick, lifted.losers, spent=not signoff_note)
     except PersonaError:
         raise
     except Exception as exc:  # noqa: BLE001

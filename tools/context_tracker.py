@@ -1560,14 +1560,35 @@ def _clinical_merge_for_write(
     neither opens, re-states nor changes a thread, and raises no escalation: existing threads
     carry forward untouched, as on any omission. `_merge_clinical_threads` does the rest:
     add-only, tier-2 `resolved` refused, tier-2 escalation raised.
+
+    One exemption (Mike's ruling, 2026-11-24, Stage 5 review): a MEDICATION_MISSED_CRITICAL
+    thread may open — and escalate — on a scheduled turn. That flag is raised by code from the
+    dose record, not from anything the user said, so the user-words rule does not apply to it;
+    a missed critical dose noticed by the morning brief must not wait for the user to speak.
+    Every other clinical-thread write on such a turn is still refused (Mental Wellbeing's
+    re-raise protection is unchanged).
     """
+    incoming = clinical_threads
     unprompted = bool(clinical_threads) and _scheduled_turn()
-    threads, notices = _merge_clinical_threads(
-        None if unprompted else clinical_threads, existing.get("clinical_threads", []) or []
-    )
     if unprompted:
+        incoming = [t for t in clinical_threads if isinstance(t, dict) and _code_raised(t)]
+    refused = unprompted and len(incoming) < len(clinical_threads)
+    threads, notices = _merge_clinical_threads(
+        incoming or None, existing.get("clinical_threads", []) or []
+    )
+    if refused:
         notices.append("clinical_threads not written: a scheduled session carries no user words")
     return threads, notices
+
+
+# Clinical flags raised by code from a record, not from the user's words — the only ones a
+# scheduled turn may write (see _clinical_merge_for_write).
+_CODE_RAISED_FLAGS = ("MEDICATION_MISSED_CRITICAL",)
+
+
+def _code_raised(thread: dict) -> bool:
+    flag = str(thread.get("flag") or "").strip().upper()
+    return any(flag == f or flag.startswith(f + ":") for f in _CODE_RAISED_FLAGS)
 
 
 def _norm_pattern(text) -> str:

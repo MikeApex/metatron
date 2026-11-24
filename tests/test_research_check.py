@@ -206,9 +206,9 @@ def _():
        "'Suite 1200' never refuses 'events in 2026', '1000 mg' or '£12000'; '14 Elm Road 2026' is "
        "refused; a UK postcode still refuses alone")
 def _():
-    prof = dict(_PROFILE_DATA, contact={"address": "Suite 1200, 14 Elm Road, Springfield, 2026"})
+    prof = dict(_PROFILE_DATA, contact={"address": "Suite 1200, 14 Elm Road, Springfield 2026"})
     contacts = [{"id": "x1", "name": "Pat Quinn", "contact_info": {
-        "address": "3 Oak Way, Lakeside, 1000"}}]
+        "address": "3 Oak Way, Lakeside 1000"}}]
     _seed(profile=prof, contacts=contacts)
     for q in ("Concerts and events in 2026", "Is 1000 mg of vitamin C too much?",
               "Is £12000 a fair price for a used car?", "Office space with 1200 desks",
@@ -266,6 +266,66 @@ def _():
     assert _research("Whose number is 020 7946 0001?").startswith(LG.RESEARCH_REFUSED)
     assert not _research("How much does the plumber charge per hour?").startswith("refused")
     assert not _research("Best plumber reviews").startswith("refused")
+
+
+@check("round 3 item 1: bracketed and spaced phone formats form one run")
+def _():
+    contacts = [{"id": "p1", "name": "Ann Lee", "contact_info": {"phone": "020 7946 0958"}},
+                {"id": "p2", "name": "Bo Park", "contact_info": {"phone": "+1 555 123 4567"}},
+                {"id": "p3", "name": "Cy Dunn", "contact_info": {"phone": "01632 960123"}}]
+    _seed(contacts=contacts)
+    for q in ("Who answers (020) 7946 0958?", "Is (555) 123-4567 a scam line?",
+              "Is +1 (555) 123-4567 a scam line?", "Is 555 - 123 - 4567 a scam line?",
+              "Reverse lookup (01632) 960123"):
+        assert _research(q).startswith(LG.RESEARCH_REFUSED), q
+
+
+@check("round 3 item 2: street-then-number streets are keyed; floors and flats never are; street "
+       "abbreviations match either way")
+def _():
+    assert LG._street_key("Hauptstrasse 12, 10115 Berlin") == " hauptstrasse 12 "
+    assert LG._street_key("Hauptstraße 12, 10115 Berlin") == " hauptstrasse 12 "
+    assert LG._street_key("ul. Rakovski 12, 1000 Sofia") == " ulitsa rakovski 12 "
+    assert LG._street_key("3rd Floor, 22 Mill Lane") == " 22 mill lane "
+    assert LG._street_key("Flat 3, Elm Court") == ""
+    assert LG._street_key("3rd Floor") == ""
+    _seed(profile=dict(_PROFILE_DATA, contact={"address": "14 Elm Rd, Westbury"}))
+    assert _research("Parking permits on 14 Elm Road").startswith(LG.RESEARCH_REFUSED)
+    _seed(profile=dict(_PROFILE_DATA, contact={"address": "22 Mill Lane, Hove"}))
+    assert _research("Parking permits on 22 Mill Ln").startswith(LG.RESEARCH_REFUSED)
+    _seed(profile=dict(_PROFILE_DATA, contact={"address": "Hauptstraße 12, 10115 Berlin"}))
+    assert _research("Noise rules at Hauptstrasse 12").startswith(LG.RESEARCH_REFUSED)
+    assert not _research("Best cafés in Berlin").startswith("refused")
+
+
+@check("round 3 item 3: titles and trailing notes are stripped before pairing; a lone partner "
+       "name pairs with the contact's surname")
+def _():
+    contacts = [{"id": "t1", "name": "Dr Jordan Pike (work)", "spouse_name": "Rhea"},
+                {"id": "t2", "name": "Mrs Ann Lee — piano teacher"},
+                {"id": "t3", "first_name": "Cy", "last_name": "Dunn", "spouse_name": "Mo"}]
+    _seed(contacts=contacts)
+    for q in ("Jordan Pike conference talk", "Ann Lee piano recital", "Rhea Pike art show",
+              "Mo Dunn charity run"):
+        assert _research(q).startswith(LG.RESEARCH_REFUSED), q
+    assert not _research("Dr Pepper ingredients").startswith("refused")
+
+
+@check("round 3 item 4: a numeric postcode's only companions are the street and the town in its "
+       "own part of the address — never the country")
+def _():
+    _seed(profile=dict(_PROFILE_DATA, contact={"address": "ul. Rakovski 12, 1000 Sofia, Bulgaria"}))
+    assert not _research("top 1000 companies in Bulgaria").startswith("refused")
+    assert _research("restaurants near 1000 Sofia").startswith(LG.RESEARCH_REFUSED)
+
+
+@check("round 3 item 8: other_emails stored as one string is read as one address")
+def _():
+    _seed(contacts=[{"id": "e1", "name": "Ann Lee",
+                     "contact_info": {"email": "a@example.org", "other_emails": "ann.l@example.net"}}])
+    assert _research("Who uses ann.l@example.net?").startswith(LG.RESEARCH_REFUSED)
+
+
 
 
 @check("8/9 (review item 14): the REAL lookup_public_fact → run_session → choke point path, providers "

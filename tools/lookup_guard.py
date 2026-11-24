@@ -82,7 +82,7 @@ _FIGURES = (
 
 def _fold(text: str) -> str:
     """Diacritics stripped (NFKD, combining marks dropped): "Zoë Brontë" reads "Zoe Bronte"."""
-    decomposed = unicodedata.normalize("NFKD", str(text or ""))
+    decomposed = unicodedata.normalize("NFKD", str(text or "").replace("ß", "ss"))
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
@@ -141,6 +141,21 @@ def _load_contacts() -> list[dict]:
 
 # A leading article or possessive is not part of a name: "The Plumber" is one word, a role.
 _LEADING = frozenset({"the", "a", "an", "my", "our", "your", "his", "her", "their"})
+# A title is not a first name: "Dr Jordan Pike" pairs (jordan, pike), not (dr, pike).
+_TITLES = frozenset({"dr", "mr", "mrs", "ms", "mx", "miss", "prof", "professor", "sir", "dame",
+                     "rev", "revd", "fr", "lady", "lord"})
+
+
+def _unannotated(name: str) -> str:
+    """A saved name without its trailing note: "Jordan Pike (work)", "Jordan Pike — plumber",
+    "Jordan Pike [old number]" all read "Jordan Pike"."""
+    s = str(name or "").strip()
+    while True:
+        cut = re.sub(r"\s*[(\[][^()\[\]]*[)\]]\s*$", "", s)
+        if cut == s:
+            break
+        s = cut
+    return re.split(r"\s+[-–—]\s+", s, maxsplit=1)[0].strip()
 
 
 def _contact_label(c: dict) -> str:
@@ -161,8 +176,8 @@ def _name_entries(persona: str | None) -> list[tuple[str, str, str]]:
     names: list[tuple[str, str, str]] = []
 
     def add(full: str, whose: str) -> None:
-        parts = _norm(full).split()
-        while parts and parts[0] in _LEADING:
+        parts = _norm(_unannotated(full)).split()
+        while parts and (parts[0] in _LEADING or parts[0] in _TITLES):
             parts = parts[1:]
         if len(parts) >= 2:
             names.append((parts[0], parts[-1], whose))
@@ -172,23 +187,26 @@ def _name_entries(persona: str | None) -> list[tuple[str, str, str]]:
         label = _contact_label(c)
         first = str(c.get("first_name") or "").strip()
         last = str(c.get("last_name") or "").strip()
+        # The family name, from the record's own field or the last word of its full name.
+        full_words = [w for w in _norm(_unannotated(str(c.get("name") or ""))).split()
+                      if w not in _LEADING and w not in _TITLES]
+        surname = last or (full_words[-1] if len(full_words) >= 2 else "")
         for given in (first, str(c.get("nickname") or "").strip()):
             if given and last:
                 add(f"{given} {last}", label)
         add(str(c.get("name") or ""), label)
+        # A partner or child named on a contact: as written, and a lone first name with the
+        # contact's family name (review round 3, item 3).
         spouse = str(c.get("spouse_name") or "").strip()
-        if spouse:
-            add(spouse, f"{spouse}, partner of {label}")
+        named = ([(spouse, f"{spouse}, partner of {label}")] if spouse else []) + [
+            (k.strip(), f"{k.strip()}, child of {label}") for k in _aliases(c.get("kids_names"))]
+        for who, whose in named:
+            add(who, whose)
+            if who and surname and len(_norm(_unannotated(who)).split()) == 1:
+                add(f"{who} {surname}", whose)
         for alias in _aliases(c.get("referred_to_as")):
             if _capitalised(alias):
                 add(alias, label)
-        # A child named on a contact: as written, and a lone first name with the family name.
-        for kid in _aliases(c.get("kids_names")):
-            kid = kid.strip()
-            whose = f"{kid}, child of {label}"
-            add(kid, whose)
-            if kid and last and len(_norm(kid).split()) == 1:
-                add(f"{kid} {last}", whose)
     return names
 
 
@@ -257,17 +275,27 @@ def check(question: str, persona: str | None = None, refuse_figures: bool = True
 RESEARCH_REFUSED = "refused before sending:"
 UNREADABLE = "the user's records could not be read (so nothing could be checked)"
 
-_UNIT_WORDS = frozenset({"flat", "apartment", "apt", "unit", "suite", "floor", "room", "no"})
+_UNIT_WORDS = frozenset({"flat", "apartment", "apt", "unit", "suite", "floor", "fl", "room",
+                         "no", "level", "storey", "building", "block"})
+# Street abbreviations read as the full word on BOTH sides (review round 3, item 2), so a stored
+# "14 Elm Rd" refuses "14 Elm Road" and the reverse.
+_STREET_ABBREV = {"rd": "road", "st": "street", "str": "strasse", "ave": "avenue", "av": "avenue",
+                  "ln": "lane", "dr": "drive", "ct": "court", "pl": "place", "sq": "square",
+                  "cres": "crescent", "terr": "terrace", "tce": "terrace", "gdns": "gardens",
+                  "pde": "parade", "blvd": "boulevard", "hwy": "highway", "cl": "close",
+                  "gr": "grove", "pk": "park", "ul": "ulitsa"}
 _STREET_TYPES = frozenset({
-    "street", "st", "road", "rd", "avenue", "ave", "lane", "ln", "drive", "dr", "close", "way",
-    "crescent", "court", "ct", "place", "pl", "terrace", "gardens", "grove", "square", "mews",
-    "row", "hill", "walk", "parade", "park", "rise", "boulevard", "blvd", "strasse", "straße"})
+    "street", "road", "avenue", "lane", "drive", "close", "way", "crescent", "court", "place",
+    "terrace", "gardens", "grove", "square", "mews", "row", "hill", "walk", "parade", "park",
+    "rise", "boulevard", "highway", "strasse", "ulitsa"})
 # A postcode that is not UK-shaped: a digit-bearing code in a later segment of the address
 # ("75001 Paris", "10115 Berlin", "D-10115", "90210-1234") — build amendment 4.
 _OTHER_POSTCODE = re.compile(r"\b(?:[A-Z]{1,2}-)?\d{4,6}(?:-\d{3,4})?\b", re.I)
 # A phone-shaped run in a query: digits with single spaces, dots, dashes or brackets between,
 # bounded so a run is never glued to a word or a currency sign.
-_PHONE_RUN = re.compile(r"(?<![\w£$€])\+?\(?\d(?:[ \t().-]?\d){6,}(?!\w)")
+# Up to three separator characters between digits, so "(020) 7946 0958", "+1 (555) 123-4567"
+# and "555 - 123 - 4567" each form one run (review round 3, item 1).
+_PHONE_RUN = re.compile(r"(?<![\w£$€])\+?\(?\d(?:[ \t().+-]{0,3}\d){6,}(?!\w)")
 _PHONE_SPLIT = re.compile(r"\s*(?:\bext\.?\b|\bextension\b|\bx\b|[,;/])\s*", re.I)
 _TOKEN = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 
@@ -305,25 +333,52 @@ def _segments(address: str) -> list[str]:
     return out
 
 
+def _street_words(text: str) -> list[str]:
+    """Normalised words with street abbreviations expanded ("Rd" reads "road")."""
+    return [_STREET_ABBREV.get(w, w) for w in _norm(text).split()]
+
+
+def _street_norm(text: str) -> str:
+    return " " + " ".join(_street_words(text)) + " "
+
+
+def _is_num(w: str) -> bool:
+    return any(ch.isdigit() for ch in w)
+
+
 def _street_key(address: str) -> str:
-    """The street: a house number and the words after it, up to and including a street-type
-    word, stopping before a postcode, at most four words — from the first of the first three
-    parts that holds one. Never a bare district or city; a flat or unit number ("Flat 3") is
-    not a house number. Works on comma-less and multi-line addresses alike."""
+    """The street, from the first of the first three parts that holds one: a house number and
+    the words after it, up to and including a street-type word, stopping before a postcode, at
+    most four words ("14 Elm Road") — or a street then its number ("Hauptstrasse 12",
+    "ul. Rakovski 12"). Never a bare district or city, and never a flat, floor or unit
+    ("Flat 3", "3rd Floor"). Works on comma-less and multi-line addresses alike; abbreviations
+    are expanded, so the key matches either spelling."""
     for seg in _segments(address)[:3]:
-        words = _norm(seg).split()
+        words = _street_words(seg)
         for i, w in enumerate(words):
-            if not any(ch.isdigit() for ch in w) or (i and words[i - 1] in _UNIT_WORDS):
+            if not _is_num(w):
                 continue
+            prev = words[i - 1] if i else ""
+            nxt = words[i + 1] if i + 1 < len(words) else ""
+            if prev in _UNIT_WORDS or nxt in _UNIT_WORDS:
+                continue                       # "Flat 3", "3rd Floor", "Suite 1200"
             taken = [w]
-            for nxt in words[i + 1:]:
-                if any(ch.isdigit() for ch in nxt) or len(taken) > 4:
+            for later in words[i + 1:]:
+                if _is_num(later) or len(taken) > 4:
                     break
-                taken.append(nxt)
-                if nxt in _STREET_TYPES:
+                taken.append(later)
+                if later in _STREET_TYPES:
                     break
             if len(taken) >= 2:
                 return " " + " ".join(taken) + " "
+            # Street then number: the words before it, back to a unit word or four words.
+            before = []
+            for earlier in reversed(words[max(0, i - 4):i]):
+                if _is_num(earlier) or earlier in _UNIT_WORDS:
+                    break
+                before.insert(0, earlier)
+            if before:
+                return " " + " ".join(before + [w]) + " "
     return ""
 
 
@@ -350,15 +405,18 @@ def _postcodes(address: str, explicit: str = "") -> list[tuple[str, str]]:
     return [(key, "other")]
 
 
-def _cities(address: str, street: str) -> list[str]:
-    """The other named parts of an address, as companions only (never refused alone)."""
+def _towns(address: str) -> list[str]:
+    """The town written beside a numeric postcode, in the same part of the address ("1000 Sofia")
+    — the only companion besides the street (review round 3, item 4). A country, county or flat
+    elsewhere in the address never counts."""
     out = []
     for seg in _segments(address):
-        words = [w for w in _norm(_POSTCODE.sub(" ", _OTHER_POSTCODE.sub(" ", _fold(seg)))).split()
-                 if not any(ch.isdigit() for ch in w)]
-        key = " " + " ".join(words) + " "
-        if words and key.strip() and key not in (street or "") and len(key.strip()) >= 3:
-            out.append(key)
+        folded = _fold(seg)
+        if not _OTHER_POSTCODE.search(folded):
+            continue
+        words = [w for w in _norm(_OTHER_POSTCODE.sub(" ", folded)).split() if not _is_num(w)]
+        if words:
+            out.append(" " + " ".join(words) + " ")
     return out
 
 
@@ -370,7 +428,9 @@ def _details(info, whose: str, group: str) -> list[tuple[str, str, str, str, str
     if not isinstance(info, dict):
         raise _Unreadable("contact details")
     out: list[tuple[str, str, str, str, str]] = []
-    for e in [info.get("email")] + list(info.get("other_emails") or []):
+    others = info.get("other_emails") or []
+    others = [others] if isinstance(others, str) else list(others)     # one address, as a string
+    for e in [info.get("email")] + others:
         e = _fold(str(e or "")).strip().lower()
         if "@" in e:
             out.append(("an email address", e, whose, group, _ALONE))
@@ -385,8 +445,8 @@ def _details(info, whose: str, group: str) -> list[tuple[str, str, str, str, str
                     _WITH_COMPANY if numeric else _ALONE))
     if street:
         out.append(("a street address", street, whose, group, _ALONE))
-    for city in _cities(address, street):
-        out.append(("a city", city, whose, group, _COMPANION))
+    for town in _towns(address):
+        out.append(("a city", town, whose, group, _COMPANION))
     return out
 
 
@@ -417,6 +477,8 @@ def _detail_in(kind: str, key: str, query: str) -> bool:
         toks = [t.upper() for t in _TOKEN.findall(folded)]
         pairs = {a + b for a, b in zip(toks, toks[1:])}
         return code in toks or code in pairs
+    if kind == "a street address":
+        return key in _street_norm(query)
     return key in _norm(query)
 
 
