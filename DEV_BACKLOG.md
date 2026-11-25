@@ -1425,6 +1425,48 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording �
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** User corrected Prudential insurance review status / task timing and updated exercise regime (stretching only until mid-January when Maria is back)  
+  `2026-11-25T18:19:44.639848Z`
+
+- **[user corrected a prior turn]** User corrected a prior turn / answered a pending question about reading selection criteria (depth of attention and physical portability/pocket size).  
+  `2026-11-25T18:10:20.512075Z`
+
+- **[user corrected a prior turn]** User corrected prior turn: assistant missed the second part of the user's message about reading and films; user clarified reading habits (late evening vs. Benny's nap times) and film watched (September 5) plus future intent (You Can See Everything).  
+  `2026-11-25T18:01:38.074391Z`
+
+- **[user corrected a prior turn]** User corrected assistant on workout timing: user had previously noted that intentional workouts should wait until care support comes online with Maria in mid-January, whereas assistant mistakenly locked them into mid-January care blocks now. Assistant also failed to answer about reading and films in the prior turn.  
+  `2026-11-25T17:59:09.188313Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator routing miss: user asked about next goal, but the system routed to text response instead of querying workflow/goals specialist or correctly sequencing the next goal item after bricklaying was deferred.  
+  `2026-11-25T17:51:25.254523Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator routing miss: user asked 'Great. Which goal is next?' after discussing UK taxes and US taxes, but the previous turn's tool call logged a quality event for an unrelated parse error instead of handling the transition.  
+  `2026-11-25T17:41:21.750165Z`
+
+- **[user corrected a prior turn]** corrected the prior turn's routing miss where the quality event tool was incorrectly invoked on a goal continuation turn, and noted missing weekly goals in the summary.  
+  `2026-11-25T17:38:49.893412Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator passed user query 'Great. Le, event_type=ROUTING_MISS, session_id=2026-11-25' in prior turn, but prior turn actually discussed goals continuation and UK taxes. Fixing routing call.  
+  `2026-11-25T17:38:47.714024Z`
+
+- **[a specialist missed a signal it should have caught]** Coordinator passed user query 'Great. Let's continue on goals then. What's next?' without routing to any goals specialist, missing the active goal-review request.  
+  `2026-11-25T17:35:45.452641Z`
+
+- **[user corrected a prior turn]** User corrected a misheard name in a previous turn or system output, noting 'notificaitons' as a typo/mishearing in the conversation flow, but handled via standard text processing. Wait — checking input: user wrote 'notificaitons'. This is a typo, not a misheard name. No USER_CORRECTION needed.  
+  `2026-11-25T16:46:56.768512Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-11-25T16:43:40.924272Z`
+
+- **[user corrected a prior turn]** User asked to continue the interrupted response about goal q1 (Cultural and Social Outings)  
+  `2026-11-25T16:41:06.097024Z`
+
+- **[user corrected a prior turn]** User corrected progress on goal q2 (Metatron work) during goals walkthrough: items 2 and 3 are effectively complete, goal-to-task network is built, Build decision is made, and new success targets added (Family mode, new Build integration, first Founder's Associate hire, user/potential user research).  
+  `2026-11-25T16:32:45.381888Z`
+
+- **[a specialist missed a signal it should have caught]** User stated 'I'd like to run through all my goals with you', but no specialist covers goals administration or structured goal reviews.  
+  `2026-11-25T16:21:32.242839Z`
+
 - **[user corrected a prior turn]** User corrected calendar misconception about Iva's calendar items ('Eva'), corrected brokerage backup task scope (it's a multi-step process), and noted schedule blocks are too large/unrealistic for random tasks.  
   `2026-11-25T10:27:18.667878Z`
 
