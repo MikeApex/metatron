@@ -30,6 +30,26 @@ file is the only narrative record, alongside the verbatim transcripts.*
 
 ## Dated history
 
+### 2026-11-25 (WhatsApp Phase 2 walkthrough, clean-room, steps 1–4a: the deploy confirmed, `mike`'s consent seeded with the channel off, `debug` on the phone, the tapped dry run read real backups with every pass line met) — **nothing new deployed; nothing reached the VM; the next-morning dry run (4b) and M4 still to do**
+
+**Incoming handoff:** `archive/handoffs/2026-11-23-whatsapp-phase-2-walkthrough-prompt.md` (Opus 5.5, Mike live, across 11-24 and 11-25). The outgoing primer line: Phase 2 built 11-23 (`417f4c9`), deployed by Mike 11-23 but unverified, not on a phone. Next was this walkthrough, then M4. Clean-room rules held: no transcript opened; WhatsApp log entries read only 10-30-02 and fragments headed clean-room; nothing under `/private/tmp` outside the scratchpad; nothing in `~/Downloads`; no web. Mike reported counts and codes only, and per-chat counts by number ("chat 1–4"), never by label. **A screenshot was refused before it was sent** because the per-chat labels are contact names. Mike typed the panel instead.
+
+**What passed, in the prompt's order:**
+1. **Deploy (11-24):** the VM has `417f4c9`, and `tests/test_intake_whatsapp.py` is 49/49. No code under `tools/intake_whatsapp.py`, `core/server.py` or `android/` changed after it.
+2. **Consent (11-24):** `seed-consent mike --scopes whatsapp --evidence "Mike W10, 2026-10-26"`, then the check printed `True False`. Iva untouched (M7).
+3. **Phone (11-25):** the APK hash began `7e512fa285e94536`, unchanged. It was served from a scratchpad staging folder, not `/tmp/metatron-apk`, because the clean-room rule keeps the session out of `/private/tmp`; the URL is the same. Installed over `waprobe` with All-files access **kept**. The screen showed "not set up", then pairing gave "WhatsApp link is off" with the full control set (so the VM answered `consented_off`). Key stored; reader self-test **26 of 26**; contacts granted; **4 chats** ticked and saved, "not yet sent", no "out of step" notice.
+4. **Dry run, tapped 11-25 15:41:** marked dry, no stop. WhatsApp last backed up 11-25 02:00. Read **4,013** received rows in the full backup (**3,430** with text) and **19** in the nightly copies (**16** with text). Unreadable rows: 0 without an id, 1 without a chat, 0 undecodable texts, 0 duplicate ids. Would send **1,348 messages, 0 updates, 762 reply markers, 0 unchanged**. The chats are 494/0/661, 775/0/0, 66/0/84 and 13/0/17, and they **sum exactly** to the totals. No "Would warn". Dry runs nightly until 12-02; no sent-hash list. On the VM: `no report 0 indexed 0 shared`.
+
+**Unknowns this closes:** **the chat-list fold meets real nightly chat rows** (W1's open question). There was no `increment_missing_part`, and the nightly copies read with text. Still open for step 5: whether the notification lines carry a person, and whether WhatsApp's shared text equals the message text.
+
+**Chat 2 has 0 reply markers against 775 messages.** Mike confirmed he hasn't written there, so this is correct. It also means the reply rule hasn't been seen on a chat where he does write and that the phone reads as a group. Recorded, not filed.
+
+**Believed earlier, wrong:**
+1. `docs/INFRASTRUCTURE.md` § APK still said the phone runs `waprobe` and that installing `debug` revokes All-files access. Both are corrected in this close-out.
+2. Mike twice read a working screen as a hung one: "Reading your chats…" for over 15 s on the first read, and "Dry run now" changing nothing because the Last run panel redraws only when the screen reopens. A phone restart is what made the run visible. Filed at Mike's ask, as the WhatsApp screen giving no sign a run is in progress.
+
+**Next:** 4b, **after 03:00 on 11-26**, with the phone on charge overnight. Pass: "Last dry run" is after 03:00 and still dry, the counts are about the tap's plus a night's messages, and there's no warning. The phone restart since the tap also tests that the job survives a reboot. Then M4, and a second short clean-room fragment. **Cost:** no running cost added (the dry run posts nothing). The first real night will have the VM translate and screen about 1,350 messages, about 2–3 min at about 0.1 s each, with no price figure available.
+
 ### 2026-11-25 (Claude Code time tracking — a global tool that measures Mike's human time in front of Claude Code; planned, Opus-checked, built by an Opus subagent) — **no repo code changed; nothing committed but the plan; the tool lives under `~/.claude/`**
 
 **Incoming handoff:** none — Mike asked whether the April–now message timestamps could be compiled, then to track time in Claude Code per project.

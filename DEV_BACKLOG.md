@@ -75,6 +75,9 @@ back-tagging the rest is `[DB-0815-10]`.
 > against `git log` before promoting anything from here.
 *(empty — last triaged 2026-09-05; evidence in `archive/backlog_closed_2026-09.md`)*
 
+- **[instruction change]** User reported task scheduling blocks outside childcare and household duties are unrealistically large, leading to repeatedly missed items; requested smaller blocks and a revised cadence distinguishing high-pack focus sessions from lighter periods.  
+  `2026-11-25T10:28:10.243538Z`
+
 - **[instruction change]** User repeated instruction to remove 'Pain' (duplicate of 'A Real Pain') and 'Death Cab for Cutie at Troxy' (concert, not film) from Films list. The prior turn called change_entry setting status='removed' instead of remove_entry, leaving entries visible to the user. System prompt/tool choice must ensure remove_entry is used when user requests removing list items.  
   `2026-11-23T11:58:44.366291Z`
 
@@ -140,6 +143,8 @@ back-tagging the rest is `[DB-0815-10]`.
   Filed at Mike's request, 2026-11-24 (instructions-to-code build close-out; report `archive/plans/instructions_to_code_build_report_2026-11-24.md`).
 - **[bug]** The weekly-review ranking code can refuse ordinary questions and miss aliases, with the same two defects just fixed in the public-fact guard: `tools/ranking_review.py` keeps a dead organisation skip (the CRM's `relationship_type` has no organisation value, so a contact saved as "School Office" blocks any text with those words) and reads `referred_to_as` as one string (so "my wife" is taken as a first and last name, and a real full-name alias in a list never matches). Fix: reuse `tools/lookup_guard`'s reader rules (Stage 5, `82c490e`). Found by the Stage 5 builder; owned by the ranking work. @kind: bug
   Filed at Mike's request, 2026-11-24 (instructions-to-code build close-out; report `archive/plans/instructions_to_code_build_report_2026-11-24.md`).
+- **[bug]** The WhatsApp link screen looks frozen while it works. "Choose chats" sits at "Reading your chats…" with no sign of progress through the first on-demand read: a fixed 5 s completeness wait, the decrypt and the fold of every nightly copy took well over 15 s on Mike's phone. "Dry run now" shows a 2 s toast, then nothing. The "Last run" panel is drawn only when the screen opens (`WhatsAppActivity.onResume`, `RunStatusView.addTo`), so a finished run doesn't show until the user leaves and reopens it. Mike took both waits for failures in the walkthrough. Fix: a "running…" line while a read holds the work folder, and the panel redrawn when the run ends. Wanted before Iva's M7 (she will have no one explaining the wait). Owned by the WhatsApp work. @kind: bug
+  Filed at Mike's request, 2026-11-25 (WhatsApp Phase 2 walkthrough, clean-room; Mike: "As rec").
 
 ## Now
 
@@ -1419,6 +1424,15 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** User corrected calendar misconception about Iva's calendar items ('Eva'), corrected brokerage backup task scope (it's a multi-step process), and noted schedule blocks are too large/unrealistic for random tasks.  
+  `2026-11-25T10:27:18.667878Z`
+
+- **[user corrected a prior turn]** ```  
+  `2026-11-25T09:56:30.448769Z`
+
+- **[a specialist missed a signal it should have caught]** The user stated 'Next Wednesday, the third at 8.30 am, the electrician is coming to add timers to the heater.', which involves booking/scheduling and timing, but no specialist was dispatched to capture or schedule this logistics item.  
+  `2026-11-25T09:56:28.693801Z`
 
 - **[a specialist missed a signal it should have caught]** User message was routed incorrectly or missing domain specialists on session open  
   `2026-11-24T10:01:21.375965Z`
