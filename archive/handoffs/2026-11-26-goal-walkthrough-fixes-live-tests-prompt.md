@@ -35,6 +35,9 @@ Mike sends each as its own message and waits for the reply:
 - If Synth claimed a hold it had not made, the reply read *"I haven't actually put … on hold on
   your goals yet — shall I do that now?"*. Mike's yes then made it. Note whether this happened.
 - Synth's view now lists `w4`/`w5` under "Taken on, starting later".
+- Synth names the held goal's open task, "Find a personal trainer" (`w5`), and asks whether it
+  waits until January. The code lists such tasks and never hides them (plan § 19, Fable S8
+  rebuttal), so this question is what keeps the task from nagging.
 
 **If it fails:** if Synth used `parked` instead of `starts_on`, that is the
 `synthesizer.md` § A newly stated goal sentence not landing. Note the exact reply. Fixing it is a
@@ -111,9 +114,14 @@ The amended § Stage 2 of the same live-check prompt applies.
    - Finish the walk through `d2` in this session either way.
 2. **The VM's Python upgrade** is its own walkthrough, in § Python upgrade below (Mike, 11-25:
    include it).
-3. **The travel check is back** after two weeks dead. Mike checks that the next travel event gets
-   its pre-departure TfL or flight check, and that the calendar-reconcile line is gone from the
-   server log.
+3. **Three features are back** after two weeks dead. Check each:
+   - the next travel event gets its pre-departure TfL or flight check;
+   - the scheduled calendar audit ran (scheduler log);
+   - the calendar-reconcile line is gone from the server log.
+3a. **Watch for "I did what I could on that, but couldn't finish the reply".** That was seq 015 on
+   11-25: a Vertex capacity error after the one retry allowed. If it happens again, the fix is a
+   second, slower retry when nothing has been shown or run yet (`core/orchestrator.py`,
+   `_run_gemini_native_stream`).
 4. **Due from `SESSION.md`, unrelated to goals:**
    - WhatsApp walkthrough step 4b, the morning dry run after 03:00 on 11-26, then M4;
    - the instructions-to-code live checks (both health specialists dispatched in a brief; a Pattern
