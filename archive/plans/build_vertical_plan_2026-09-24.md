@@ -1,5 +1,27 @@
 # Build — the vertical that constructs Metatron's capabilities
 
+> **To discuss when Build is integrated back in (Mike, 2026-11-25).** Build is paused (11-18); these
+> came out of the language-playbook session. Each needs discussing, not just building.
+> 1. **Playbooks written as a matter of course.** Often-requested goals and their research are
+>    aggregated, depersonalised and turned into a playbook. The input is mostly generic already:
+>    the goal talk's fallback lookup asks about a code-chosen subject, never the goal record. The
+>    leak is the playbook's *existence* — with one or two users, a "Bulgarian" playbook says
+>    someone here wanted Bulgarian. Proposed gate: a playbook is drafted automatically only once
+>    a distinct-user threshold (say 5) asks for the same subject; below it, drafted dev-side and
+>    reviewed by Mike as now. Needs a ROADMAP § 0 ruling (sensitive-tier aggregation) and a human
+>    review gate until the drafts are shown clean. Today's ruling against runtime-written
+>    playbooks: goal–task network plan § 4.4 "Not now".
+> 2. **A goal-driven Build.** Today Build starts from a capability gap (`ROUTING_MISS`,
+>    `request_build`, REPAIR) and builds for everyone; goals never reach it (goal network plan
+>    G8). Mike's picture links them: a goal whose plan needs new *behaviour* (a language teacher
+>    running drills) files the gap, Inquiry's questions inform the Goals Interviewer's talk, the
+>    Librarian finds the data, and the capability built is often an agent but may be any of the
+>    six kinds. Playbooks stay the knowledge path; Build is the behaviour path.
+>
+> Source: the 2026-11-24/25 language-playbook session, transcript under `archive/transcripts/`
+> (the file starting "2026-11-24 — 2026-11-24-language-playbook-prompt"), and the build-inquiry
+> Question Set for a language teacher saved beside the playbook research in `archive/plans/`.
+
 **v4.12, 2026-09-24 — three § 3 mechanisms corrected against the code phase C actually built.**
 Mike's ruling: *"if the new code works as well as the planned code, just keep the new code."* Phase C
 wrote the `/build` command against this plan and, in doing so, became the first thing ever to

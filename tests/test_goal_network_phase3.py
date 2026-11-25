@@ -674,6 +674,27 @@ def _():
     assert "Self Assessment" in (PP._playbook("File UK taxes") or "")    # phase 2's still attaches
 
 
+@check("playbook: the real language playbook attaches to a language goal "
+       "at any level and to none of its near misses, with every rung, its provenance comment stripped, "
+       "and its practice sections named for code to cut later")
+def _():
+    real = PP._ROOT / "config" / "playbooks" / "language_learning.md"
+    assert PP._PLAYBOOKS == real.parent, "the real directory, not a stand-in"
+    for title in ("Become better at speaking Bulgarian", "Learn Japanese", "Improve my Polish",
+                  "Study for the French exam", "Learn sign language", "Get fluent in German"):
+        pb = PP._playbook(title)
+        assert pb and pb.startswith("# Playbook — learning a language"), title
+    for title in ("Practise public speaking", "Sort out the Bulgarian taxes", "Polish my CV",
+                  "Learn Python", "File UK taxes"):
+        assert "learning a language" not in (PP._playbook(title) or ""), title
+    pb = PP._playbook("Learn Spanish")
+    assert "<!--" not in pb and "Method only" not in pb
+    for name in ("Rung — pre-A1", "Rung — A1", "Rung — B1", "Rung — C2", "Practice — B1",
+                 "Practice — maintain", "Track — creative writing", "## Graduation"):
+        assert name in pb, name
+    assert len(pb) < 16000, "inside the goal talk's runaway guard (tools/goal_talk.py)"
+
+
 # =============================================================================================
 # Each flag off restores phase 2 exactly
 # =============================================================================================

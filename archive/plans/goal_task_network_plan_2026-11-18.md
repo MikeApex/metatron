@@ -153,7 +153,33 @@ findings, mail, the calendar), or an interview. **Synth decides or hands off** (
   returns (G8). So playbooks replace Build for **knowledge**, not for new **behaviour**.
 - **Not now:** Metatron writing a playbook at runtime from one user's goal. With one real user,
   every playbook would be distilled from that user, and one leaked detail reaches everyone's
-  planner. It needs a ROADMAP § 0 ruling and a content-stripping check first.
+  planner. It needs a ROADMAP § 0 ruling and a content-stripping check first. **Mike, 2026-11-25:
+  wanted "as a matter of course", from aggregated often-requested goals, behind a distinct-user
+  threshold — to discuss when Build is integrated back in (agenda at the top of
+  `build_vertical_plan_2026-09-24.md`).**
+- **The shape of every playbook (Mike, 2026-11-25; argued for and against in the language-playbook
+  session).**
+  1. Two properties, not two kinds: `ends:` (yes, or a ladder with no fixed top — an endpoint is
+     then optional and the planner plans to the next rung) and `recurs:` (none, yearly…). An
+     open-ended goal can rest at "maintain" without having failed.
+  2. Required sections: stages (or rungs) as outcomes with effort, common failure points,
+     `applies_when`/`applies_to`. Optional: placement, practice by level, typical steps,
+     graduation. Sections code cuts by keep fixed names (`## Rung — B1`, `## Practice — A2`).
+  3. Graduation is in the playbook as **options, a conversation starter**: reaching a milestone is
+     noted, and when the user talks to Synth about what's next, the next rung, a branch or "stop
+     here and maintain" (first when they set an endpoint) is there to offer. No re-vet trigger.
+  4. One file per subject; a branch gets its own file only when it serves more than one parent
+     (creative writing: native and second language), linked by `builds_on`, most specific match
+     first, at most two files a goal. Size is not a reason to split — sections are addressable.
+  5. Addressable sections and rung ids are written now; the code that cuts them (the planner tags
+     each milestone with its rung; whoever is handed a goal's practice habit gets that rung's
+     practice section, keyed to the habit row, not an agent name — Learning & Growth may not
+     survive the reshuffle) is built after the reshuffle settles who owns habits.
+  6. Protocols: one line each, only those with stated evidence, marked by strength; full detail
+     in `archive/plans/`. Can expand later.
+  7. Ceiling ~12k characters a file (Mike, 2026-11-25, raised from ~10k when the language playbook
+     came in at ~12k; cost does not bind below ~15–20k: ~$0.03 a talk, ~$0.003 a planning call).
+     The real limit is what the planner uses well; the section-cutting code (5) is the fix past it.
 
 ### 4.5 Delivery and the finish date (G4)
 
@@ -582,7 +608,11 @@ fixed — table below).
    real goal**, and `rolling_wave` must not be switched on before part B lands.
 3. **The language playbook** is left to the end, with Mike involved — the end of this chat or a
    new one. No dependency was missed: rolling waves plan without a playbook, and the attaching
-   code (`applies_when`) is built and tested against a stand-in.
+   code (`applies_when`) is built and tested against a stand-in. **Landed 2026-11-25 (Mike):**
+   `config/playbooks/language_learning.md`, pre-A1 → C2 with placement, practice by rung, six
+   tracks and graduation options, in the § 4.4 playbook shape; researched in two grounded rounds
+   with two fact-checks (`archive/plans/language_playbook_research_2026-11-2*`). The goal talk now
+   reads a playbook whole (`_PLAYBOOK_MAX` 16k guard; the lookup stays at 2,400).
 
 **Built.**
 1. **Rolling wave** (`rolling_wave`; `tools/project_plan.py`). `plan_project` accepts size L for a
@@ -855,5 +885,5 @@ result is present. The standing "you may ask" line's cap is the recorded asks pl
 instruction. Tests: `tests/test_goal_network_phase3b.py` 31/31; every other suite and the QA sweep
 unchanged.
 
-**Not built:** the language playbook (its own Mike-led chat); the `mike` goals walkthrough is
+**Not built:** the language playbook (its own Mike-led chat — landed 2026-11-25, § 17 item 3); the `mike` goals walkthrough is
 prepared, not run — `archive/handoffs/2026-11-24-goal-network-mike-goals-walkthrough-prompt.md`.

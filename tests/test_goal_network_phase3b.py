@@ -51,6 +51,11 @@ import tools.turn_context as TC  # noqa: E402
 
 _results: list[tuple[str, bool, str]] = []
 _TMP = Path(tempfile.mkdtemp(prefix="goal_network_p3b_"))
+# No real playbook reaches these checks: the no-playbook path is tested with a language goal, and
+# config/playbooks/language_learning.md (2026-11-25) would otherwise take it. A check that wants a
+# playbook supplies its own directory, as "a yes starts the talk" does.
+(_TMP / "no_playbooks").mkdir()
+PP._PLAYBOOKS = _TMP / "no_playbooks"
 TODAY = date.today()
 _CLOCK = {"now": datetime.combine(TODAY, time(7, 0))}
 O._now = lambda: _CLOCK["now"]

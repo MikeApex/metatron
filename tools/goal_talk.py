@@ -70,7 +70,13 @@ _APP_TURN = "(The app started this turn.)"
 def _turn_lock(persona: str) -> threading.Lock:
     with _TURN_LOCKS_GUARD:
         return _TURN_LOCKS.setdefault(persona, threading.Lock())
-_SHAPE_MAX = 2400
+_SHAPE_MAX = 2400          # the fallback lookup: outside content, kept short
+# A playbook reaches the talk whole (Mike, 2026-11-25: "lift the cap"). It was cut at
+# _SHAPE_MAX, which halved even the taxes file and dropped every stage past the first few of the
+# language one. The block is re-sent each turn: the ~12k-character language playbook is ~3,000
+# tokens × ~15 turns ≈ $0.03 a talk at the reasoning tier, one talk per large goal. This ceiling is a guard against a runaway file, not a
+# budget — no reviewed playbook comes near it.
+_PLAYBOOK_MAX = 16000
 
 
 def _O():
@@ -594,7 +600,7 @@ def _shape(g: dict, persona: str) -> dict:
     except Exception:  # noqa: BLE001
         pb = None
     if pb:
-        return {"source": "playbook", "text": pb[:_SHAPE_MAX]}
+        return {"source": "playbook", "text": pb[:_PLAYBOOK_MAX]}
     subject = research_subject(g)
     if not subject:
         return {"source": "none", "text": ""}
