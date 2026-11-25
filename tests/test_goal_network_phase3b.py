@@ -102,10 +102,16 @@ PP._MODEL_CALL = _planner
 _SEEN: list[dict] = []
 
 
+# Replies queued by a check (the walkthrough fixes, § 19: the Interviewer must say the rate before a
+# verdict); otherwise the fixed line.
+_IREPLY: list[str] = []
+_RATE_LINE = "At three hours a week that is about two to three years — does that sit right?"
+
+
 def _interviewer(agent, message, persona=None, history=None, **k):
     _CALLS["interviewer"] += 1
     _SEEN.append({"agent": agent, "message": message, "history": list(history or [])})
-    return "Where are you with it now?"
+    return _IREPLY.pop(0) if _IREPLY else "Where are you with it now?"
 
 
 ORCH.run_session = _interviewer
@@ -166,6 +172,7 @@ def _fresh(name: str, flags: dict | None = None, goals: str = "quarterly: []\n")
     _REPLIES.clear()
     _PAYLOADS.clear()
     _SEEN.clear()
+    _IREPLY.clear()
     _TURN["t"] = {"user_turn": True}
     _LOOKUP["answer"] = ("<untrusted_content>Stages A1–C1; about 100–150 hours each; 3–5 hours a "
                          "week; people stall at speaking.</untrusted_content>")
@@ -236,8 +243,13 @@ def _start_talk(goals: str = _PROPOSED_L, flags: dict | None = None, name: str =
 
 
 def _talk_turns(n: int = 4) -> None:
+    """n of the user's turns. Since § 19 a verdict needs THEIR weekly time and the rate said: the
+    first message gives "3 hours a week" (the 180 the fixture vets with), and the Interviewer says
+    what that means in years on the last."""
     for i in range(n):
-        GT.run_turn(_PERSONA, f"answer {i}", [])
+        if i == n - 1:
+            _IREPLY.append(_RATE_LINE)
+        GT.run_turn(_PERSONA, "I can give it 3 hours a week" if i == 0 else f"answer {i}", [])
 
 
 def _interviewer_vet(**kw) -> str:
@@ -429,6 +441,7 @@ def _():
        "long talk is told to settle and offer to carry on")
 def _():
     _start_talk(name="block")
+    GT.run_turn(_PERSONA, "Two hours a week is realistic", [])   # their figure (§ 19)
     G._calling_agent = lambda: "goals_interviewer"
     out = G.update_goal("update", goal_id="l1", weekly_minutes=120, effort_hours="200-300",
                         due=_d(364), done_means="Chat with family for half an hour")
@@ -501,8 +514,10 @@ def _():
        "goal does NOT get the full pass, so a later short pass can never plan it")
 def _():
     _start_talk(name="parked")
-    out = _interviewer_vet(verdict="parked", revisit_on=_d(60))
+    # No weekly time needed to park (ruling 5b) — and none recorded that is not theirs.
+    out = _interviewer_vet(verdict="parked", revisit_on=_d(60), weekly_minutes=None)
     assert "parked until" in out and "The talk is over" in out, out
+    assert "Still open for when it comes back:" in out and "minutes a week" in out, out
     assert _goal("l1")["vetted"].get("pass") != "full", "parking never licenses planning (Fable S2)"
     assert _talk_tasks()[0]["status"] == "done" and GT.current(_PERSONA) is None
 

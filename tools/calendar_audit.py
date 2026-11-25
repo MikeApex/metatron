@@ -185,7 +185,7 @@ def audit_calendar_duplicates() -> str:
     except CalendarUnreadable as e:
         report_calendar_unreadable("calendar_audit", str(e))
         return ("calendar dedup audit FAILED: calendar unreadable, nothing was checked "
-                f"({re.sub(r'https?://\S+', '<url>', str(e))})")  # the URL carries the account
+                "(" + re.sub(r"https?://\S+", "<url>", str(e)) + ")")  # the URL carries the account
     except Exception as e:
         return f"calendar dedup audit skipped: {e}"
 

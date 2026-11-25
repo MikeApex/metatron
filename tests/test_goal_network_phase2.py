@@ -265,7 +265,8 @@ def _():
     assert "l1" in O._goal_index()
 
 
-@check("R6: prompts see current goals as YAML, proposed under 'being considered', never parked/declined/vetted")
+@check("R6: prompts see current goals as YAML, proposed under 'being considered', declined and vetted "
+       "never; parked ONLY as one line under 'On hold' (amended 2026-11-25, plan § 19 ruling 1)")
 def _():
     d = _fresh("r6_filter")
     (d / "config" / "goals.yaml").write_text(
@@ -281,7 +282,10 @@ def _():
     assert "Being considered" in text and "q2: Learn to sail" in text
     cur = text.split("Being considered")[0]
     assert "Learn to sail" not in cur
-    assert "Buy a boat" not in text and "Write a book" not in text and "vetted" not in text
+    assert "Buy a boat" not in text and "vetted" not in text
+    # Parked is no longer invisible (§ 19): one line under "On hold", never in the current YAML.
+    assert "Write a book" not in cur and "### On hold" in text
+    assert "- q4: Write a book — until 2027-03-01" in text.split("### On hold")[1], text
     assert ORC.load_goals.__doc__ and "Being considered" in ORC._goals_section(d / "config" / "goals.yaml")
 
 

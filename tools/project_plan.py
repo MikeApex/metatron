@@ -159,6 +159,7 @@ def _end(part_of: str, persona: str | None = None) -> dict | None:
             "what": str(g.get("shareable_what") or "")[:300], "vetted": bool(g.get("vetted")),
             "pass": vetted.get("pass"), "weekly_minutes": wm,
             "goal_kind": str(g.get("kind") or "goal"),
+            "starts_on": str(g.get("starts_on") or "")[:10] or None,
             # What the goal talk recorded (part B, § 18) — present only once one has.
             **{k: g[k] for k in ("done_means", "starting_point", "effort_hours") if g.get(k)}}
 
@@ -178,6 +179,11 @@ def _end_usable(end: dict | None) -> str | None:
         return (f"error: {end['title']} is {end['status']} — only a goal that has been taken on "
                 f"is planned. Check it with the user first (update_goal action=vet). Nothing "
                 f"was queued.")
+    if end["kind"] == "goal" and end.get("starts_on") and end["starts_on"] > _D()._today().isoformat():
+        # Taken on, starting later (walkthrough fixes § 19, ruling 2): planned on the first tick
+        # on or after its day — by the sweep, so nothing is planned, and no wave advanced, early.
+        return (f"error: {end['title']} starts on {end['starts_on']} — it is planned from that day "
+                f"by itself. Nothing was queued.")
     if end["kind"] == "task" and (end["status"] != "open" or not end["one_off"]):
         return "error: only an open one-off task can be planned out. Nothing was queued."
     return None

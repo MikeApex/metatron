@@ -887,3 +887,147 @@ unchanged.
 
 **Not built:** the language playbook (its own Mike-led chat — landed 2026-11-25, § 17 item 3); the `mike` goals walkthrough is
 prepared, not run — `archive/handoffs/2026-11-24-goal-network-mike-goals-walkthrough-prompt.md`.
+
+## 19. The goals walkthrough's misses, fixed (2026-11-25)
+
+Built in one Opus 5.5 session from `archive/handoffs/2026-11-25-goal-walkthrough-misses-fix-build-prompt.md`,
+after `mike`'s goals walkthrough the same day (VM conversation log 2026-11-25, seqs 011–037, re-read
+over SSH; no log fragment was written for that session). **No flag: live at the next deploy.**
+
+**Read again, corrections to the prompt's table:** (a) at seq 032 the exercise hold *was* written —
+to the fitness notes (`write_wisdom`), not to `w4`/`w5`; at seq 037 nothing was written for it;
+(b) the log-only claim check let both through because *any* write on the trace excuses a turn (the
+fitness note, the Coordinator's `write_quality_event`, the Prudential `open_task`) — so a goal claim
+is checked against the goals before and after the turn, never against "was there a write";
+(c) Synth had no "one question per goal" rule — `synthesizer.md` told it how to lay out several;
+(d) seq 015 was a Vertex 429 after a 75 s timeout, nothing to do with goals; its diagnosis found
+three files that have not loaded on the VM (Python 3.11.2) since `968a8a0` (11-11).
+
+**Mike's rulings (2026-11-25), asked before any code:**
+1. **A parked goal comes back** — as recommended: parked goals are one line each under "On hold"
+   in every prompt's goals view (amends § 10 R6, which hid them), with date and note; on the date
+   they move to "Back on the list today" and Synth asks once (take it up, re-date, let it go).
+2. **Settled now, started later** — as recommended: `starts_on` on a taken-on goal.
+3. **"On hold"** — as recommended: the user's words decide. "On hold until X" / "start again X" =
+   taken on with `starts_on` X (resumes by itself); "park it" / "revisit X" = `parked` with
+   `revisit_on` X (asked on the day). No new status. Mike: stretching is its own daily goal (2×15
+   min); `w5` becomes "Strength training" from January.
+4. **False goal claims** — as recommended, sentence-level replacement, logged; Mike confirmed the
+   intent: the user's latest word always wins and nothing earlier holds a goal in place.
+5. **The user's own weekly time** — code-checked against the user's turns (5a); **5b:** parking a
+   talk needs no weekly time, but a proposed figure is never saved as theirs and the park says
+   what is open.
+6. **One question per goal** — a sentence in `synthesizer.md` plus a logged count, no rewrite.
+7. **Three files that do not load on the VM** — fixed in this build with a guard test. Mike asked
+   whether upgrading the VM's Python is cleaner: yes for the class (Mac 3.14 vs VM 3.11 drift), but
+   an infrastructure job with its own rollback; offered as a separate walkthrough, not filed.
+- **#8** (Mike): a habit and its goal are tied, and raised from either side. **#10:** left as is
+  unless it recurs (a second slower capacity retry is the local fix if it does).
+
+**Built.**
+1. **Returning and later-starting goals** (`tools/goals.py`): `not_started()` / `live()`, the one
+   test every planner, counter and checker uses; `prompt_view` sections "Back from today", "Back on
+   the list today", "Taken on, starting later", "On hold"; `raised_in()` stamps a goal asked once
+   when a delivered reply names it (`revisit_raised` / `start_said`), and the hold's note goes when
+   the hold does. `update_goal` and `vet` take `starts_on` and `hold_note`; parking needs a date; a
+   goal taken up from parked drops its date and note, and an L one not yet talked through gets a
+   fresh talk task and one offer (the task opens on take-up, not on the date — a parked goal cannot
+   hold a talk, `_gone`). A goal starting later names its open tasks in the result, never hides
+   them (Mike's 037 trainer question was right to ask).
+2. **`starts_on` honoured** by the planner's one gate (`_end_usable`: `plan_project`, the sweep and
+   the wave advance), `allocation_gaps`, the day planner's undated next step, both re-vet triggers
+   (skipped before the day; trigger 1's window and trigger 2's anchor start at `starts_on`), and
+   finish alerts.
+3. **The talk** (`tools/goal_talk.py`): `weekly_figures()` reads minutes a week from a message (said,
+   × sessions, × days, ranges, "between … and", half hours); a figure is the user's when they said
+   it or gave a plain yes to ONE figure named, or a bare number after a "minutes" question. In a
+   talk, a weekly time that is not theirs is refused at `update` and at the verdict — including one
+   already on the goal (`q4`'s 120). The verdict waits until the Interviewer has said the rate in
+   months or years. A parked talk says what is still open. The talk block flags a figure not yet
+   theirs, the rate not yet said, `starts_on`, and the goal's practice.
+4. **Goal claims** (`tools/goal_claims.py`, wired after the pending-receipt check in both Synth
+   twins and in the Interviewer's talk turns): a goal snapshot at turn start; a sentence claiming a
+   change to a goal that did not change is replaced by *"I haven't actually changed "X" on your
+   goals yet — shall I do that now?"* (goals read from the clause carrying the change words, so 037
+   names exercise, not Prudential); "talked it out fully / everything is settled" about an L goal
+   with fields open becomes *"Not quite — still open on "X": …"*; offers, questions, log writes and
+   half-true sentences are left. Every replacement is a `FALSE_GOAL_CLAIM` quality event with the
+   sentence.
+5. **Ids out**: the user's real goal ids in a reference shape ("(Q5)", "(W4, W5)", "goal q6:") and
+   task ids (bracketed removed, in prose → the task's title). "Q4 results" stays.
+6. **Habit and goal tied** (#8): a practice (`parent_goal`) is never sized L or given its own talk;
+   it parks with its goal (`parked_with`, steps closed), returns with it (an old L dropped — `d1`),
+   takes its start date; every result about either names the other.
+7. **One question** — `synthesizer.md`; `GOAL_TURN_MULTI_QUESTION` counted on goal turns.
+8. **Python 3.11 load failures** — `tools/calendar_reconcile.py`, `travel_watch.py`,
+   `calendar_audit.py` (the regex moved out of the f-string); a token scan in the new suite fails on
+   any f-string form 3.11 refuses (`ast.parse(feature_version=(3, 11))` does not catch them on
+   3.14 — measured).
+
+**Agent files** (Amber, made here, never delegated): `synthesizer.md` — on hold vs park, one
+question per goal; `goals_interviewer.md` — their figure, one figure when suggesting, the rate
+before the verdict, `starts_on`, what is open on a park.
+
+**Tests.** New `tests/test_goal_walkthrough_fixes.py` 37/37 (one or more per row, one per review
+and verify finding). Part B's fixtures now give the user's figure and the rate line (31/31 — the
+checks' intent unchanged); phase 2's R6 check amended to ruling 1 (36/36); `test_day_plan_ledger`'s
+`update_goal` schema pin moved on purpose (15/15). Part A 42/42, phase 1 38/38, `test_ranking_v2`
+58/58, `test_task_ranking` 21/21; 48 related suites run, the only failures the two known on clean
+HEAD (`task_ledger_consult`'s dated event, the multi-user push `KeyError`); QA sweep 12/12.
+
+**Fable 5.2 diff review — the claim check was not shippable as first written; all fixed or
+rebutted** (reproduced by the reviewer unless marked *reasoned*):
+
+| # | What a user would see | Fix |
+|---|---|---|
+| S1 | "I've paused your morning routine", "I've marked the dentist call done" replaced by "I haven't actually changed your goals" | only a sentence naming a goal, whose object is not a task, reminder, routine, workout, log…; no goal named → never replaced |
+| S2 | A true recap the turn after ("Bulgarian has been parked, as we agreed") called false | claims checked against the goal's **state**, not the turn's diff |
+| S3 | The day a hold ends, "exercise has been on hold until today" replaced — and its one ask spent | state check; a past-tense claim is true for two days after a hold ends |
+| S4 | "Logged 30 minutes of exercise" spent a parked goal's one "it's back" question | stamped only from a sentence with return words and no logging words |
+| S5 | After a parked talk, "the dinner plan is all settled" became "still open on Bulgarian" for ever | talk-specific phrases only, or a named large goal; a talk counts for 3 hours |
+| S6 | A note written while the goal stayed current made the false "on hold" pass | state check |
+| S7 | "Actually, start it now" could not lift a later start | `starts_on: today`; taking up from parked drops an old start. *Rebutted in part:* `vet active` keeps a planned start, so a re-check's "keep" never cancels January |
+| S8 | A goal on hold still has its own tasks on the day (*reasoned*) | *Rebutted:* named to Synth, not hidden — Mike's 037 trainer question was right to ask; a habit cannot be hidden without missed days; three goals, one open task on the live data |
+| L1 | A yes to "shall we say 120?" refused beside the total hours | totals over 3,000 min dropped; the figure in the question counts |
+| L2 | "2 hours a week over 3 days" read as 360 | a figure said "a week" is never multiplied; "a day, five days a week" × 5; "1h30" |
+| L3 | "No, 150 is too much", "ok but…" recorded as theirs | a negation governing the figure; a short, unhedged yes only |
+| L4 | "You've been at it two years" counted as the rate said | one sentence tying a pace to a duration |
+| L5 | A replacement cut at "Jan." or left a stray `**` | a splitter that keeps abbreviations and markup |
+| L6 | "first language (L1)", "Week 4 (W4)" lost their labels; whitespace flattened | a code goes only beside its goal's words; nothing else reformatted |
+| L7 | Parking with no date refused (*rebutted*) | deliberate — a hold needs a day to come back (ruling 1) |
+| L8 | "It stays taken on and starts on X" said of a parked goal | said only of a current goal |
+| L9, L10 | The 3.11 guard needs 3.12+ to run; the question count needs a goal tool | accepted — a 3.11 interpreter refuses the files itself; the count is a log-only metric |
+
+**Fable verify pass (same reviewer, re-ran its reproductions):** 12 of the findings above fixed, 4
+partly; 7 new, all fixed:
+
+| # | What a user would see | Fix |
+|---|---|---|
+| N1 | Advice, third-party news, history, "I haven't put it on hold", a podcast or a purchase replaced | the claim must be Metatron's own ("I've put…", "I'm parking…"); modal, hypothetical, reported and negated clauses skipped |
+| N2 | A replacement swallowed "See you at 9.30." before it | a number before the full stop ends the sentence |
+| N3 | A start date months gone, or one just lifted, made a new "on hold" true | held = parked or not yet started; past-tense claims get two days' grace |
+| N4 | "(W4) and heavy lifting (W5)" kept "(W5)" | a lone code beside another of the user's goal codes goes too |
+| N5 | "Back at it: 30 minutes of exercise logged" spent the ask | logging words excluded |
+| N6 | "No more than 90 minutes", a long spoken yes, a yes after two figures refused | caps accepted; up to 12 words; the yes answers the figure in the question |
+| N7 | "How many hours a week over the next 6 months?" counted as the rate said | a sentence asking about the pace is not saying it; a tag question after the rate is fine |
+
+**Accepted residuals, recorded:** "goal q5, your UK taxes" (bare, comma) keeps its code; a synonym
+the title does not carry ("heavy lifting" for "Strength…") is neither checked nor stripped — both
+precision over recall. Every replacement is a `FALSE_GOAL_CLAIM` quality event with its sentence:
+**read them at Stage 1's first weekly review** (the only place a wrong replacement shows).
+
+**Costs.**
+- *Build:* this session (Opus 5.5) within the prompt's ~$40–80; the Fable review and verify ~$15–25;
+  the seq 015 diagnosis ~$2.
+- *Run:* no model calls. Per Synth turn, a goals read at the start and two after (small YAML), a
+  regex pass over the reply; per talk turn, the same plus a figure parse.
+- *Ancillary:* parked goals add one line each (~15 tokens) to every prompt's goals view; a few
+  optional fields per goal; `their_minutes`/`last_reply` (≤3,000 chars) in `goal_talk.json`.
+- *Unseen:* a wrong replacement is a worse turn for the user and shows only in the quality log —
+  bounded by naming, ownership and state checks, and read at Stage 1.
+- *What persists:* nothing billed by time.
+
+**Not verified, for the live steps** (`archive/handoffs/2026-11-25-goal-walkthrough-misses-fix-build-prompt.md`
+§ After the build): Synth's own use of `starts_on` vs `parked` from Mike's words; the
+replacement line in a real reply; Bulgarian talked through to `active` with `starts_on`; part A
+Stage 2's "nothing planned before 01-15".

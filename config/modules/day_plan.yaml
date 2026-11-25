@@ -115,12 +115,14 @@ flags:
   # `projected_finish`: each planned goal's likely finish is worked out daily from what is left
   # and the pace the user actually keeps; when it passes the goal's date, or slips by more than
   # the margin below, it is said once as Important with the new date and one fix. Code only.
-  projected_finish: false
+  # ON 2026-11-25 (Mike, part A live check Stage 1, deployed with the walkthrough fixes, § 19).
+  projected_finish: true
   # `revet`: a goal whose steps keep slipping (trigger 1), or a large goal at 2 weeks, 6 weeks,
   # then each quarter (trigger 2), is asked about once — in the weekly look back (Mike,
   # 2026-11-24), at most one goal a week — as a question, never a verdict. Detection is code.
   # The asking and the answer are kept in ranking_signals.jsonl for the monthly review.
-  revet: false
+  # ON 2026-11-25 (Mike, Stage 1, with the walkthrough fixes — a not-yet-started goal is never re-vetted).
+  revet: true
   # GOAL–TASK NETWORK PHASE 3, PART B (2026-11-24; plan § 18). Both OFF; each off restores part A.
   # `goal_talk`: a large goal gets a talk-through with the Goals Interviewer, and the talk is the
   # first task of its project (Mike). Synth offers it once; a yes starts it there and then — the

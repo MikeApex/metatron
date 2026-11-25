@@ -15,6 +15,7 @@ Structure:
 """
 
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -94,7 +95,139 @@ _SIZES = ("S", "M", "L")
 # formal interview later is how it gets lost.
 _EDITABLE = ("title", "private_why", "shareable_what", "status", "due",
              "parent_goal", "context", "essential", "size", "kind", "timeline",
-             "open_questions", "revisit_on")
+             "open_questions", "revisit_on", "starts_on", "hold_note")
+
+
+# --- not now: a later start, a hold that comes back (goal walkthrough fixes, plan § 19) -------
+# Mike, 2026-11-25. Two ways a goal is "not now", chosen by the user's words:
+#   * "on hold until X" / "starts again X" — taken on, `starts_on` X. Nothing is planned, counted,
+#     re-checked or alerted for it before that day; from it, it simply runs (ruling 2, ruling 3).
+#   * "park it" / "revisit X" — `parked`, `revisit_on` X. On that day it comes back to Synth's
+#     view and Synth asks once: take it up, give it a new date, or let it go (ruling 1).
+# Both carry an optional `hold_note` ("stretching only until then"), shown only while the goal is
+# held — a hold's note goes when the hold does, so it cannot outlive it (Mike: no inertia).
+
+def _today() -> "date":
+    try:
+        from tools.obligations import _today as _t
+        return _t()
+    except Exception:  # noqa: BLE001
+        return datetime.now().date()
+
+
+def not_started(g: dict | None, today=None) -> bool:
+    """A goal taken on with a `starts_on` still ahead: not planned, counted or re-checked yet."""
+    if not isinstance(g, dict):
+        return False
+    sd = _iso(g.get("starts_on") or "")
+    return bool(sd and sd > (today or _today()).isoformat())
+
+
+def live(g: dict | None, today=None) -> bool:
+    """Current AND started — what plans, weekly time, re-checks and finish alerts act on."""
+    return (isinstance(g, dict) and str(g.get("status") or "active") in CURRENT
+            and not not_started(g, today))
+
+
+def _title_of(g: dict) -> str:
+    return str(g.get("title") or g.get("id") or "this goal").strip()
+
+
+def _children(data: dict, goal_id: str) -> list[dict]:
+    """The habits and goals filed under this one (`parent_goal`)."""
+    return [c for h in HORIZONS for c in (data.get(h) or [])
+            if isinstance(c, dict) and str(c.get("parent_goal") or "") == str(goal_id)]
+
+
+def _parent(data: dict, g: dict) -> dict | None:
+    pid = str(g.get("parent_goal") or "").strip()
+    hit = _find_goal(data, pid) if pid else None
+    return hit[2] if hit else None
+
+
+def _end_hold(g: dict) -> None:
+    """The goal is current and running again: the hold's date, note and asked-stamp go."""
+    for k in ("revisit_on", "revisit_raised", "hold_note", "parked_with"):
+        g.pop(k, None)
+
+
+def _start_date(value) -> str | None:
+    """`starts_on` as given: a date, or "today"/"now" — start it now (Fable S7: "actually, start
+    it now" had no way out of a later start)."""
+    v = str(value or "").strip().lower()
+    if v in ("today", "now"):
+        return _today().isoformat()
+    return _iso(v)
+
+
+def _follow_parent(data: dict, parent: dict, before: dict) -> tuple[list[str], list[str]]:
+    """A habit moves with the goal it serves (Mike, 2026-11-25 #8): parked with it, back with it,
+    starting when it starts. Returns (titles that moved, titles left as they were) — the result
+    names both, so whichever is being talked about, the other is raised."""
+    moved, left = [], []
+    pid = str(parent.get("id"))
+    status, was = str(parent.get("status") or "active"), str(before.get("status") or "active")
+    for c in _children(data, pid):
+        cs = str(c.get("status") or "active")
+        if status == "parked" and cs in CURRENT:
+            c.update(status="parked", revisit_on=parent.get("revisit_on"), parked_with=pid)
+            moved.append(_title_of(c))
+        elif status in CURRENT and was == "parked" and cs == "parked" and (
+                c.get("parked_with") == pid or (c.get("revisit_on")
+                                                and c.get("revisit_on") == before.get("revisit_on"))):
+            c["status"] = "active"
+            _end_hold(c)
+            if str(c.get("size") or "").upper() == "L":
+                c.pop("size", None)         # a practice is not a large goal of its own (#8)
+            moved.append(_title_of(c))
+        elif status in CURRENT and cs in CURRENT and parent.get("starts_on") != before.get("starts_on"):
+            if not_started(parent):
+                c["starts_on"] = parent["starts_on"]
+            else:
+                c.pop("starts_on", None)
+            moved.append(_title_of(c))
+        elif status != was:
+            left.append(f"{_title_of(c)} ({cs})")
+    return moved, left
+
+
+def _park_children_steps(data: dict, g: dict) -> None:
+    """A practice parked with its goal has its open steps closed, as the goal's own are."""
+    if str(g.get("status") or "") != "parked":
+        return
+    for c in _children(data, str(g.get("id"))):
+        if c.get("parked_with") == str(g.get("id")):
+            _close_steps(str(c.get("id")), "parked")
+
+
+def _family_tail(data: dict, g: dict, moved: list[str], left: list[str]) -> str:
+    out = ""
+    if moved:
+        out += f" Its practice — {', '.join(moved)} — goes with it; mention that."
+    if left:
+        out += f" Under it, still as it was: {', '.join(left)} — ask whether that changes too."
+    par = _parent(data, g)
+    if par:
+        out += (f" This is the practice under \"{_title_of(par)}\" "
+                f"({par.get('status') or 'active'}) — raise that goal with them too.")
+    return out
+
+
+def _started_tail(g: dict) -> str:
+    if not not_started(g) or str(g.get("status") or "active") not in CURRENT:
+        return ""
+    tail = (f" It stays taken on and starts on {g['starts_on']}: nothing is planned, counted or "
+            f"checked before then.")
+    try:
+        from tools.obligations import _load
+        open_ = [str(t.get("what") or "") for t in _load(None) if t.get("status") == "open"
+                 and str(t.get("goal_id") or t.get("part_of") or "") == str(g.get("id"))]
+    except Exception:  # noqa: BLE001
+        open_ = []
+    if open_:
+        tail += (f" Its open tasks stay on the list ({'; '.join(open_[:4])}) — ask whether any "
+                 f"should wait until then (update_task defer).")
+    return tail
 
 
 def _next_id(goals: list, horizon: str) -> str:
@@ -161,7 +294,7 @@ _VET_PRIORITIES = ("high", "normal", "low")
 def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", priority: str = "",
              revisit_on: str = "", by: str = "", kind: str = "", weekly_minutes=None,
              done_means: str = "", starting_point: str = "", effort_hours=None,
-             due: str = "") -> str:
+             due: str = "", starts_on: str = "", hold_note: str = "") -> str:
     """Record a vetting verdict on one goal (§ 4.2, § 10 R3). Depth is the size Synth gave it in
     the turn: S needs nothing beyond the ledger; M needs a date it is feasible by and a priority
     against what is open; L is vetted by the Goals Interviewer's re-interview, which is phase 3 —
@@ -175,7 +308,26 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
     if not hit:
         return f"Error: no goal with id '{goal_id}'."
     h, _i, g = hit
+    before = dict(g)
+    if size == "L" and _parent(data, g):
+        # A practice under a goal (`d1` under Bulgarian, 11-25 #8) is not a large goal of its
+        # own: its time is part of its goal's weekly time, and it parks and returns with it.
+        par = _parent(data, g)
+        return (f"Error: \"{_title_of(g)}\" is the practice under \"{_title_of(par)}\" — its time "
+                f"is part of that goal's, so it is not sized as a large goal of its own. Talk "
+                f"about it together with \"{_title_of(par)}\". Nothing was changed.")
     size = size or str(g.get("size") or "").upper()
+    if size == "L" and _parent(data, g) and verdict == "active":
+        size = ""                        # an old L on a practice is not carried into a take-on
+    sd = ""
+    if str(starts_on or "").strip():
+        sd = _start_date(starts_on) or ""
+        if not sd:
+            return "Error: starts_on is YYYY-MM-DD. Nothing was changed."
+        if verdict != "active":
+            return ("Error: `starts_on` is for a goal taken on now that begins later (verdict "
+                    "active). A goal to decide on again later is parked with `revisit_on`. "
+                    "Nothing was changed.")
     # high | normal | low since 2026-11-22 (ranking § 16): free text ("ahead of the Northwind
     # review", 11-21) was recorded and then ignored by every score. What it ranks above goes in
     # `displaces`.
@@ -187,7 +339,7 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
     if kind and kind not in ("goal", "obligation"):
         return "Error: kind is goal or obligation. Nothing was changed."
     if verdict == "active":
-        if size not in _SIZES:
+        if size not in _SIZES and not _parent(data, g):
             return ("Error: say how big it is first — size S (one sitting), M (hours to days, one "
                     "end date) or L (recurring time for weeks or more). Nothing was changed.")
         if size == "L":
@@ -215,6 +367,10 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
         if _talk_flag() else {}
     if isinstance(extra, str):
         return extra
+    if talk and extra.get("weekly_minutes") and not (verdict == "active" and size == "L"):
+        err = _theirs_check(str(g.get("id")), extra["weekly_minutes"])
+        if err:
+            return err
     if talk and verdict == "active" and size == "L":
         # A real talk, not an opening line (Fable S2): the full pass needs the user to have
         # spoken in it several times. Parking or declining needs no minimum.
@@ -231,6 +387,19 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
                 {"weekly_minutes": "the time a week it gets (`weekly_minutes`)",
                  "done_means": "what done looks like, in a line (`done_means`)"}[m]
                 for m in missing) + ". Nothing was changed.")
+        # The weekly time is THEIRS (11-25 #3) — passed now or already on the goal (a short
+        # pass, an earlier talk's proposal: `q4`'s 120 on 11-25), it is confirmed with them in
+        # THIS talk before it is planned from. After the turn minimum, so "keep going" comes first.
+        err = _theirs_check(str(g.get("id")), have_wm)
+        if err:
+            return err
+        # The realism point has to land before they commit (11-25 #4): what their time means in
+        # years or months, said in the talk — checked against the Interviewer's own turns.
+        calc = _realism_line({**g, **extra})
+        if calc and not _realism_said(str(g.get("id"))):
+            return ("Error: before the verdict, put plainly to them what their time means — "
+                    f"{calc} — in your words, as a question they can answer (more time, a later "
+                    "date, or a smaller \"done\"). Nothing was changed.")
     if verdict == "parked":
         when = _iso(revisit_on)
         if not when:
@@ -264,6 +433,18 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
                              else datetime.now().strftime("%Y-%m-%d"))
     g.update(extra)
     g["status"] = verdict
+    if verdict == "active":
+        if str(before.get("status") or "") == "parked" and not sd:
+            g.pop("starts_on", None)      # taken up from parked means now (S7)
+        _end_hold(g)
+        if sd:
+            g["starts_on"] = sd
+    if verdict == "parked":
+        g.pop("revisit_raised", None)        # a new date is asked about afresh
+        g.pop("parked_with", None)
+    note = " ".join(str(hold_note or "").split())[:200]
+    if note and (verdict == "parked" or not_started(g)):
+        g["hold_note"] = note
     if size in _SIZES:
         g["size"] = size
     if kind:
@@ -274,6 +455,7 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
         ("priority", str(priority or "").strip() or None),
         ("by", by or _calling_agent() or None),
         ("pass", depth_pass)) if v}
+    moved, left = _follow_parent(data, g, before)
     _write(data)
     # A goal asked about again (re-vet) — this verdict is the answer: recorded for the monthly
     # review, and a stalled plan kept is given fresh steps. Never blocks the verdict.
@@ -297,6 +479,7 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
         _end_talk(str(g["id"]), f"goal_{verdict}")
     if verdict in ("parked", "declined"):
         _close_steps(str(g["id"]), verdict)
+        _park_children_steps(data, g)
     elif verdict == "active":
         # A goal re-vetted at a new priority (or as an obligation) re-weighs its open steps now,
         # not at tomorrow's sweep (ranking § 16). Never blocks the verdict.
@@ -315,13 +498,58 @@ def vet_goal(goal_id: str, verdict: str, size: str = "", displaces: str = "", pr
             and size == "L" and _talk_flag() else
             " It is given regular time each week, not steps." if verdict == "active"
             and size == "L" else "")
+    if verdict == "active" and not_started(g):
+        tail = (f" It starts on {g['starts_on']}: nothing is planned or counted before then, and "
+                f"from that day it is " + ("planned out of sight, a stage at a time."
+                                           if depth_pass == "full" else "given its weekly time."))
     if offer:
         tail += _OFFER
+    if ended and verdict == "parked":
+        still = _open_fields(g)
+        if still:
+            # A parked talk keeps what was settled and says what was not (11-25 #3, 5b): "have we
+            # talked it out enough?" then has an honest answer.
+            tail += (f" Still open for when it comes back: {', '.join(still)} — say so in a "
+                     f"sentence; what was settled is kept.")
     if ended:
         tail += (" The talk is over: thank them in a sentence and say what happens next — their "
                  "next message is the usual conversation.")
+    tail += _family_tail(data, g, moved, left)
     calc = _realism_line(g) if _talk_flag() else ""
     return f"{h} goal {g['id']} {word}.{tail}" + (f" Arithmetic: {calc}" if calc else "")
+
+
+def _theirs_check(goal_id: str, wm) -> str:
+    """In a goal talk, a weekly time is recorded only when it is the user's (11-25 #3): a figure
+    they said, or a plain yes to one figure the Interviewer named. Never the Interviewer's own
+    proposal. "" when fine; an `Error:` string otherwise."""
+    try:
+        from core.persona import resolve_persona
+        from tools.goal_talk import minutes_theirs
+        if minutes_theirs(resolve_persona(None), goal_id, wm):
+            return ""
+    except Exception:  # noqa: BLE001 — unreadable talk state: do not block on it
+        return ""
+    return ("Error: that weekly time is a suggestion, not their figure — they have not said it or "
+            "agreed to it. Ask for theirs: a number they give, or a yes to ONE figure you name "
+            "(\"shall we say 120 minutes a week?\"). Nothing was changed.")
+
+
+def _realism_said(goal_id: str) -> bool:
+    try:
+        from core.persona import resolve_persona
+        from tools.goal_talk import realism_said
+        return realism_said(resolve_persona(None), goal_id)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _open_fields(g: dict) -> list[str]:
+    try:
+        from tools.goal_talk import open_fields
+        return open_fields(g)
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _talk_flag() -> bool:
@@ -413,35 +641,141 @@ def _realism_line(g: dict) -> str:
         return ""
 
 
-def prompt_view(data: dict) -> str:
+_HIDDEN_KEYS = ("vetted", "revisit_raised", "start_said", "parked_with", "hold_note")
+
+
+def _held_line(g: dict, when: str) -> str:
+    par = f" (practice for {g['parent_goal']})" if g.get("parent_goal") else ""
+    note = f" — {g['hold_note']}" if g.get("hold_note") else ""
+    return f"- {g.get('id', '?')}: {g.get('title', '')}{par} — {when}{note}"
+
+
+def prompt_view(data: dict, today=None) -> str:
     """Goals as every prompt sees them (§ 10 R6) — the one filter. Current goals (active,
     not_started, at_risk; and completed, which the record keeps) as YAML; proposed ones under a
-    short "being considered" heading; parked and declined never; `vetted` records never. A goal
-    with no status is active, as it has always been read."""
+    short "being considered" heading; declined never; `vetted` records never. A goal with no
+    status is active, as it has always been read.
+
+    Amended 2026-11-25 (Mike, walkthrough ruling 1): parked goals are no longer invisible — that
+    left "when we bring it back in mid-January" with nothing to bring it back. Each is one line
+    under "On hold", with its date and note; on its date it moves to "Back today" for one ask. A
+    goal taken on with a later `starts_on` is listed under "Starting later", not as current; on
+    its day it is current again and named once under "Back from today"."""
+    today = today or _today()
+    iso = today.isoformat()
     current: dict = {}
     considered: list[str] = []
+    held: list[str] = []
+    back: list[str] = []
+    later: list[str] = []
+    started: list[str] = []
     for h in HORIZONS:
         for g in data.get(h) or []:
             if not isinstance(g, dict):
                 continue
             status = str(g.get("status") or "active")
-            if status in ("parked", "declined"):
+            if status == "declined":
+                continue
+            if status == "parked":
+                when = _iso(g.get("revisit_on") or "") or ""
+                if when and when <= iso and not g.get("revisit_raised"):
+                    back.append(_held_line(g, f"on hold until {when}"))
+                elif when and when <= iso:
+                    held.append(_held_line(g, f"its date ({when}) has come and it was put to them "
+                                              f"on {g['revisit_raised']} — leave it unless they "
+                                              f"bring it up"))
+                else:
+                    held.append(_held_line(g, f"until {when}" if when else "no date"))
                 continue
             if status == "proposed":
                 considered.append(f"- {g.get('id', '?')}: {g.get('title', '')}"
                                   + (f" (by {g['due']})" if g.get("due") else ""))
                 continue
-            current.setdefault(h, []).append({k: v for k, v in g.items() if k != "vetted"})
+            if status in CURRENT and not_started(g, today):
+                later.append(_held_line(g, f"starts {g['starts_on']}"))
+                continue
+            if (status in CURRENT and _iso(g.get("starts_on") or "")
+                    and not g.get("start_said")):
+                started.append(f"- {g.get('id', '?')}: {g.get('title', '')}")
+            current.setdefault(h, []).append({k: v for k, v in g.items()
+                                              if k not in _HIDDEN_KEYS})
     for k, v in data.items():
         if k not in HORIZONS and k not in current:
             current[k] = v
     out = yaml.dump(current, default_flow_style=False, allow_unicode=True, sort_keys=False).strip() \
         if current else ""
     text = f"```yaml\n{out}\n```" if out else ""
+    if started:
+        text += ("\n\n### Back from today (taken on earlier to start now — mention it once, in a "
+                 "sentence)\n" + "\n".join(started))
+    if back:
+        text += ("\n\n### Back on the list today (on hold until now — ask them once: take it up, "
+                 "give it a new date, or let it go)\n" + "\n".join(back))
     if considered:
         text += ("\n\n### Being considered (not yet taken on — never treat these as current goals)\n"
                  + "\n".join(considered))
+    if later:
+        text += ("\n\n### Taken on, starting later (nothing is planned or nudged for these before "
+                 "their date — never push them now; to start one now, update_goal starts_on "
+                 "\"today\")\n" + "\n".join(later))
+    if held:
+        text += ("\n\n### On hold (not current — never plan or push these)\n" + "\n".join(held))
     return text.strip()
+
+
+_RETURN_RE = re.compile(
+    r"\bback\b|\bagain\b|\bon hold\b|\bparked\b|\bresum\w*|\brestart\w*|\btake (?:it|this|that)? ?up"
+    r"|\bpick (?:it|this|that)? ?(?:back )?up|\bre-?date|\bnew date\b|\blet (?:it|this|that) go\b"
+    r"|\brevisit\w*|\bstarts? (?:today|now|from)\b|\bfrom today\b", re.IGNORECASE)
+
+
+# A sentence recording something done is not putting a goal back to the user (verify N5).
+_LOGGED_RE = re.compile(r"\b(?:logged|recorded|noted|tracked|done|did|completed|finished|minutes of|"
+                        r"appointment|session)\b", re.IGNORECASE)
+
+
+def raised_in(reply: str, persona: str | None = None) -> list[str]:
+    """After a reply reached the user: a goal under "Back on the list today" or "Back from today"
+    that the reply names (a word of its title) has been put to them — stamped, so it is asked
+    once. Returns the ids stamped. Never raises."""
+    try:
+        from tools.obligations import _task_tokens
+        # A sentence that names the goal AND speaks of its return (Fable S4: "Logged 30 minutes of
+        # exercise" must not spend exercise's one "it's back" question).
+        sents = [x for x in re.split(r"(?<=[.!?])\s+|\n+", reply or "")
+                 if _RETURN_RE.search(x) and not _LOGGED_RE.search(x)]
+        if not sents:
+            return []
+        words = _task_tokens(" ".join(sents))
+        if not words:
+            return []
+        data = read_goals()
+        iso = _today().isoformat()
+        hit: list[str] = []
+        for h in HORIZONS:
+            for g in data.get(h) or []:
+                if not isinstance(g, dict):
+                    continue
+                status = str(g.get("status") or "active")
+                due_back = (status == "parked" and not g.get("revisit_raised")
+                            and (_iso(g.get("revisit_on") or "") or "9999") <= iso)
+                due_start = (status in CURRENT and not g.get("start_said")
+                             and (_iso(g.get("starts_on") or "") or "9999") <= iso)
+                if not (due_back or due_start):
+                    continue
+                if not (_task_tokens(str(g.get("title") or "")) & words):
+                    continue
+                if due_back:
+                    g["revisit_raised"] = iso
+                else:
+                    g["start_said"] = iso
+                    g.pop("hold_note", None)      # the hold is over; its note goes with it
+                hit.append(str(g.get("id")))
+        if hit:
+            _write(data)
+        return hit
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def update_goal(
@@ -466,6 +800,8 @@ def update_goal(
     done_means: str = "",
     starting_point: str = "",
     effort_hours: str | None = None,
+    starts_on: str = "",
+    hold_note: str = "",
 ) -> str:
     """
     Add, edit, complete or remove a single goal.
@@ -499,14 +835,20 @@ def update_goal(
         return vet_goal(goal_id, verdict, size=size, displaces=displaces, priority=priority,
                         revisit_on=revisit_on, kind=kind, weekly_minutes=weekly_minutes,
                         done_means=done_means, starting_point=starting_point,
-                        effort_hours=effort_hours, due=due)
+                        effort_hours=effort_hours, due=due, starts_on=starts_on,
+                        hold_note=hold_note)
 
     data = read_goals()
     fields = {k: v for k, v in (
         ("title", title), ("private_why", private_why),
         ("shareable_what", shareable_what), ("status", status), ("due", due),
-        ("parent_goal", parent_goal), ("context", context),
+        ("parent_goal", parent_goal), ("context", context), ("starts_on", starts_on),
+        ("hold_note", " ".join(str(hold_note or "").split())[:200]),
     ) if str(v).strip()}
+    if fields.get("starts_on") and not _start_date(fields["starts_on"]):
+        return "Error: starts_on is YYYY-MM-DD, or \"today\" to start it now."
+    if fields.get("starts_on"):
+        fields["starts_on"] = _start_date(fields["starts_on"])
     if fields.get("status") and fields["status"].strip().lower() not in STATUSES:
         return f"Error: status must be one of {', '.join(STATUSES)}."
     if "status" in fields:
@@ -597,12 +939,49 @@ def update_goal(
                 if not fields:
                     return (f"Error: nothing to change on {goal_id} — pass at "
                             f"least one of {list(_EDITABLE)}.")
+                if fields.get("size") == "L" and _parent(data, g):
+                    par = _parent(data, g)
+                    return (f"Error: \"{_title_of(g)}\" is the practice under "
+                            f"\"{_title_of(par)}\" — its time is part of that goal's, so it is not "
+                            f"a large goal of its own. Nothing was changed.")
+                if fields.get("weekly_minutes") and _talk_on_goal(goal_id):
+                    err = _theirs_check(goal_id, fields["weekly_minutes"])
+                    if err:
+                        return err
+                if fields.get("status") == "parked" and not (
+                        fields.get("revisit_on") or _iso(revisit_on) or g.get("revisit_on")):
+                    return ("Error: a goal on hold needs the day to look at it again — `revisit_on` "
+                            "(YYYY-MM-DD); or, if it is decided and only starts later, keep it "
+                            "taken on with `starts_on`. Nothing was changed.")
+                before = dict(g)
+                if _iso(revisit_on):
+                    fields["revisit_on"] = _iso(revisit_on)
                 g.update(fields)
+                if fields.get("status") in CURRENT and str(before.get("status") or "") == "parked":
+                    _end_hold(g)
+                    if not fields.get("starts_on"):
+                        g.pop("starts_on", None)   # taken up from parked means now (S7)
+                if fields.get("status") == "parked" and before.get("status") != "parked":
+                    g.pop("revisit_raised", None)
+                if fields.get("starts_on"):
+                    if not_started(g):
+                        g.pop("start_said", None)      # a new later start is said afresh
+                    elif not fields.get("hold_note"):
+                        g.pop("hold_note", None)       # started now: the hold's note goes
+                moved, left = _follow_parent(data, g, before)
                 _write(data)
                 if fields.get("status") in ("parked", "declined", "completed"):
                     _close_steps(goal_id, fields["status"])
+                _park_children_steps(data, g)
                 offer = (_OFFER if fields.get("size") == "L" and from_synth
                          and _talk_task(goal_id) else "")
+                if (not offer and from_synth and str(before.get("status") or "") == "parked"
+                        and fields.get("status") in CURRENT
+                        and str(g.get("size") or "").upper() == "L"
+                        and _talk_task(goal_id, by="back")):
+                    # Taken up again from parked (ruling 1): a large goal not yet talked through
+                    # gets a fresh talk task — the old one closed with the park — and one offer.
+                    offer = _OFFER
                 if fields.get("size") and fields["size"] != "L":
                     _end_talk(goal_id, "not_large")
                 if fields.get("due"):
@@ -614,7 +993,9 @@ def update_goal(
                     except Exception:  # noqa: BLE001
                         pass
                 return (f"Updated {h} goal {goal_id}: "
-                        f"{', '.join(sorted(fields))} changed." + offer)
+                        f"{', '.join(sorted(fields))} changed." + offer
+                        + (_started_tail(g) if fields.get("starts_on") else "")
+                        + _family_tail(data, g, moved, left))
 
     known = ", ".join(str(g.get("id", "?")) for h in HORIZONS for g in (data.get(h) or []))
     return f"Error: no goal with id '{goal_id}'. Existing ids: {known or 'none'}."
@@ -697,7 +1078,9 @@ UPDATE_GOAL_SCHEMA = {
             "verdict": {"type": "string", "description": "For vet: active | parked | declined."},
             "priority": {"type": "string", "description": "For vet: high | normal | low — how it ranks against what is already open, by what missing it would cost (an obligation like taxes is high even when it serves no goal)."},
             "displaces": {"type": "string", "description": "For vet: what it takes time from, if anything."},
-            "revisit_on": {"type": "string", "description": "For vet with verdict parked: YYYY-MM-DD to ask again."},
+            "revisit_on": {"type": "string", "description": "For parked (vet, or update with status parked): YYYY-MM-DD to look at it again — the goal comes back to you that day to ask once. For \"park it\", \"revisit it in June\"."},
+            "starts_on": {"type": "string", "description": "YYYY-MM-DD: a goal that stays taken on but begins (or begins again) that day — nothing is planned or counted for it before then, and from that day it runs by itself. For \"on hold until mid-January\", \"start this after the holidays\"; \"today\" starts it now. For update, or vet with verdict active."},
+            "hold_note": {"type": "string", "description": "One line on what happens meanwhile, while it is on hold or starting later (\"stretching only until then\"). Shown only while it is held."},
         },
         "required": ["action"],
     },

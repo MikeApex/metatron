@@ -360,7 +360,7 @@ def reconcile_check() -> str:
     except CalendarUnreadable as e:
         report_calendar_unreadable("calendar_reconcile", str(e))
         return ("calendar reconcile FAILED: calendar unreadable, nothing was checked "
-                f"({re.sub(r'https?://\S+', '<url>', str(e))})")  # the URL carries the account
+                "(" + re.sub(r"https?://\S+", "<url>", str(e)) + ")")  # the URL carries the account
     except Exception as e:
         return f"calendar reconcile skipped: {e}"
 

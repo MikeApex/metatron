@@ -8883,6 +8883,43 @@ def check_false_action_claims(response: str,
     return claims
 
 
+def _goal_snapshot(persona: str | None) -> dict | None:
+    """Each goal's digest at the start of a turn (tools/goal_claims.py, plan § 19). None on any
+    failure, which turns the goal-claim check off for that turn — never the turn itself."""
+    try:
+        from tools.goal_claims import snapshot
+        return snapshot(persona)
+    except PersonaError:
+        raise
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _amend_goal_claims(text: str, before: dict | None, persona: str | None) -> str:
+    """A sentence claiming a goal change this turn did not make is replaced; internal goal and
+    task ids come out (11-25 walkthrough, Mike's ruling 4 and #7). Fails open to the text."""
+    try:
+        from tools.goal_claims import amend
+        return amend(text, before, persona)
+    except PersonaError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[goal_claims] not applied: {type(exc).__name__}")
+        return text
+
+
+def _goal_after_reply(text: str, persona: str | None) -> None:
+    """A delivered reply: a goal back today is stamped asked once; a goal turn's question count
+    is logged. Never raises."""
+    try:
+        from tools.goal_claims import after_reply
+        after_reply(text, persona, _trace_tool_names())
+    except PersonaError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[goal_claims] after-reply failed: {type(exc).__name__}")
+
+
 def _stamp_routine_revisits(kind: str | None, visible: str, filtered: str) -> None:
     """
     Spend a paused routine's one check-back question (tools/routines.py) — only when the
@@ -9111,6 +9148,7 @@ def run_pipeline_session(user_input: str,
         # timestamp so a pending request left over from an earlier turn is not
         # re-announced on every subsequent reply.
         _pending_before = _pending_tokens(persona)
+        _goals_before = _goal_snapshot(persona)     # goal claims are checked against this (§ 19)
         receipt_line = ""
         if received_at is not None:
             from tools.ambient import format_receipt_time
@@ -9340,9 +9378,12 @@ def run_pipeline_session(user_input: str,
         filtered = enforce_pending_receipt(
             filtered, _pending_raised_since(_pending_before, persona))
         if not _was_suppressed:
+            filtered = _amend_goal_claims(filtered, _goals_before, persona)
             filtered = _offer_receipt(filtered, persona, _pending_before, _model_text)
             # M9: the configured line appended only when the reply lacks its number.
             filtered = _ensure_crisis(filtered, crisis, persona)
+        if not _was_suppressed:
+            _goal_after_reply(filtered, persona)
         if history is not None:
             history.append({"role": "user",
                             "content": user_input + _history_attachment_note(attachments)})
@@ -9481,6 +9522,7 @@ def _run_pipeline_session_stream_inner(
     # See the non-streaming path: the token set before the turn is what makes a
     # confirmation raised BY this turn distinguishable from one already outstanding.
     _pending_before = _pending_tokens(persona)
+    _goals_before = _goal_snapshot(persona)     # goal claims are checked against this (§ 19)
     receipt_line = ""
     if received_at is not None:
         from tools.ambient import format_receipt_time
@@ -9846,6 +9888,10 @@ def _run_pipeline_session_stream_inner(
     if _crisis_alone:
         _final = _ensure_crisis("", crisis, persona)
     if not _suppressed:
+        # False goal claims and internal ids (§ 19) — a change here goes out through the same
+        # replace-with marker below, so what was streamed is withdrawn, never stacked.
+        _final = _amend_goal_claims(_final, _goals_before, persona)
+        _goal_after_reply(_final, persona)
         # A noticed log's question, appended (never a replacement) when the reply did not
         # ask it — through the same replace-with marker below when it changes the text.
         # Judged on the Synthesizer's own words: the receipt line for another card above

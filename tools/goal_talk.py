@@ -274,8 +274,11 @@ def _wants_talk(g: dict | None) -> bool:
         return False
     vetted = g.get("vetted") if isinstance(g.get("vetted"), dict) else {}
     status = str(g.get("status") or "active")
+    # A practice under a goal (`parent_goal`) is talked through with its goal, never alone
+    # (11-25 #8: `d1` was sized L and parked as a goal of its own).
     return (str(g.get("size") or "").upper() == "L" and vetted.get("pass") != "full"
-            and status in ("proposed", "active", "not_started", "at_risk"))
+            and status in ("proposed", "active", "not_started", "at_risk")
+            and not str(g.get("parent_goal") or "").strip())
 
 
 def _open_task(goal_id: str, persona: str | None, by: str) -> tuple[str | None, bool]:
@@ -709,12 +712,225 @@ def _dur(wk_lo: float, wk_hi: float) -> str:
     return a if a == b else f"{a} to {b}"
 
 
+# --- whose figure, and whether the arithmetic was said (walkthrough fixes, plan § 19) ----------
+# 11-25: the Interviewer proposed "120 to 150 minutes", Mike never gave a figure, and 120 was
+# recorded as his; the 300–450 hours were quoted but "at two hours a week that is 3–4 years" never
+# was. Both are now evidence code keeps from the talk's own turns, never the model's say-so.
+
+_NUM_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+              "seven": 7, "eight": 8, "nine": 9, "ten": 10, "fifteen": 15, "twenty": 20,
+              "thirty": 30, "forty": 40, "forty-five": 45, "fifty": 50, "sixty": 60,
+              "ninety": 90, "couple": 2, "a couple of": 2}
+_NUM = r"(\d+(?:\.\d+)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|" \
+       r"thirty|forty-five|forty|fifty|sixty|ninety|couple(?: of)?)"
+_DUR_RE = re.compile(
+    r"\b" + _NUM + r"(?:\s*(?:-|–|to)\s*" + _NUM + r")?(\s+and\s+a\s+half)?\s*"
+    r"(hours?|hrs?|h\b|minutes?|mins?)(?:\s+and\s+a\s+half)?", re.IGNORECASE)
+_HALF_HOUR_RE = re.compile(r"\bhalf\s+an\s+hour\b", re.IGNORECASE)
+_TIMES_RE = re.compile(r"\b" + _NUM + r"\s+(?:times|sessions|days|mornings|evenings|nights)\b(?:\s+a\s+week)?|"
+                       r"\b(twice|thrice)\b", re.IGNORECASE)
+_DAILY_RE = re.compile(r"\b(?:a|per|each|every)\s+day\b|\bdaily\b", re.IGNORECASE)
+_YES_RE = re.compile(
+    r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|agreed|deal|fine|perfect|great|good|"
+    r"sounds\s+(?:good|right|fine|great)|that\s+works|that'?s\s+(?:fine|good|right)|"
+    r"let'?s\s+(?:do|go\s+with)\s+(?:that|it)|go\s+with\s+that|works\s+for\s+me)\b", re.IGNORECASE)
+_RATE_SAID_RE = re.compile(
+    r"\b(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|twelve|eighteen|a "
+    r"couple of|a few|several)(?:\s*(?:-|–|to)\s*(?:\d+(?:\.\d+)?|two|three|four|five|six|"
+    r"seven|eight|nine|ten|twelve|eighteen))?(?:\s+and\s+a\s+half)?\s+(?:years?|months?)\b",
+    re.IGNORECASE)
+
+
+def _n(tok: str | None) -> float | None:
+    if not tok:
+        return None
+    t = tok.strip().lower()
+    if t.startswith("couple"):
+        return 2.0
+    try:
+        return float(t)
+    except ValueError:
+        return float(_NUM_WORDS[t]) if t in _NUM_WORDS else None
+
+
+_WEEK_AFTER_RE = re.compile(r"^\s*(?:a|per|each|every)\s+week\b|^\s*weekly\b", re.IGNORECASE)
+# A figure the message turns down: "not 120", "can't do 150", "150 is too much" — the negation
+# governs it directly (within three words), and a cap ("no more than 90", "can't do more than 2
+# hours", "up to") is still their figure (verify N6).
+_NEG_NEAR_RE = re.compile(r"\b(?:not|can'?t|cannot|won'?t|never)(?:\s+\w+){0,2}\s*$", re.IGNORECASE)
+_CAP_NEAR_RE = re.compile(r"\b(?:more than|up to|at most|max(?:imum)?|over)\s*$", re.IGNORECASE)
+_NEG_AFTER_RE = re.compile(r"^\s*(?:\w+\s+){0,3}(?:is|are|would be|sounds|feels|'s)?\s*"
+                           r"(?:too (?:much|many|long|high)|a lot)\b", re.IGNORECASE)
+_HOURMIN_RE = re.compile(r"\b(\d{1,2})\s*h\s*(\d{2})\b", re.IGNORECASE)
+
+
+def _figures(text: str) -> list[tuple[int, int, bool]]:
+    """(low, high, said-per-week) for each duration a message names, in minutes a week.
+    "2 hours a week" is a week's figure as said, never multiplied (Fable L2: "2 hours a week over 3
+    days" is 120, not 360); "15 minutes a day" is ×7, or × the days when they say how many ("20
+    minutes a day, five days a week" is 100); "30 minutes three times a week" × 3. A figure the
+    message turns down ("150 is too much", "not 120") is not theirs (L3); one over 3,000 minutes is
+    a total, not a week (L1: "the 300 to 450 hours")."""
+    s = _HALF_HOUR_RE.sub("30 minutes", text or "")
+    s = _HOURMIN_RE.sub(lambda m: f"{int(m.group(1)) * 60 + int(m.group(2))} minutes", s)
+    s = re.sub(r"\bbetween\s+(\S+)\s+and\s+", r"\1 to ", s, flags=re.IGNORECASE)
+    out: list[tuple[int, int, bool]] = []
+    times = None
+    m = _TIMES_RE.search(s)
+    if m:
+        times = 2.0 if (m.group(2) or "").lower() == "twice" else 3.0 if m.group(2) else _n(m.group(1))
+    for d in _DUR_RE.finditer(s):
+        lo, hi = _n(d.group(1)), _n(d.group(2))
+        if lo is None:
+            continue
+        pre = s[max(0, d.start() - 30):d.start()]
+        if (_NEG_NEAR_RE.search(pre) and not _CAP_NEAR_RE.search(pre)) or \
+                _NEG_AFTER_RE.search(s[d.end():d.end() + 30]):
+            continue
+        hi = hi if hi is not None else lo
+        half = 0.5 if (d.group(3) or re.search(r"and\s+a\s+half", d.group(0), re.I)) else 0.0
+        mult = 60.0 if d.group(4).lower().startswith("h") else 1.0
+        lo_m, hi_m = (lo + half) * mult, (hi + half) * mult
+        after = s[d.end():d.end() + 40]
+        weekly = bool(_WEEK_AFTER_RE.search(after))
+        if not weekly:
+            if _DAILY_RE.search(after[:20]):
+                k = times if times and times > 1 else 7.0
+                lo_m, hi_m = lo_m * k, hi_m * k
+            elif times and times > 1:
+                lo_m, hi_m = lo_m * times, hi_m * times
+        if 5 <= lo_m <= 3000:
+            out.append((int(round(lo_m)), int(round(min(hi_m, 3000))), weekly))
+    return out
+
+
+def weekly_figures(text: str) -> list[tuple[int, int]]:
+    """The minutes a week a message names, as (low, high) ranges. A bare duration counts as stated
+    (an answer to "how much a week?"). Over-inclusive by design: this decides only that a figure is
+    theirs, never what it is."""
+    return [(lo, hi) for lo, hi, _w in _figures(text)]
+
+
+_RATE_MARK_RE = re.compile(r"\b(?:a|per|each|every)\s+week\b|\bweekly\b|\bat (?:this|that|your|the) "
+                           r"(?:rate|pace)\b|\bat that\b", re.IGNORECASE)
+
+
+_ASKS_PACE_RE = re.compile(
+    r"^\W*(?:how|what|which|could|would|can|will|do|does|did|is|are|should|shall)\b"
+    r"|\bhow\s+(?:many|much|long)\b", re.IGNORECASE)
+
+
+def _says_rate(reply: str) -> bool:
+    """The Interviewer put what their time means in months or years — one sentence tying a pace
+    ("a week", "at this rate") to a duration (Fable L4: "you've been at it two years" is not it,
+    "at this pace about three and a half years" is)."""
+    sents = [x for x in re.split(r"(?<=[.!?])\s+|\n+", reply or "") if x.strip()]
+    for i, sent in enumerate(sents):
+        if _ASKS_PACE_RE.search(sent) or not _RATE_SAID_RE.search(sent):
+            # Asking about the pace is not saying the rate (verify N7) — but "at two hours a week
+            # that is about three years — does that sit right?" is the rate said, with the question
+            # the instructions ask for.
+            continue
+        if _RATE_MARK_RE.search(sent) or (i and _RATE_MARK_RE.search(sents[i - 1])):
+            return True         # the pace in this sentence, or the one just before it
+    return False
+
+
+def _talk_for(persona: str, goal_id: str) -> dict | None:
+    talk = current(persona)
+    return talk if talk and talk.get("goal_id") == str(goal_id) else None
+
+
+def minutes_theirs(persona: str, goal_id: str, wm) -> bool:
+    """Is this weekly time the user's own, in this talk — a figure they said (within 15%, or
+    inside a range they gave) or a plain yes to the one figure the Interviewer named?"""
+    talk = _talk_for(persona, goal_id)
+    if not talk:
+        return True                   # not in a talk: Synth's short pass is not gated here
+    try:
+        wm = float(wm)
+    except (TypeError, ValueError):
+        return False
+    for lo, hi in talk.get("their_minutes") or []:
+        if lo * 0.85 <= wm <= hi * 1.15:
+            return True
+    return False
+
+
+def realism_said(persona: str, goal_id: str) -> bool:
+    talk = _talk_for(persona, goal_id)
+    return True if not talk else bool(talk.get("realism_said"))
+
+
+_HEDGE_RE = re.compile(r"\b(?:but|though|although|not|unsure|less|more|maybe|question|"
+                      r"whatever|depends|first|instead)\b|n[’']t\b", re.IGNORECASE)
+
+
+def _plain_yes(text: str) -> bool:
+    """A short, unhedged yes: "yes", "that works", "sounds good" — not "ok but…", "good question,
+    I'm not sure", "fine, whatever, though less" (Fable L3)."""
+    t = (text or "").strip()
+    return (bool(_YES_RE.match(t)) and "?" not in t and len(t.split()) <= 12
+            and not _HEDGE_RE.search(t))
+
+
+def _note_user_turn(cur: dict, user_input: str) -> None:
+    """Before the Interviewer answers: what this message makes theirs."""
+    mine = [[lo, hi] for lo, hi, _w in _figures(user_input)]
+    bare = re.fullmatch(r"\D{0,15}?(\d{2,4})\D{0,15}", user_input or "")
+    if not mine and bare and re.search(r"\bminutes?\b", cur.get("last_reply") or "", re.I):
+        n = int(bare.group(1))           # "90" — an answer to "how many minutes a week?"
+        if 10 <= n <= 1500:
+            mine = [[n, n]]
+    if not mine and _plain_yes(user_input):
+        # The figure the yes answers is the one in the question (verify N6: "You said 90 felt
+        # tight. Shall we say 120 a week?" — the yes is to 120).
+        last = cur.get("last_reply") or ""
+        asked = " ".join(x for x in re.split(r"(?<=[.!?])\s+|\n+", last) if x.strip().endswith("?"))
+        offered = _figures(asked) or _figures(last)
+        weekly = [f for f in offered if f[2]] or offered
+        distinct = {(lo, hi) for lo, hi, _w in weekly}
+        if len(distinct) == 1:
+            lo, hi = next(iter(distinct))
+            if lo == hi:                 # ONE figure named, then a plain yes to it
+                mine = [[lo, hi]]
+    if mine:
+        cur["their_minutes"] = ((cur.get("their_minutes") or []) + mine)[-12:]
+
+
+def _note_reply(cur: dict, reply: str) -> None:
+    cur["last_reply"] = (reply or "")[:3000]
+    if _says_rate(reply):
+        cur["realism_said"] = True
+
+
+def open_fields(g: dict) -> list[str]:
+    """What is still to settle on an L goal, in words — the talk block's list, for a parked
+    verdict and for a "we've settled it all" claim (goal_claims)."""
+    vetted = g.get("vetted") if isinstance(g.get("vetted"), dict) else {}
+    have = {k: g.get(k) or vetted.get(k) for k, _ in _FIELDS}
+    return [label for k, label in _FIELDS
+            if have.get(k) in (None, "", []) and k not in ("due", "effort_hours")]
+
+
 # --- one turn ----------------------------------------------------------------------------------
 
-_FIELDS = (("done_means", "what done looks like"), ("starting_point", "where they are now"),
+_FIELDS =(("done_means", "what done looks like"), ("starting_point", "where they are now"),
            ("weekly_minutes", "minutes a week"), ("due", "by when"),
            ("displaces", "what it takes that time from"), ("priority", "where it ranks"),
            ("effort_hours", "the effort it realistically takes (hours)"))
+
+
+def _practices(persona: str, goal_id: str) -> list[str]:
+    try:
+        from core.persona import persona_scope
+        from tools.goals import _children, read_goals
+        with persona_scope(persona):
+            data = read_goals()
+        return [f"{c.get('id')} \"{_title(c)}\" ({c.get('status') or 'active'})"
+                for c in _children(data, goal_id)]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _their_week(persona: str) -> list[str]:
@@ -760,9 +976,24 @@ def talk_block(persona: str, talk: dict) -> str:
         f"- Recorded so far: {'; '.join(rec) if rec else 'nothing yet'}",
         f"- Still to settle: {', '.join(missing) if missing else 'nothing — check it with them, then record the verdict'}",
     ]
+    if have.get("weekly_minutes") and not minutes_theirs(persona, str(talk.get("goal_id")),
+                                                          have["weekly_minutes"]):
+        lines.append(f"- The {have['weekly_minutes']} minutes a week on record is not yet THEIR "
+                     "figure in this talk: ask for theirs — a number they give, or a yes to one "
+                     "figure you name. Your suggestion is never recorded as theirs.")
     calc = realism(have.get("weekly_minutes"), have.get("effort_hours"), have.get("due"))
     if calc:
         lines.append(f"- Arithmetic (code): {calc}")
+        if not talk.get("realism_said"):
+            lines.append("- Not yet said to them: what that time means in months or years. Say "
+                         "it plainly, in your words, before any verdict, and let them choose: "
+                         "more time, a later date, or a smaller \"done\".")
+    if g.get("starts_on"):
+        lines.append(f"- Starts on: {g['starts_on']}")
+    kids = _practices(persona, str(talk.get("goal_id")))
+    if kids:
+        lines.append("- Its practice (part of this goal, not a goal of its own — its time is "
+                     "inside this one's): " + "; ".join(kids))
     shape = talk.get("shape") or {}
     if shape.get("source") == "playbook":
         lines.append("- What Metatron already knows about goals like this (method, not about "
@@ -827,17 +1058,23 @@ def run_turn(persona: str, user_input: str, history: list[dict], proactive: bool
                 st = _read(persona)
                 if isinstance(st.get("talk"), dict) and st["talk"].get("id") == talk["id"]:
                     st["talk"]["opened"] = True
+                    _note_user_turn(st["talk"], user_input)     # their figure, before the reply
                     _write(p, st)
         talk["shape"] = _take_shape(persona, talk)
         before = _pending_tokens(persona)
+        from tools.goal_claims import amend, snapshot
+        goals_before = snapshot(persona)
         message = f"{talk_block(persona, talk)}\n\n---\n\n{user_input}"
         reply = run_session(AGENT, message, persona=persona, history=list(trim_history(history)))
         reply = enforce_pending_receipt(reply, _pending_raised_since(before, persona))
+        # The Interviewer's claims about the goal are held to what changed, as Synth's are (§ 19).
+        reply = amend(reply, goals_before, persona, agent=AGENT)
         with _locked(persona) as p:
             st = _read(persona)
             cur = st.get("talk")
             if isinstance(cur, dict) and cur.get("id") == talk["id"]:
                 cur["turns"] = int(cur.get("turns") or 0) + 1
+                _note_reply(cur, reply)
                 if not proactive:
                     cur["user_turns"] = int(cur.get("user_turns") or 0) + 1
                     cur.pop("opening_reply", None)

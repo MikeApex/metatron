@@ -332,7 +332,11 @@ def _():
     # constant on purpose (goal–task network phase 2, § 10 R3/R6) — not a flag leaking through.
     # Re-pinned 2026-11-22 (18eae9fc0347207f → 54c5d252741855f7): vet's `priority` is high |
     # normal | low and `kind` applies to vet (ranking § 16) — description text only.
-    assert (_h(r), _h(g)) == ("dd71c3276d1e4b23", "54c5d252741855f7"), (_h(r), _h(g))
+    # Re-pinned 2026-11-25 (54c5d252741855f7 → ad7ce58ec8dc0e43): `starts_on` and `hold_note` added
+    # and `revisit_on` described for update too, `starts_on` taking "today" (goal network § 19,
+    # rulings 1–3; Fable S7) — on purpose,
+    # with no flag: a goal on hold or starting later is recordable for every user.
+    assert (_h(r), _h(g)) == ("dd71c3276d1e4b23", "ad7ce58ec8dc0e43"), (_h(r), _h(g))
 
 
 @check("flag ON: the planner's actions and fields appear; the constants are not mutated")

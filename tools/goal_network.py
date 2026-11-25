@@ -254,6 +254,9 @@ def finish_daily(persona: str | None = None, today: date | None = None) -> int:
         for rid, r in st["requests"].items():
             if r.get("status") != "planned":
                 continue
+            from tools.goals import not_started
+            if not_started(O._goal_index().get(rid), today):
+                continue        # on hold until its start (§ 19): no finish is projected meanwhile
             r["deadline"] = live_deadline(r, persona)     # the date now (Fable S3)
             p = project(r, tasks, today, cfg)
             f = dict(r.get("finish") or {})
@@ -541,9 +544,12 @@ def revet_daily(persona: str | None = None, today: date | None = None) -> int:
         st = PP._load(persona)
         rv = st.setdefault("revet", {})
         from tools.goals import CURRENT
+        from tools.goals import not_started
         for gid, g in goals.items():
             if str(g.get("status") or "active") not in CURRENT:      # Fable L6
                 continue
+            if not_started(g, today):
+                continue        # taken on, starting later (§ 19): not re-checked before its day
             rec = rv.setdefault(gid, {"fires": []})
             fires = rec["fires"]
             obligation = str(g.get("kind") or "") == "obligation"
@@ -570,6 +576,9 @@ def revet_daily(persona: str | None = None, today: date | None = None) -> int:
                               "obligation": obligation})
                 fired += 1
                 quiet = True
+            began = O._d(g.get("starts_on"))
+            if began and began > since:
+                since = began       # nothing before its start counts against it (§ 19)
             if not quiet:
                 days = noncompliance(persona, gid, g, tasks, slips, since, today)
                 if len(days) >= need:
@@ -583,6 +592,9 @@ def revet_daily(persona: str | None = None, today: date | None = None) -> int:
             # its 2-week and 6-week checks afresh.
             vetted = g.get("vetted") if isinstance(g.get("vetted"), dict) else {}
             anchor = O._d(g.get("taken_on")) or O._d(vetted.get("date"))
+            began = O._d(g.get("starts_on"))
+            if anchor and began and began > anchor:
+                anchor = began      # agreed in November, started in January: count from January
             if size in cps and not obligation and anchor:
                 cp = _checkpoint((today - anchor).days, [int(x) for x in cps[size]],
                                  int(every.get(size) or 0))
@@ -608,6 +620,9 @@ def _pending(st: dict, goals: dict, max_shows: int) -> list[tuple[str, dict]]:
     for gid, rec in (st.get("revet") or {}).items():
         g = goals.get(gid)
         if not g or str(g.get("status") or "active") not in CURRENT:
+            continue
+        from tools.goals import not_started
+        if not_started(g):
             continue
         for f in rec.get("fires") or []:
             if not f.get("said") and not f.get("answered") and int(f.get("shows") or 0) < max_shows:

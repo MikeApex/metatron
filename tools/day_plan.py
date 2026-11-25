@@ -678,6 +678,14 @@ _V2_SKIP = ("blocked", "dormant", "moot", "waiting", "waiting_due")
 _LIVE_GOAL = ("active", "not_started", "at_risk")
 
 
+def _not_started(g: dict, today: date | None = None) -> bool:
+    try:
+        from tools.goals import not_started
+        return not_started(g, today)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _undated_steps(tasks: list[dict], goals: dict, today: date) -> set[str]:
     """The CURRENT undated step of each active goal (plan § 11a, owed 2): an open one-off with no
     date, linked to a goal that is still live (by `goal_id`, or as a step `part_of` it) — the
@@ -695,6 +703,8 @@ def _undated_steps(tasks: list[dict], goals: dict, today: date) -> set[str]:
         g = goals.get(gid)
         if not g or str(g.get("status") or "active") not in _LIVE_GOAL:
             continue
+        if _not_started(g, today):
+            continue        # a goal starting later offers no next thing yet (§ 19)
         if O._view(t, today).get("state") in _V2_SKIP:
             continue
         key = str(t.get("created_at") or "")
@@ -3166,9 +3176,12 @@ def allocation_gaps(persona: str | None = None) -> list[dict]:
         from tools.project_plan import has_plan
     except Exception:  # noqa: BLE001
         has_plan = None
+    from tools.goals import not_started
     for gid, g in goals.items():
         if str(g.get("status") or "active") not in ("active", "at_risk", "not_started"):
             continue
+        if not_started(g):
+            continue        # taken on, starting later (§ 19): its weekly time is not due yet
         # A goal with one end date (S/M) is planned in steps, not given weekly time — the
         # "verified goal with no plan" sweep (tools/project_plan.py) covers it (§ 4.3).
         # An L goal keeps its weekly time even once planned (rolling wave, goal network § 17): its

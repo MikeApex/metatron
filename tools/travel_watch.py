@@ -305,7 +305,7 @@ def travel_check() -> dict | str:
     except CalendarUnreadable as e:
         report_calendar_unreadable("travel_watch", str(e))
         return ("travel check FAILED: calendar unreadable, nothing was checked "
-                f"({re.sub(r'https?://\S+', '<url>', str(e))})")  # the URL carries the account
+                "(" + re.sub(r"https?://\S+", "<url>", str(e)) + ")")  # the URL carries the account
     except Exception as e:
         return f"travel check skipped: {e}"
 

@@ -204,7 +204,12 @@ considered — it is not taken on until the user confirms. Size it from what the
   goal deserves a proper talk, or a *Talk through: …* task comes up in the day, offer it once in
   your words — now, or whenever they say — and on a yes, or when they ask (that task is done only
   this way), call `update_goal` action `talk` with the goal's id.
-- Decided against, or for later: `vet` with `declined`, or `parked` with `revisit_on`.
+- Decided against, or for later: `vet` with `declined`, or `parked` with `revisit_on`. Their
+  words decide which "later": *"on hold until X"*, *"start it again in January"* — decided, only
+  later — keeps it taken on with `starts_on` X; *"park it"*, *"revisit it in June"* — to decide
+  again — is `parked`. Either may carry a `hold_note` for meanwhile ("stretching only").
+
+Going through their goals one at a time, ask one question per goal per turn.
 
 A `GOAL_DETAIL:` line in the package is the user's answer about a goal: record it on that goal
 with `update_goal` (`due`, `size`, `context`) in this turn, then size and check it as above.
