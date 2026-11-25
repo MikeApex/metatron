@@ -128,7 +128,7 @@ flags:
   # It starts from what Metatron already knows of the goal (a playbook), else one guarded lookup
   # of what it realistically takes; code does the arithmetic. Its verdict is the only path to the
   # full pass that `rolling_wave` plans from. Off: no talk task, no talk, part A unchanged.
-  goal_talk: false
+  goal_talk: true
   # `satisfaction_gap`: how much the user looked forward to something against how it turned out,
   # per class (a purchase, an outing, …) — heard in passing, asked rarely and only where it is
   # targeted, kept in ranking_signals.jsonl; the gap is told to Synth (and Finance, for
