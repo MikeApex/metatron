@@ -631,6 +631,24 @@ with a date.** Nothing new joins this group open-ended.*
   *filed 2026-10-29 by Mike*
   `due: 2026-10-31`
 
+- **[DB-1125-01] Nobody has checked yet whether users accept the "want me to start a list?"
+  offers, or whether the entries that file themselves are right.** The user's own logs phase 2
+  (`76161b0` → `95c3ce7`, deployed by Mike 11-23; log § 11-23 eleventh) shipped the noticed-list
+  card and switched the derived writer ON after M4 scored 28/28 as built. The live check owed
+  after a week of real use had no home except the `SESSION.md` "Owed" line until now.
+  **Run on the VM:** `cd ~/multi-model-mcp && .venv/bin/python -m tools.noticed_logs --report
+  --persona mike`. **Pass:** the report prints the noticed-list yes rate from card outcomes and
+  the derived entries. Each derived entry sampled is something Mike said, in the right log, with
+  no invented value (the extractor's known worst error). **Fail:** a wrong or invented derived
+  entry means putting the writer back in shadow (`capture.yaml`) and reopening the derived writer
+  with the examples. Zero cards raised over the week means the detector may be dead (plan § 7
+  Unseen 1), so check the capture report's threshold-crossing count before treating it as quiet.
+  A low yes rate is input for phase 3's "keeps coming up" places offer, which asks the same
+  way. It does not gate phase 3 (Mike, 2026-11-25: phase 3 proceeds without this check).
+  @kind: chore
+  *filed 2026-11-25 by Mike*
+  `due: 2026-12-02`
+
 ### Unbuilt — real capability that does not exist
 
 - **[DB-1029-12] You cannot interrupt Metatron from the headset — and nobody has checked whether
