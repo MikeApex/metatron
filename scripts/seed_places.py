@@ -12,10 +12,13 @@ Three steps, each shown before anything is written:
   2. The rows already on file. Each row with no position is looked up by name (its free-text
      `location`, if any, is the area). You accept or skip each one; a skipped row stays as it
      is — no position, never matched, never deleted.
-  3. Named places from a file you pass in (--add FILE). **Real names never go into the repo**
-     (CLAUDE.md § Data Privacy): the file lives outside it, e.g. /tmp, and is deleted after.
-     JSON, a list of {"name", "area"?, "kind"?, "verdict"?: go_to|try|avoid,
-     "occasion"?: {"kind", "what"?, "near"?}, "notes"?}.
+  3. Named places and corrections from a file you pass in (--add FILE). **Real names never go
+     into the repo** (CLAUDE.md § Data Privacy): the file lives outside it, e.g. /tmp, and is
+     deleted after. JSON, a list of {"name", "area"?, "kind"?, "verdict"?: go_to|try|avoid,
+     "occasion"?: {"kind", "what"?, "near"?}, "notes"?}. An entry whose `name` — or `was`, when
+     it renames — is a row already on file CORRECTS that row before its lookup (see `plan()`):
+     also `skip`, `private`, `lookup_text` (sent instead of name + area), `visits` (dates) and
+     `keep_old_name`. Each lookup also fetches opening hours (Enterprise SKU, Mike 2026-11-26).
 
 RUN IT ON THE VM, AFTER the code deploy. `data/personas/**` is VM-owned.
 
@@ -89,43 +92,138 @@ def main() -> int:
             print("   written.")
 
         rows = [r for r in SP._rows() if SP._live(r, include_hidden=True)]
-        todo = [r for r in rows if "lat" not in r]
-        print(f"\n== 2. Rows on file: {len(rows)}, without a position: {len(todo)}")
-        for i, r in enumerate(todo, 1):
-            area = str(r.get("location") or "")
-            print(f"   {i:2}. {r['name']}" + (f"  (area: {area})" if area else ""))
+        steps, unmatched = plan(rows, adds)
+        print(f"\n== 2. Places: {len(rows)} on file, {len(unmatched)} to add")
+        for st in steps:
+            print("   " + describe(st))
+        for a in unmatched:
+            print("   + " + describe({"row": None, "fix": a}))
         if args.apply:
-            for r in todo:
-                area = str(r.get("location") or "")
-                if not _ask(f"   look up “{r['name']}”{' near ' + area if area else ''}?"):
-                    continue
-                res = SP.locate(r["name"], area, persona=persona)
-                if res.get("error"):
-                    print(f"      not found: {res['error']}")
-                    continue
-                tag = "AMBIGUOUS — saved unconfirmed" if res["ambiguous"] else "confirmed"
-                print(f"      → {res.get('address')}  [{tag}]")
-                if not _ask("      keep this position?"):
-                    _undo_position(SP, DO, r["name"])
-                    print("      position removed; the row is as it was.")
-
-        print(f"\n== 3. Places to add: {len(adds)}")
-        for a in adds:
-            print(f"   - {a['name']}  verdict={a.get('verdict', '-')}  "
-                  f"occasion={a.get('occasion', '-')}")
-        if args.apply:
-            for a in adds:
-                if not _ask(f"   save and look up “{a['name']}”?"):
-                    continue
-                out = SP.save(a, source="said", persona=persona)
-                res = SP.locate(out["name"], str(a.get("area") or ""), persona=persona)
-                print(f"      {out['status']}; "
-                      + (f"→ {res.get('address')}" if not res.get("error") else res["error"]))
+            for st in steps + [{"row": None, "fix": a} for a in unmatched]:
+                apply_step(st, persona, SP, DO)
     if not args.apply:
         print("\nDry run — nothing written, no lookup made. Add --apply to write.")
     elif args.add:
         print(f"\nDone. Delete {args.add} now — it holds real names.")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Corrections (M3, Mike 2026-11-26): an entry in the --add file whose `was` or `name` is a row
+# already on file CORRECTS that row before its lookup — so it is never looked up with the old
+# details first. Keys: name (the new name, with `was` the old), area, lookup_text (sent instead
+# of name + area — a private home by its postcode alone), skip, private, kind, verdict,
+# occasion, notes (added to what is there), visits (dates), keep_old_name (the old name stays
+# an alias — false by default: a wrong name is not another name for the same place).
+# ---------------------------------------------------------------------------
+
+def _key(s: str) -> str:
+    return " ".join(str(s or "").casefold().split())
+
+
+def plan(rows: list[dict], adds: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Pure: pair each row on file with its correction, if any. Returns (steps for the rows
+    on file, in file order; entries that correct no row — new places)."""
+    by_key = {}
+    for a in adds:
+        by_key.setdefault(_key(a.get("was") or a.get("name")), a)
+    used = set()
+    steps = []
+    for r in rows:
+        fix = by_key.get(_key(r.get("name")))
+        if fix is not None:
+            used.add(id(fix))
+        steps.append({"row": r, "fix": fix or {}})
+    unmatched = [a for a in adds if id(a) not in used]
+    return steps, unmatched
+
+
+def describe(st: dict) -> str:
+    r, f = st["row"] or {}, st["fix"] or {}
+    name = f.get("name") or r.get("name")
+    bits = []
+    if r and f.get("name") and _key(f["name"]) != _key(r.get("name")):
+        bits.append(f"renamed from “{r['name']}”"
+                    + (" (old name kept as an alias)" if f.get("keep_old_name") else ""))
+    if f.get("skip"):
+        return f"{name}: SKIP — left exactly as it is"
+    for k in ("kind", "verdict"):
+        if f.get(k):
+            bits.append(f"{k}={f[k]}")
+    if f.get("occasion"):
+        bits.append(f"occasion={f['occasion']}")
+    if f.get("private"):
+        bits.append("PRIVATE")
+    if f.get("notes"):
+        bits.append(f"note += “{f['notes']}”")
+    if f.get("visits"):
+        bits.append(f"visits {', '.join(f['visits'])}")
+    if r and "lat" in r and not f.get("lookup_text") and not f.get("area"):
+        bits.append("has a position — no lookup")
+    else:
+        q = f.get("lookup_text") or " ".join(x for x in (name, f.get("area")
+                                                          or (r or {}).get("location")) if x)
+        bits.append(f"lookup: “{q}”")
+    return f"{name}: " + "; ".join(bits)
+
+
+def apply_step(st: dict, persona: str, SP, DO) -> None:
+    """One row (or new place): its corrections by code, then — after asking — its lookup."""
+    r, f = st["row"], st["fix"] or {}
+    if f.get("skip"):
+        return
+    name = (r or {}).get("name") or f["name"]
+    if r is not None and f.get("name") and _key(f["name"]) != _key(name):
+        _rename(SP, DO, name, f["name"], keep_alias=bool(f.get("keep_old_name")))
+        name = f["name"]
+    entry = {"name": name, **{k: f[k] for k in ("kind", "verdict", "occasion") if f.get(k)}}
+    if f.get("notes"):
+        old = str((r or {}).get("notes") or "").strip()
+        entry["notes"] = f"{old}; {f['notes']}" if old else f["notes"]
+    out = SP.save(entry, source="said", persona=persona)
+    name = out.get("name") or name
+    if f.get("private"):
+        SP.set_flag(name, "private", True, persona=persona)
+    row = SP.find(name, include_hidden=True) or {}
+    have = {(o.get("at"), o.get("kind")) for o in row.get("occurrences") or []}
+    for d in f.get("visits") or []:
+        if (d, "visit") not in have:
+            SP._write({"name": name}, occurrence={"at": d, "kind": "visit"})
+    if "lat" in row and not f.get("lookup_text") and not f.get("area"):
+        print(f"   {name}: updated (already has a position)")
+        return
+    area = str(f.get("area") or (r or {}).get("location") or "")
+    q = f.get("lookup_text") or f"{name} {area}".strip()
+    if not _ask(f"   {name}: look up “{q}”?"):
+        print("      no lookup — saved without a position")
+        return
+    res = SP.locate(name, area, persona=persona, text=f.get("lookup_text") or "",
+                    relocate="lat" in row)
+    if res.get("error"):
+        print(f"      not found: {res['error']}")
+        return
+    tag = "AMBIGUOUS — saved unconfirmed" if res.get("ambiguous") else "one match"
+    print(f"      → {res.get('address')}  [{tag}]")
+    if not _ask("      keep this position?"):
+        _undo_position(SP, DO, name)
+        print("      position removed; the row is as it was.")
+
+
+def _rename(SP, DO, old: str, new: str, keep_alias: bool) -> None:
+    """A wrong or misspelt name, corrected on the row itself; the old one kept in `previous`
+    (nothing is deleted) and, only when asked, as an alias."""
+    from datetime import datetime
+    with DO._locked():
+        rows = SP._rows()
+        for r in rows:
+            if isinstance(r, dict) and r.get("name") == old and not r.get("removed"):
+                r.setdefault("previous", []).append(
+                    {"value": {"name": old}, "changed_at": datetime.now().isoformat(
+                        timespec="seconds"), "reason": "renamed at M3"})
+                r["name"] = new
+                if keep_alias:
+                    r["aliases"] = sorted(set(r.get("aliases") or []) | {old})
+        DO._write_json(DO._archive_file("places"), rows)
 
 
 def _undo_position(SP, DO, name: str) -> None:
@@ -140,9 +238,7 @@ def _undo_position(SP, DO, name: str) -> None:
                                if k in r},
                      "changed_at": datetime.now().isoformat(timespec="seconds"),
                      "reason": "rejected at M3"})
-        path = DO._archive_file("places")
-        path.write_text(json.dumps(rows, indent=2))
-        path.chmod(0o600)
+        DO._write_json(DO._archive_file("places"), rows)
 
 
 if __name__ == "__main__":

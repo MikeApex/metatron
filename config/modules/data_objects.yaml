@@ -64,3 +64,6 @@ places:
   # the window that raise the question; a declined name waits until its count doubles.
   mention_threshold: 3
   mention_window_days: 30
+  # Opening hours fetched with a place's lookup (Mike, 2026-11-26). true/false only — this is a
+  # boolean read by code, never a bare `on`. Moves that one lookup to the Enterprise SKU.
+  fetch_hours: true

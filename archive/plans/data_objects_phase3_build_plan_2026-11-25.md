@@ -30,6 +30,20 @@ avoid. A place mentioned three times without being saved gets one question, on a
 4. **Price — as rec.** Mike reads https://developers.google.com/maps/billing-and-pricing/pricing
    at M3 (Places API (New) — Text Search: the SKU the geocode mask lands on, 3 results vs 1, the
    free monthly cap, the opening-hours tier). Until then saved places' hours are "unknown".
+   **Read by Mike at M3, 2026-11-26** (pricing list + Text Search (New) reference + usage and
+   billing pages):
+   - `displayName`, `formattedAddress`, `location` → **Text Search Pro: $32.00 / 1,000** (first
+     100,000), **5,000 free a month**. ≈ $0.032 a lookup past the free cap.
+   - **3 results vs 1: no difference shown** — billing is per request at the highest SKU the
+     field mask reaches; `pageSize` is not said to affect it (inferred, not stated; check one
+     request in the billing report if volume ever matters).
+   - **Opening hours** (`regularOpeningHours` / `currentOpeningHours`) → **Text Search
+     Enterprise: $35.00 / 1,000, 1,000 free a month**; adding either moves the whole request.
+   - The old $200 monthly credit ended 2025-02-28; the per-SKU free caps are the allowance.
+   - **Run cost at this volume: $0.** A few lookups per user per week sit far inside 5,000 a
+     month; the caps are per SKU across the project, shared with Logistics' `find_places` (Pro,
+     or Enterprise when it asks for hours) and the zone suggestion (Pro). No meter sees any of it
+     — `places_lookup_*` counts in the analytics row are the only record.
 5. **Place records are written by code alone — as rec.** The Coordinator emits `PLACES`; code
    creates/updates and geocodes (started in the background at Coordinator parse, ~1.5 s budget
    before the Synthesizer; a late lookup still lands). Model doors into `places`

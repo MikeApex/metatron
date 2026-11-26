@@ -393,7 +393,7 @@ def choose(candidates: list[dict], area: str, persona: str | None) -> dict:
 
 
 def locate(name: str, area: str = "", persona: str | None = None,
-           relocate: bool = False) -> dict:
+           relocate: bool = False, text: str = "") -> dict:
     """Look the place up by name (+ the area said) and store its public position on its row.
     Never overwrites a place that already has one. Returns {address, street?, ambiguous,
     confirmed} or {error}; never a coordinate."""
@@ -406,9 +406,12 @@ def locate(name: str, area: str = "", persona: str | None = None,
             return {"address": row.get("address"), "ambiguous": False,
                     "confirmed": bool(row.get("confirmed")), "already": True}
         from tools.places import geocode_candidates
-        text = f"{row['name']} {area}".strip() if area and _key(area) not in _key(row["name"]) \
-            else row["name"]
-        res = geocode_candidates(text, 3)
+        # `text` overrides the query — the seed's postcode-only lookup of a private home sends
+        # the postcode and nothing else: no household's names, no house number.
+        if not text:
+            text = f"{row['name']} {area}".strip() \
+                if area and _key(area) not in _key(row["name"]) else row["name"]
+        res = geocode_candidates(text, 3, hours=bool(_limits().get("fetch_hours", True)))
         if res.get("no_key"):
             _stat(persona, "places_lookup_no_key")
         if "error" in res:
@@ -434,7 +437,9 @@ def locate(name: str, area: str = "", persona: str | None = None,
                 "confirmed": not pick["ambiguous"] and not relocate,
                 # Said once, on the turn the result is known or the next one (#15c).
                 "ambiguous": bool(pick["ambiguous"]), "ambiguity_said": False,
-                "lookup_failed_at": ""})
+                "lookup_failed_at": "",
+                **({"hours": pick["hours"], "hours_at": date.today().isoformat()}
+                   if pick.get("hours") else {})})
         _stat(persona, "places_located")
         return {"address": pick.get("address") or "", "ambiguous": pick["ambiguous"],
                 "confirmed": not pick["ambiguous"]}
@@ -903,7 +908,9 @@ def places_near(where: dict, occasion: str, at: datetime | None = None, planned:
                 continue
             if d > float(lim["near_max_m"]):
                 continue
-            opened = _open_at(r, at)
+            # Only a known time filters: "where shall we eat tonight?" asked at 14:00 must not
+            # drop a restaurant closed at 14:00 (turn_places passes the time the turn means).
+            opened = _open_at(r, at) if at is not None else None
             if opened is False and v != "avoid":
                 continue
             mine = [m for m in raises if m.get("place") == r["name"]]
@@ -1046,6 +1053,23 @@ def _free_minutes_now(persona: str) -> int:
         return 0
 
 
+_EVENING_RE = re.compile(r"\b(tonight|this evening|for dinner|dinner tonight)\b", re.I)
+_NOW_RE = re.compile(r"\b(now|right now|at the moment|just now|nearby|around here)\b", re.I)
+
+
+def _turn_time(text: str) -> datetime | None:
+    """When the turn means: now, this evening (19:30), or unknown (None — never filtered)."""
+    now = _now()
+    if _LATER_DAY_RE.search(text or ""):
+        return None
+    if _EVENING_RE.search(text or ""):
+        ev = now.replace(hour=19, minute=30, second=0, microsecond=0)
+        return ev if ev > now else now
+    if _NOW_RE.search(text or "") or not _PLAN_RE.search(text or ""):
+        return now
+    return None
+
+
 def _fmt_distance(m: int) -> str:
     return f"{m} m" if m < 1000 else f"{m / 1000:.1f} km"
 
@@ -1084,7 +1108,8 @@ def turn_places(persona: str | None, user_text: str, user_turn: bool) -> dict:
                 hit = ("meal", True)
             if hit is None and _FREE_RE.search(text) and _free_minutes_now(persona) >= 60:
                 hit = ("activity", True)
-            places = places_near(where, hit[0], planned=hit[1], persona=persona) if hit else []
+            places = places_near(where, hit[0], at=_turn_time(text), planned=hit[1],
+                                 persona=persona) if hit else []
             errands = errands_near(where, persona) if where["kind"] in ("at", "near") else []
             raised = {(m.get("place"), m.get("task")) for m in _mention_rows(persona)
                       if str(m.get("at") or "")[:10] == date.today().isoformat()}

@@ -560,8 +560,10 @@ M tokens; reasoning `gemini-3.8-flash` $0.75 / $3.75. **Token counts are estimat
   - derived entries: added extractor output only (~50 tokens/turn on the bulk tier) ≈
     $0.0001/turn, **≈ $0.005/day**;
   - places: `places_near` and the visit logic are code, **$0**; lookups by name are a Places API
-    call per new place name (price **not checked** — read the Places pricing page, Essentials
-    field mask); background reports cost server CPU only, **no model call per report** (R25's
+    call per new place name (**read by Mike at M3, 2026-11-26: Text Search Pro, $32 / 1,000,
+    5,000 free a month — $0 at this volume; opening hours would be Enterprise, $35 / 1,000,
+    1,000 free**; detail in `data_objects_phase3_build_plan_2026-11-25.md` § 2 ruling 4);
+    background reports cost server CPU only, **no model call per report** (R25's
     code-first pass);
   - **total ≈ $0.01–0.03/day per user**, ~1–2% of Mike's $1.50–2.00/day.
 - **Ancillary:** Pattern Miner's scheduled runs grow with the data it is now granted — measure

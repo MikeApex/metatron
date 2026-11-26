@@ -69,7 +69,7 @@ def _sandbox(caller: str = ""):
         DO.TAG_IN_BACKGROUND = False
         DO._call_tagger = lambda payload, persona: "[]"           # noqa: E731
 
-        def _cands(text, max_results=3):
+        def _cands(text, max_results=3, hours=False):
             state["lookups"].append(text)
             for k, v in state["candidates"].items():
                 if k.casefold() in text.casefold():
@@ -785,6 +785,65 @@ def _():
     assert PL._no_plus_code("GV4C+XV, Southvale") == "Southvale"
     assert PL._no_plus_code("9C3XGV4C+XV") is None
     assert PL._no_plus_code("4 Lantern Row, Southvale") == "4 Lantern Row, Southvale"
+
+
+@check("M3. the seed corrects a row before its lookup: a rename (no alias unless asked), a "
+       "postcode-only lookup that sends nothing else, skip, visits, private, purpose; hours "
+       "stored and kept out of reads")
+def _():
+    import importlib.util
+    import tools.data_objects as DO
+    import tools.saved_places as SP
+    spec = importlib.util.spec_from_file_location(
+        "seed_places", Path(__file__).parent.parent / "scripts" / "seed_places.py")
+    seed = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(seed)
+    seed._ask = lambda prompt: True
+    with _sandbox() as (user, st):
+        o = DO.get("places")
+        for name, loc in (("Old Curry House", "Lane Street"), ("Tripx", "Abroad"),
+                          ("Friends' home Pvel", "1 Quiet Road, ZZ1 2YY")):
+            DO.archive_write(o, {"name": name, "location": loc, "notes": "from before"},
+                             by_code=True)
+        periods = [{"open": {"day": d, "hour": 12, "minute": 0},
+                    "close": {"day": d, "hour": 22, "minute": 0}} for d in range(7)]
+        st["candidates"]["New Curry House"] = [dict(_cand("New Curry House", NEAR_PIZZA,
+                                                          "2 Lane Street"), hours=periods)]
+        st["candidates"]["ZZ1 2YY"] = [_cand("ZZ1 2YY", NEAR_BRASSERIE, "ZZ1 2YY")]
+        adds = [
+            {"was": "Old Curry House", "name": "New Curry House", "verdict": "go_to",
+             "occasion": {"kind": "meal", "what": "Indian"}, "visits": ["2026-10-04"],
+             "notes": "a favourite"},
+            {"name": "Tripx", "skip": True},
+            {"was": "Friends' home Pvel", "name": "Friends' home Pavel", "private": True,
+             "lookup_text": "ZZ1 2YY", "keep_old_name": True, "visits": ["2026-09-13"]},
+        ]
+        rows = [r for r in SP._rows() if SP._live(r, include_hidden=True)]
+        steps, unmatched = seed.plan(rows, adds)
+        assert not unmatched and all(s["fix"] for s in steps), (steps, unmatched)
+        before = dict(SP.find("Tripx"))
+        for stp in steps:
+            seed.apply_step(stp, PERSONA, SP, DO)
+        assert st["lookups"] == ["New Curry House Lane Street", "ZZ1 2YY"], st["lookups"]
+        curry = SP.find("New Curry House")
+        assert curry["verdict"] == "go_to" and "lat" in curry and curry["hours"] == periods
+        assert curry["notes"] == "from before; a favourite", curry["notes"]
+        assert [o["at"] for o in curry["occurrences"]] == ["2026-10-04"]
+        assert SP.find("Old Curry House") is None, "no alias for a wrong name"
+        assert SP.find("Tripx") == before, "a skipped row is untouched"
+        home = SP.find("Friends' home Pavel")
+        assert home["private"] is True and "lat" in home
+        assert SP.find("Friends' home Pvel")["name"] == "Friends' home Pavel", "typo alias kept"
+        # Opening hours: stored, used by code, never in what an agent reads.
+        st["caller"] = "synthesizer"
+        e = next(x for x in DO.read_data_object("places")["entries"]
+                 if x["name"] == "New Curry House")
+        assert "hours" not in e and "last_said_at" not in e, e
+        closed_at = datetime.now().replace(hour=8, minute=0)
+        assert SP.places_near({"lat": HOME[0], "lon": HOME[1]}, "meal", at=closed_at,
+                              planned=True, persona=PERSONA) == []
+        assert SP.places_near({"lat": HOME[0], "lon": HOME[1]}, "meal", at=None,
+                              planned=True, persona=PERSONA)
 
 
 if __name__ == "__main__":

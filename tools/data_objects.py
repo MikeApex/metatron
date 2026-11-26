@@ -1024,9 +1024,13 @@ def _reader_view(r: dict, o: dict) -> dict:
     reconciler, and out of the prompt — a model told "derived" starts saying it. Only those
     keys: a user's own `protein_source` field is theirs (review 2026-11-26 #12)."""
     guarded = o.get("guarded") or ()
-    if not isinstance(r, dict) or not guarded:
+    if not isinstance(r, dict) or not (guarded or code_kept(o)):
         return r
     drop = {f"{g}_source" for g in guarded} | {f"pending_{g}" for g in guarded}
+    if code_kept(o):
+        # Code's own bookkeeping on a place: the raw opening periods (hundreds of characters a
+        # place — code answers "open then?" from them), lookup and ambiguity state.
+        drop |= {"hours", "hours_at", "lookup_failed_at", "ambiguity_said", "last_said_at"}
     return {k: v for k, v in r.items() if k not in drop}
 
 

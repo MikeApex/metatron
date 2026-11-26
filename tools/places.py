@@ -332,16 +332,24 @@ def _no_plus_code(address):
 _NO_KEY_WARNED = False
 
 
-def geocode_candidates(text: str, max_results: int = 3) -> dict:
-    """{"candidates": [{"name", "address", "lat", "lon"}, ...]} for a place name (+ area), or
-    {"error": ...}. A missing key is said once in the log (Unseen cost 1: a lapsed key would
-    otherwise stop lookups with no sign) and returns `{"error", "no_key": True}`."""
+# Opening hours on a saved place's lookup (Mike, 2026-11-26: "more data is better for places").
+# `regularOpeningHours` moves the request from Text Search Pro to ENTERPRISE — $35 / 1,000, 1,000
+# free a month, read by Mike at M3 (data_objects_phase3_build_plan § 2 ruling 4). Asked for only
+# when a place is saved or relocated, never per raise: hours are stored on the place.
+_HOURS_MASK = ",places.regularOpeningHours.periods"
+
+
+def geocode_candidates(text: str, max_results: int = 3, hours: bool = False) -> dict:
+    """{"candidates": [{"name", "address", "lat", "lon", "hours"?}, ...]} for a place name (+
+    area), or {"error": ...}. `hours` adds each candidate's regular opening periods (the
+    Enterprise SKU, see _HOURS_MASK). A missing key is said once in the log (Unseen cost 1: a
+    lapsed key would otherwise stop lookups with no sign) and returns `{"error", "no_key": True}`."""
     global _NO_KEY_WARNED
     text = " ".join(str(text or "").split())
     if not text:
         return {"error": "A place name is required."}
     n = max(1, min(int(max_results or 1), 5))
-    cache_key = f"{n}|{text.casefold()}"
+    cache_key = f"{n}|{int(bool(hours))}|{text.casefold()}"
     hit = _CANDIDATE_CACHE.get(cache_key)
     if hit is not None:
         return {"candidates": [dict(c) for c in hit]}
@@ -359,7 +367,7 @@ def geocode_candidates(text: str, max_results: int = 3) -> dict:
         resp = requests.post(
             _PLACES_BASE,
             headers={"Content-Type": "application/json", "X-Goog-Api-Key": key,
-                     "X-Goog-FieldMask": _GEOCODE_FIELD_MASK},
+                     "X-Goog-FieldMask": _GEOCODE_FIELD_MASK + (_HOURS_MASK if hours else "")},
             json={"textQuery": text, "maxResultCount": n},
             timeout=TIMEOUT_SECONDS,
         )
@@ -374,9 +382,13 @@ def geocode_candidates(text: str, max_results: int = 3) -> dict:
         loc = place.get("location") or {}
         if loc.get("latitude") is None or loc.get("longitude") is None:
             continue
-        out.append({"name": (place.get("displayName") or {}).get("text") or text,
-                    "address": _no_plus_code(place.get("formattedAddress")),
-                    "lat": float(loc["latitude"]), "lon": float(loc["longitude"])})
+        cand = {"name": (place.get("displayName") or {}).get("text") or text,
+                "address": _no_plus_code(place.get("formattedAddress")),
+                "lat": float(loc["latitude"]), "lon": float(loc["longitude"])}
+        periods = (place.get("regularOpeningHours") or {}).get("periods")
+        if hours and periods:
+            cand["hours"] = periods
+        out.append(cand)
     if not out:
         return {"error": f"No place found for '{text}'."}
     if len(_CANDIDATE_CACHE) >= _GEOCODE_CACHE_CAP:
