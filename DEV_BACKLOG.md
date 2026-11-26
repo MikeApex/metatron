@@ -1469,6 +1469,12 @@ evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording â
 unintended email to be sent" â€” is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
 
+- **[user corrected a prior turn]** User corrected the verdict for Clipstone restaurant from try to avoid.  
+  `2026-11-26T09:59:57.376738Z`
+
+- **[user corrected a prior turn]** User corrected place details: Clipstone is a restaurant in Fitzrovia, not a village, and Pizza Express is at 4-6 Greenwich Church Street.  
+  `2026-11-26T09:57:59.495948Z`
+
 - **[user corrected a prior turn]** Misheard 'Metatron' as 'meta-traum' twice in user input  
   `2026-11-26T08:38:58.770787Z`
 
