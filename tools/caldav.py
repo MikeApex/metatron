@@ -1156,8 +1156,8 @@ def _render_read(raw: dict, start_date: str, end_date: str) -> dict:
     return result
 
 
-# [DB-1029-10] — two refusals at the write door. Live 2026-10-27: an event titled "Benny and
-# user at Canary Wharf" reached the real calendar ("user" is the model's internal word for the
+# [DB-1029-10] — two refusals at the write door. Live 2026-10-27: an event titled "<child> and
+# user at <place>" reached the real calendar ("user" is the model's internal word for the
 # person), and Logistics called update_calendar_event with uid "..." — a placeholder, which the
 # lookup could only fail on. Both are narrow on purpose: the title rule refuses only the
 # standalone word "user"; it would also refuse a genuine "User group meetup" / "User research

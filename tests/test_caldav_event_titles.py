@@ -28,7 +28,7 @@ class Refusals(unittest.TestCase):
             self.addCleanup(m.stop)
 
     def test_internal_word_in_title_refused_on_write_and_update(self):
-        for t in ["Benny and user at Canary Wharf", "User's dentist", "Lunch with the user",
+        for t in ["Sam and user at High Street", "User's dentist", "Lunch with the user",
                   "USER check-in", "Dinner (user)"]:
             r = caldav.write_calendar_event(t, "2026-12-01T10:00:00", "2026-12-01T11:00:00")
             self.assertIn("error", r, t)
@@ -43,7 +43,7 @@ class Refusals(unittest.TestCase):
             self.assertIn("read the", r.get("error", "").lower(), repr(u))
 
     def test_ordinary_titles_and_real_uids_pass_the_guards(self):
-        for t in ["Benny and Dana at Canary Wharf", "Usernames workshop", "Superuser audit",
+        for t in ["Sam and Dana at High Street", "Usernames workshop", "Superuser audit",
                   "Dentist"]:
             self.assertIsNone(caldav._internal_title_error(t), t)
         self.assertIsNone(caldav._internal_title_error(None))
@@ -53,7 +53,7 @@ class Refusals(unittest.TestCase):
     def test_update_without_a_title_is_not_blocked_by_the_title_rule(self):
         # title=None means "leave it alone"; only the lookup (stubbed to explode) is reached
         with self.assertRaises(AssertionError):
-            caldav.update_calendar_event("real-uid-123", location="Canary Wharf")
+            caldav.update_calendar_event("real-uid-123", location="High Street")
 
 
 CFG = {"enabled": True, "calendar_url": "https://cal.example/events", "timezone": "Europe/London",
@@ -76,10 +76,10 @@ class CreateLocation(unittest.TestCase):
         return r, put.call_args.kwargs["data"].decode(), cc
 
     def test_location_written_escaped_and_passed_to_conflict_check(self):
-        r, ics, cc = self._create(location="Canary Wharf, London; E14")
+        r, ics, cc = self._create(location="High Street, London; E14")
         self.assertNotIn("error", r)
-        self.assertIn("LOCATION:Canary Wharf\\, London\\; E14", ics)
-        self.assertEqual(cc.call_args.kwargs["location"], "Canary Wharf, London; E14")
+        self.assertIn("LOCATION:High Street\\, London\\; E14", ics)
+        self.assertEqual(cc.call_args.kwargs["location"], "High Street, London; E14")
 
     def test_no_location_writes_no_line_and_empty_check(self):
         r, ics, cc = self._create()
