@@ -439,7 +439,9 @@ def test_register_rate_limit():
 # § 6.1.6 — push belongs to one persona
 # ---------------------------------------------------------------------------
 
-def test_push_reaches_only_its_persona_and_legacy_is_mikes(monkeypatch=None):
+def test_push_reaches_only_its_persona_and_unowned_gets_nothing(monkeypatch=None):
+    # Until 388a91c (2026-11-23) an unowned subscription was read as mike's; it now gets nothing,
+    # and registering beside one must not raise (it did: KeyError at core/push.py's count).
     from cryptography.hazmat.primitives.asymmetric import ec
     from cryptography.hazmat.primitives import serialization
     import pywebpush
@@ -460,7 +462,7 @@ def test_push_reaches_only_its_persona_and_legacy_is_mikes(monkeypatch=None):
         assert sent_to == ["https://bob"]
         sent_to.clear()
         push.send_push("t", "b", persona="mike")
-        assert sent_to == ["https://legacy"], "pre-owner subscriptions must be read as mike's"
+        assert sent_to == [], "an unowned subscription must reach nobody, mike included"
         # A shared browser re-subscribing as another user moves, rather than keeping both.
         push.save_subscription({"endpoint": "https://bob", "keys": {}}, ALICE)
         sent_to.clear()

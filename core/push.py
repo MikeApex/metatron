@@ -109,7 +109,9 @@ def save_subscription(subscription: dict, persona: str, replaces: str | None = N
             return "Subscription moved to this account"
     subs.append(entry)
     _write_subscriptions(subs)
-    return f"Subscription registered ({sum(1 for s in subs if s['persona'] == persona)} for this account)"
+    # .get: an unowned (pre-2026-11-23) entry can still be in the file, and indexing it raised
+    # KeyError, so registering any device failed while one remained.
+    return f"Subscription registered ({sum(1 for s in subs if s.get('persona') == persona)} for this account)"
 
 
 def send_push(title: str, body: str, urgency: str = "normal", *, persona: str,
