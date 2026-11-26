@@ -177,7 +177,14 @@ _NAMED_SPECIALIST_RE = re.compile(
     r"finance|relationships|work[_ ]vocation|research[_ ]agent|synthesizer|"
     r"(?:no|any|without|missing|omitted|skipped)\s+(?:the\s+)?specialists?|"
     r"specialists?\s+(?:call|dispatch|consult)\w*|"
-    r"structured format|parse\w*|malformed|truncat\w*|incomplete|unhandled)\b", re.I)
+    r"structured format|parse\w*|malformed|truncat\w*|incomplete|unhandled|"
+    # every agent in config/agents/*.md, bare or underscored, plus the short forms the
+    # Coordinator uses; and ordinary fault phrasing — a real miss names who or says what failed.
+    r"logistics|recreation(?:[_ ]hobbies)?|learning(?:[_ ]growth)?|time[_ ]director|"
+    r"pattern[_ ]miner|day[_ ]planner|project[_ ]planner|goals|health|wellbeing|"
+    r"work[_ ]vocation|tone[_ ]profiler|task[_ ]judge|crm[_ ]sweep|"
+    r"not\s+(?:consulted|called|dispatched|routed)|never\s+(?:called|consulted|dispatched|"
+    r"reached)|routed\s+to\s+nobody|did\s+not\s+reach|missed\s+the|should\s+have)\b", re.I)
 
 
 def describes_scheduled_session(detail: str) -> bool:

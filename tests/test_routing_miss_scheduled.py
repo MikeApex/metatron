@@ -78,6 +78,13 @@ GENUINE = [  # on a proactive turn or any turn: all must survive
     "User asked which goal is next but the Coordinator did not route to any goals specialist.",
     "Coordinator failed to dispatch Physical Health during the scheduled day-close session.",
     "Logistics missed the meeting time from the active thread context.",
+    "Scheduled morning check-in: logistics was not consulted for the 9am conflict",
+    "scheduled session; recreation never called though the plan had a free afternoon",
+    "Scheduled day-close session did not reach learning_growth",
+    "Scheduled check-in: time_director not dispatched",
+    "scheduled session: goals not called",
+    "scheduled check-in missed the health signal in the activity log",
+    "scheduled brief routed to nobody although three tasks were overdue",
 ]
 
 
