@@ -427,6 +427,7 @@ def run_turn(persona: str, user_input: str, history: list[dict], proactive: bool
     """
     from core.orchestrator import (_pending_raised_since, _pending_tokens,
                                    enforce_pending_receipt, run_session)
+    import logging
     from tools import capture
     before = _pending_tokens(persona)
     # Capture fidelity: the extractor runs beside the interviewer; what this turn wrote is the
@@ -434,15 +435,26 @@ def run_turn(persona: str, user_input: str, history: list[dict], proactive: bool
     # (plan review 2). Misses reach the NEXT turn's coverage block, shown once.
     # The app's opening words are not the user's; the mode is the interviewer's own
     # (config/modules/capture.yaml `modes`), on or shadow.
-    live = capture.mode(AGENT) != "off" and not proactive
-    shown = capture.take_for_interview(persona) if live else []
-    snap = capture.snapshot(persona) if live else None
-    job = capture.start(persona, user_input, history, AGENT) if live else None
-    message = (f"{coverage_block(persona, capture.coverage_lines(shown))}"
-               f"\n\n---\n\n{user_input}")
+    # Capture must never take the interview down: any failure in the setup (a damaged
+    # pending.json / state.json / goals.yaml, an unwritable lock) logs and the turn
+    # proceeds with no capture, as after_interview_turn already does.
+    shown, snap, job, lines = [], None, None, ""
+    try:
+        if capture.mode(AGENT) != "off" and not proactive:
+            shown = capture.take_for_interview(persona)
+            snap = capture.snapshot(persona)
+            job = capture.start(persona, user_input, history, AGENT)
+            lines = capture.coverage_lines(shown)
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning(f"[capture] interview capture skipped: {exc}")
+        shown, snap, job, lines = [], None, None, ""
+    message = f"{coverage_block(persona, lines)}\n\n---\n\n{user_input}"
     reply = run_session(AGENT, message, persona=persona, history=list(trim_history(history)))
     reply = enforce_pending_receipt(reply, _pending_raised_since(before, persona))
     if snap is not None:
-        capture.after_interview_turn(persona, job, snap, capture.snapshot(persona), shown)
+        try:
+            capture.after_interview_turn(persona, job, snap, capture.snapshot(persona), shown)
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(f"[capture] interview capture skipped: {exc}")
     count_turn(persona)
     return reply

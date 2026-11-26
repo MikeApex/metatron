@@ -109,6 +109,19 @@ def test_real_capture_yaml_reads_interview_capture_on():
         capture.config = saved
 
 
+def test_damaged_capture_files_never_fail_the_interview_turn():
+    import json
+    cap = _tmp / "data" / "personas" / P / "capture"
+    for pending, state in (([1, "x", None], {}), ({}, ["not", "a", "dict"]),
+                           ("garbage{", "garbage{")):
+        _clear()
+        cap.mkdir(parents=True, exist_ok=True)
+        (cap / "pending.json").write_text(pending if isinstance(pending, str)
+                                          else json.dumps(pending))
+        (cap / "state.json").write_text(state if isinstance(state, str) else json.dumps(state))
+        assert interview.run_turn(P, "I run on Sundays", []) == "Thanks, tell me more."
+
+
 def test_mode_reads_booleans_and_junk():
     def m(v):
         return capture.mode("a", {"enabled": True, "modes": {"a": v}})
