@@ -98,13 +98,17 @@ def _build_input(env: Envelope) -> str:
     """One message, wrapped. The framing is ours; every quoted field is theirs."""
     from tools.untrusted import UNTRUSTED_CONTENT_INSTRUCTION, wrap_untrusted
 
-    payload = json.dumps({
+    fields = {
         "channel": env.channel,
         "from": f"{env.sender_display} <{env.sender_address}>",
         "subject": env.subject,
-        "bulk_signals": {k: v for k, v in (env.signals or {}).items() if v},
-        "body": env.body,
-    }, indent=2, ensure_ascii=False)
+        "bulk_signals": {k: v for k, v in (env.signals or {}).items()
+                         if v and k != "original_recipients"},
+    }
+    if env.original_recipients:
+        fields["forwarded_originally_to"] = list(env.original_recipients)
+    fields["body"] = env.body
+    payload = json.dumps(fields, indent=2, ensure_ascii=False)
     return (
         f"{UNTRUSTED_CONTENT_INSTRUCTION}\n\n"
         f"Classify this message. Return only the JSON object described in your "

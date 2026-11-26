@@ -104,6 +104,61 @@ out, _ = unwrap(env(body=gmail, signals=_signals(m, [])), CFG, "")
 check("forged header grants nothing", out.sender_address == "owner@example.com"
       and "unwrapped_from" not in out.signals)
 
+# 8. CRLF mail: a planted To: line in the message's own body is not harvested.
+crlf = gmail.replace("\n", "\r\n").replace("Hi\r\n", "Hi\r\nTo: planted@evil.net\r\n")
+out, _ = unwrap(env(body=crlf), CFG, GOOD_AUTH)
+rec = out.signals.get("original_recipients") or []
+check("crlf: real recipients recovered", "relative@example.org" in rec)
+check("crlf: planted body To: not harvested", "planted@evil.net" not in rec)
+lf = gmail.replace("Hi\n", "Hi\nTo: planted@evil.net\n")
+out, _ = unwrap(env(body=lf), CFG, GOOD_AUTH)
+check("lf: planted body To: not harvested",
+      "planted@evil.net" not in (out.signals.get("original_recipients") or []))
+out, _ = unwrap(env(body=lf.replace("\n", "\r")), CFG, GOOD_AUTH)
+check("bare CR: planted body To: not harvested",
+      "planted@evil.net" not in (out.signals.get("original_recipients") or []))
+
+# 9. Plain alias / plus-address / group delivery is not a forward.
+for hdrs in ("Delivered-To: me@example.com\nX-Original-To: alias@example.com",
+             "Delivered-To: me+news@example.com\nX-Original-To: me@example.com",
+             "Delivered-To: group@example.com\nX-Original-To: team@example.com\n"
+             "Delivered-To: me@example.com"):
+    m = parse(hdrs + "\nFrom: a@acme.com")
+    check(f"alias delivery yields none: {hdrs[:30]!r}", header_recipients(m) == [] and
+          "original_recipients" not in _signals(m, []))
+
+# 10. The trail travels outside signals: extractor payload, record row, queue read.
+import tools.intake as INTAKE                                        # noqa: E402
+from tools.intake_extract import _build_input                        # noqa: E402
+
+e = env(body="hello")
+e.signals = {"bulk": False}
+e.original_recipients = ["x@example.org"]
+built = _build_input(e)
+check("extractor payload has the labelled key", '"forwarded_originally_to"' in built)
+e.signals["original_recipients"] = ["x@example.org"]
+check("bulk_signals does not carry recipients", built.count("x@example.org") == 1 and
+      _build_input(e).count("x@example.org") == 1)
+e.original_recipients = []
+check("key omitted when empty", "forwarded_originally_to" not in _build_input(e))
+
+e.original_recipients = ["x@example.org"]
+row = INTAKE._record_row(e, INTAKE.Classification("personal", "digest", "logistics",
+                                                   "rule", "t"), [])
+check("record row stores the trail", row["original_recipients"] == ["x@example.org"])
+plain = dict(row, id="b", original_recipients=[])
+rows = [dict(row, seen_at="2026-11-26T10:00:00"), dict(plain, seen_at="2026-11-26T10:00:01")]
+_saved = (INTAKE.read_records, INTAKE._load_cursors, INTAKE._save_cursors)
+INTAKE.read_records = lambda *a, **k: rows
+INTAKE._load_cursors = lambda *a, **k: {}
+INTAKE._save_cursors = lambda *a, **k: None
+try:
+    items = INTAKE.read_intake_queue("logistics")["items"]
+finally:
+    INTAKE.read_records, INTAKE._load_cursors, INTAKE._save_cursors = _saved
+check("queue read shows originally_sent_to once", items.count("originally_sent_to") == 1
+      and "x@example.org" in items)
+
 passed = sum(ok for _, ok in checks)
 for n, ok in checks:
     print(f"  {'PASS' if ok else 'FAIL'}  {n}")

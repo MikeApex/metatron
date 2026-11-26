@@ -205,18 +205,19 @@ def header_recipients(msg) -> list[str]:
 
     Reads `X-Forwarded-To`, `X-Forwarded-For`, `X-Original-To` and `Delivered-To` (every
     occurrence, earliest hop first — each hop prepends its own). `Delivered-To` and
-    `X-Original-To` appear on ordinary mail too, so they count only as evidence of a
-    forward when an `X-Forwarded-*` header is present or they name two or more distinct
-    addresses; a plain message returns []. Never raises.
+    `X-Original-To` appear on ordinary mail too, so they count only when an
+    `X-Forwarded-*` header is present; a plain message returns []. Never raises.
     """
     try:
         def values(name):
             return list(reversed([str(v) for v in (msg.get_all(name) or [])]))
         explicit = _clean_addresses(values("X-Forwarded-To") + values("X-Forwarded-For"))
+        if not explicit:
+            # Plain alias / plus-address / group delivery carries Delivered-To and
+            # X-Original-To with two distinct addresses and is not a forward.
+            return []
         chain = _clean_addresses(values("X-Original-To") + values("Delivered-To"))
-        if explicit:
-            return _clean_addresses(chain + explicit)
-        return chain if len(chain) >= 2 else []
+        return _clean_addresses(chain + explicit)
     except Exception:  # noqa: BLE001
         return []
 
@@ -234,7 +235,10 @@ def _original_recipients(body: str) -> list[str]:
     match = _FROM_LINE_RE.search(head, min(positions))
     if not match:
         return []
-    block = head[match.start():].split("\n\n", 1)[0]
+    # Real mail is often CRLF; without normalising, the blank line never splits and the block
+    # runs to the window's end, harvesting any `To:` line in the message's own body.
+    tail = head[match.start():].replace("\r\n", "\n").replace("\r", "\n")
+    block = tail.split("\n\n", 1)[0]
     found = [m.group(1) for m in re.finditer(
         r"^\s*(?:[>\s]*)(?:To|Cc):\s*(.+)$", block, re.IGNORECASE | re.MULTILINE)]
     return _clean_addresses(found)

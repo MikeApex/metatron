@@ -315,6 +315,12 @@ def fetch(limit: int = 50, skip=None) -> list[Envelope]:
                 logger.warning(f"[intake] forward unwrap failed, using the "
                                f"message as received: {exc}")
 
+            # Move the trail out of `signals` (the extractor reads those as bulk evidence)
+            # onto its own field.
+            trail = (env.signals or {}).pop("original_recipients", None)
+            if trail:
+                env.original_recipients = list(trail)
+
             envelopes.append(env)
     finally:
         try:

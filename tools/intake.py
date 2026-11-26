@@ -265,6 +265,10 @@ class Envelope:
     body: str = ""
     thread_id: str = ""
     signals: dict = field(default_factory=dict)
+    # Where a forwarded message was first addressed. Display-only and sender-writable:
+    # kept OUT of `signals` so it is never read as a bulk/transport signal, and nothing
+    # branches on it.
+    original_recipients: list = field(default_factory=list)
 
     @property
     def id(self) -> str:
@@ -749,6 +753,7 @@ def _record_row(env: Envelope, result: Classification, markers: list[str]) -> di
         "domain": result.domain,    # whose queue this sits in; None = record only
         "source": result.source,
         "reason": result.reason,
+        "original_recipients": list(env.original_recipients or []),
         # The search keys Mike asked for instead of mailbox folders (2026-08-19):
         # importance is a judgement independent of category (set by the extractor or a
         # chain hop); outstanding marks a record that spawned an obligation or awaits
@@ -906,6 +911,8 @@ def read_intake_queue(domain: str) -> dict:
     # Subjects and sender names are attacker-written text; they cross the trust
     # boundary here exactly as email bodies do in tools/mail.py.
     rendered = json.dumps([{
+        **({"originally_sent_to": row["original_recipients"]}
+           if row.get("original_recipients") else {}),
         "id": row["id"],
         "received": row.get("received") or row.get("seen_at"),
         "channel": row.get("channel"),
