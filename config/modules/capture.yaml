@@ -18,7 +18,7 @@ enabled: true
 # measured case (trial_1029) missed 3 of 8 facts and saved one for the wrong days.
 modes:
   synthesizer: shadow
-  goals_interviewer: on
+  goals_interviewer: "on"   # quoted: a bare on/off is a YAML boolean
 
 # The measurement window: 1 eligible ordinary turn in 5 is a holdout — compared, never shown —
 # during each persona's first `window_days` with capture on. It is the only way to see what the

@@ -221,7 +221,13 @@ def mode(agent: str, cfg: dict | None = None) -> str:
     cfg = cfg or config()
     if not cfg.get("enabled"):
         return "off"
-    m = str((cfg.get("modes") or {}).get(agent, "off")).strip().lower()
+    raw = (cfg.get("modes") or {}).get(agent, "off")
+    # YAML 1.1 reads a bare `on`/`off` as a boolean: capture.yaml's `goals_interviewer: on`
+    # became True, str(True) was "true", and interview capture ran as "off" for every user
+    # from 2026-11-21 to 11-26. A boolean means what it says; any other non-string is off.
+    if isinstance(raw, bool):
+        return "on" if raw else "off"
+    m = raw.strip().lower() if isinstance(raw, str) else "off"
     return m if m in ("on", "shadow") else "off"
 
 

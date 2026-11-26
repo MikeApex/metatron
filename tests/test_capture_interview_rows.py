@@ -27,6 +27,7 @@ _tmp = Path(tempfile.mkdtemp(prefix="metatron-capture-rows-"))
 P = "iva_test"
 CFG = {**capture._DEFAULTS, "enabled": True, "holdout_rate": 0.0, "join_bound_s": 0.5,
        "modes": {"synthesizer": "shadow", "goals_interviewer": "on"}}
+_REAL_CONFIG = capture.config
 DELAY = {"s": 0.0}
 
 
@@ -93,6 +94,26 @@ def test_row_when_the_extractor_answers_late():
     interview.run_turn(P, "I swim on Saturday mornings", [])
     rows = _turn_rows(6.0)
     assert len(rows) == 1 and rows[0]["outcome"] == "ran", rows
+
+
+def test_real_capture_yaml_reads_interview_capture_on():
+    # The REAL file through the REAL loader, nothing stubbed: a bare `on` once parsed as True
+    # and `mode()` read it as "off" (2026-11-26).
+    saved = capture.config
+    capture.config = _REAL_CONFIG
+    try:
+        assert capture.enabled()
+        assert capture.mode("goals_interviewer") == "on"
+        assert capture.mode("synthesizer") == "shadow"
+    finally:
+        capture.config = saved
+
+
+def test_mode_reads_booleans_and_junk():
+    def m(v):
+        return capture.mode("a", {"enabled": True, "modes": {"a": v}})
+    assert (m(True), m(False), m("on"), m("off"), m(None), m("shadow"), m(3)) == \
+        ("on", "off", "on", "off", "off", "shadow", "off")
 
 
 if __name__ == "__main__":
