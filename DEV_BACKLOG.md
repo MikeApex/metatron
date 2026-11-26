@@ -709,12 +709,14 @@ flag — which would send a turn containing only the cue.
   @kind: feature
   *raised by Mike 2026-10-28 (Inbox) · triaged to Later by Mike 2026-10-29*
 
-- **[DB-1029-06] Errands are not batched by place, and nothing notices when Mike is near
-  something on his list.** Mike, 2026-10-27 12:13: *"geocoded and route-based logistics for the
+- **[DB-1029-06] Errands are not batched by place in the day plan.** Mike, 2026-10-27 12:13: *"geocoded and route-based logistics for the
   daily planner to batch errands and also to be able to call audibles when we're in a particular
-  location that coincides with a future task or interest."* Adjacent: the route called "well
-  covered" without known locations `[DB-0902-06]`, and the what-to-do-now surfacing the
-  Accountability Index feeds. Needs task locations and a current location — neither exists.
+  location that coincides with a future task or interest."* **The "audibles" half is built
+  (2026-11-26, data-objects phase 3, `701949c`):** a task's `zone` can be a saved place, and
+  `tools/saved_places.py` `errands_near` / `places_near` raise an open task or a fitting place
+  when the user is near it. **Left:** the planner grouping errands by place and route. Task
+  locations and a current position now exist (`location.known_places()`, `location_last.json`).
+  Adjacent: the route called "well covered" without known locations `[DB-0902-06]`.
   @kind: feature
   *raised by Mike 2026-10-27 (Inbox) · triaged to Later by Mike 2026-10-29*
 
@@ -1442,6 +1444,36 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** Misheard 'Metatron' as 'meta-traum' twice in user input  
+  `2026-11-26T08:38:58.770787Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder - Holocaust Memorial' (2027-01-24T09:00:00, uid=be160710-4e13-472f-a36e-25b8f8da3f1a@ai-life-manager) and 'Cheder - Holocaust Memorial' (2027-01-24T10:00:00, uid=ae628600-eda4-4ed5-8ea2-c1658d7323b8@ai-life-manager). title_similarity=0.84, shared_attendees=[], shared_words=['cheder', 'holocaust', 'memorial']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-26T05:35:03.222788Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder (Holocaust Memorial)' (2027-01-24T00:00:00, uid=fa60f36a-7b7b-4c0e-90bd-033831701212@ai-life-manager) and 'Travel from Cheder - Holocaust Memorial' (2027-01-24T12:30:00, uid=3d640937-64f0-417f-9256-0e87c41aad24@ai-life-manager). title_similarity=0.76, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-26T05:35:03.222658Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder (Holocaust Memorial)' (2027-01-24T00:00:00, uid=fa60f36a-7b7b-4c0e-90bd-033831701212@ai-life-manager) and 'Cheder - Holocaust Memorial' (2027-01-24T10:00:00, uid=ae628600-eda4-4ed5-8ea2-c1658d7323b8@ai-life-manager). title_similarity=0.93, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-26T05:35:03.222432Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder (Holocaust Memorial)' (2027-01-24T00:00:00, uid=fa60f36a-7b7b-4c0e-90bd-033831701212@ai-life-manager) and 'Travel to Cheder - Holocaust Memorial' (2027-01-24T09:00:00, uid=be160710-4e13-472f-a36e-25b8f8da3f1a@ai-life-manager). title_similarity=0.78, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-26T05:35:03.211290Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Travel to Cheder' (2027-01-17T09:00:00, uid=104fe32d-fdaa-4430-bf29-d8b29ebcceae@ai-life-manager) and 'Cheder' (2027-01-17T10:00:00, uid=de85a613-4990-4c78-b73e-6bff1808dc22@ai-life-manager). title_similarity=0.55, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-26T05:35:03.211186Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder' (2027-01-17T00:00:00, uid=56978727-d1a0-44b5-a664-0273c51a93b6@ai-life-manager) and 'Travel from Cheder' (2027-01-17T12:30:00, uid=0d7aa5db-6912-452c-bdac-d0608e64fa72@ai-life-manager). title_similarity=0.5, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-26T05:35:03.211082Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder' (2027-01-17T00:00:00, uid=56978727-d1a0-44b5-a664-0273c51a93b6@ai-life-manager) and 'Cheder' (2027-01-17T10:00:00, uid=de85a613-4990-4c78-b73e-6bff1808dc22@ai-life-manager). title_similarity=1.0, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-26T05:35:03.210965Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Cheder' (2027-01-17T00:00:00, uid=56978727-d1a0-44b5-a664-0273c51a93b6@ai-life-manager) and 'Travel to Cheder' (2027-01-17T09:00:00, uid=104fe32d-fdaa-4430-bf29-d8b29ebcceae@ai-life-manager). title_similarity=0.55, shared_attendees=[], shared_words=['cheder']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-26T05:35:03.210788Z`
+
+- **[possible duplicate calendar entries]** Possible duplicate calendar entries: 'Nanny Eva Time Off - Thanksgiving Week' (2026-11-23T00:00:00, uid=7c2ef0e3-9303-4175-a30f-d876a3516958@ai-life-manager) and 'Thanksgiving Cooking and Celebrations' (2026-11-26T00:00:00, uid=5170d646-8e36-4dd3-8d1b-ad179f8b5d16@ai-life-manager). title_similarity=0.4, shared_attendees=[], shared_words=['thanksgiving']. Resolve with update_calendar_event (keep one, correct it) or delete_calendar_event (remove the extra) once confirmed — this is evidence, not a verdict; check both events before acting.  
+  `2026-11-26T05:35:03.210013Z`
 
 - **[user corrected a prior turn]** User corrected Prudential insurance review status / task timing and updated exercise regime (stretching only until mid-January when Maria is back)  
   `2026-11-25T18:19:44.639848Z`
