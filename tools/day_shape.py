@@ -730,7 +730,9 @@ def set_day_shape(section: str | None = None, entry=None, evidence: str = "",
                 kept.append(clean)
             if section == "day_overrides":          # a past day's exception is history
                 cutoff = (datetime.now().date() - timedelta(days=7)).isoformat()
-                kept = [x for x in kept if str(x.get("date") or "") >= cutoff]
+                # Never the entry being written: it was just recorded, and "recorded" must mean
+                # it holds (an override for a date past the cutoff used to vanish silently).
+                kept = [x for x in kept if str(x.get("date") or "") >= cutoff or x is clean]
             data[section] = kept
             shown = ("removed " if remove else "") + json.dumps(clean, ensure_ascii=False)
     else:
