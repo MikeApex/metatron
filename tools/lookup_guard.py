@@ -210,6 +210,14 @@ def _name_entries(persona: str | None) -> list[tuple[str, str, str]]:
     return names
 
 
+# Public names for the reader rules, so the weekly-review ranking reads contacts the same way
+# (no behaviour change; the private names stay for this module's own callers).
+contact_aliases = _aliases
+alias_is_name = _capitalised
+load_contacts_strict = _load_contacts
+unannotated_name = _unannotated
+
+
 def _full_names(persona: str | None) -> list[tuple[str, str]]:
     """Every (first, last) the user's data holds — see `_name_entries`."""
     return [(f, l) for f, l, _w in _name_entries(persona)]

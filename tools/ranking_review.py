@@ -69,8 +69,6 @@ def _flag(name: str) -> bool:
 _CODE_EVENTS = frozenset({"judged", "costs_recorded", "linked_to_event", "adopted_into_plan",
                           "closed_by_prerequisite", "closed_by_later_step",
                           "closed_with_end_state", "back_burner"})
-_ORG_TYPES = frozenset({"organisation", "organization", "business", "company", "school",
-                        "service", "provider", "shop", "practice", "club"})
 BACK_BURNER_REASON = "back_burner"
 # What the user (or an agent on their word) changes about a task. Narrower than ranking.news_digest:
 # the judge writes stakes, priority and the cost record on its own, and a re-judge must not start
@@ -108,20 +106,26 @@ def _person_names(persona: str | None) -> list[re.Pattern] | None:
     names). None when the store exists and cannot be read — the pass then parks nothing
     (fail-closed: an unread name must not let a task about a person go quietly)."""
     try:
-        from tools import crm
-        contacts = crm._load_contacts()
+        from tools import lookup_guard as LG
+        contacts = LG.load_contacts_strict()
     except Exception:  # noqa: BLE001
         return None
     out = []
-    for c in contacts or []:
-        if not isinstance(c, dict):
-            continue
-        if str(c.get("relationship_type") or "").strip().lower() in _ORG_TYPES:
-            continue
-        for k in ("first_name", "nickname", "name", "referred_to_as"):
-            v = str(c.get(k) or "").strip().lower()
-            if len(v) >= 2:
-                out.append(re.compile(r"\b" + re.escape(v) + r"\b"))
+
+    def add(v) -> None:
+        v = LG.unannotated_name(str(v or "")).strip().lower()
+        if len(v) >= 2:
+            out.append(re.compile(r"\b" + re.escape(v) + r"\b"))
+
+    # Read as the public-fact guard reads them (82c490e): no organisation skip — the CRM's
+    # relationship_type has no organisation value, so it never matched — and each alias on
+    # its own, counting as a name only when every word is capitalised ("my wife" is not one).
+    for c in contacts:
+        for k in ("first_name", "nickname", "name"):
+            add(c.get(k))
+        for alias in LG.contact_aliases(c.get("referred_to_as")):
+            if LG.alias_is_name(alias):
+                add(alias)
     return out
 
 

@@ -39,6 +39,7 @@ import logging
 import re
 
 from tools.intake import Envelope, register_adapter
+from tools.intake_forward import header_recipients
 from tools.intake_forward import unwrap as unwrap_forward
 from tools.mail import (TIMEOUT_SECONDS, _body_text, _decode, _imap_quote,
                         _load_config)
@@ -129,6 +130,11 @@ def _signals(msg, labels: list[str]) -> dict:
         "auto_submitted": (msg.get("Auto-Submitted") or "no").strip().lower() != "no",
         "labels": labels,
     }
+    # Where an auto-forwarded message was first addressed. Shown to the reader, trusted for
+    # nothing (the headers are sender-writable) — see tools/intake_forward.py.
+    recipients = header_recipients(msg)
+    if recipients:
+        signals["original_recipients"] = recipients
     if list_id:
         # The bracketed form is the stable part: "Acme News <news.acme.com>".
         match = re.search(r"<([^>]+)>", list_id)

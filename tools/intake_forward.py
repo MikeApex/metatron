@@ -170,6 +170,76 @@ def _original_sender(body: str) -> tuple[str, str]:
     return (display or address), address
 
 
+# ── Original recipients (DB-0902-05) ────────────────────────────────────────────────────
+# A forward keeps who the message was FIRST sent to only in places the classifier never
+# looked: transport headers (auto-forward) and the quoted `To:` line (inline forward). Both
+# are text the sender wrote, so what is recovered here is INFORMATION FOR THE READER ONLY —
+# nothing in this module or its callers may branch on it: it is not read by `unwrap`'s gate,
+# not used for routing, and not taught to the sender ledger. It travels as
+# `signals["original_recipients"]` and reaches the model inside the untrusted wrapper.
+_MAX_RECIPIENTS = 5
+_MAX_ADDRESS_CHARS = 254
+_FORWARD_HEADERS = ("X-Forwarded-To", "X-Forwarded-For", "X-Original-To", "Delivered-To")
+_ADDRESS_RE = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+
+
+def _clean_addresses(raw_values) -> list[str]:
+    """Bare, lowercased, well-formed, de-duplicated addresses; at most `_MAX_RECIPIENTS`.
+    Anything that does not parse as an address is dropped, never shown as text."""
+    out: list[str] = []
+    for raw in raw_values:
+        # Comma-, semicolon- and space-separated (`X-Forwarded-For` uses spaces).
+        tokens = [t for t in re.split(r"[,;\s]+", str(raw)[:2000]) if t]
+        for tok in tokens:
+            addr = email.utils.parseaddr(tok)[1].strip().lower()
+            if (addr and len(addr) <= _MAX_ADDRESS_CHARS and _ADDRESS_RE.match(addr)
+                    and addr not in out):
+                out.append(addr)
+            if len(out) >= _MAX_RECIPIENTS:
+                return out
+    return out
+
+
+def header_recipients(msg) -> list[str]:
+    """Where an auto-forwarded message was addressed before it reached this inbox.
+
+    Reads `X-Forwarded-To`, `X-Forwarded-For`, `X-Original-To` and `Delivered-To` (every
+    occurrence, earliest hop first — each hop prepends its own). `Delivered-To` and
+    `X-Original-To` appear on ordinary mail too, so they count only as evidence of a
+    forward when an `X-Forwarded-*` header is present or they name two or more distinct
+    addresses; a plain message returns []. Never raises.
+    """
+    try:
+        def values(name):
+            return list(reversed([str(v) for v in (msg.get_all(name) or [])]))
+        explicit = _clean_addresses(values("X-Forwarded-To") + values("X-Forwarded-For"))
+        chain = _clean_addresses(values("X-Original-To") + values("Delivered-To"))
+        if explicit:
+            return _clean_addresses(chain + explicit)
+        return chain if len(chain) >= 2 else []
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _original_recipients(body: str) -> list[str]:
+    """The `To:` line of the forwarded header block (the same block `_original_sender`
+    reads — after the marker, within the same window, up to the first blank line)."""
+    if not body:
+        return []
+    head = body[:_SCAN_CHARS]
+    lowered = head.lower()
+    positions = [i for i in (lowered.find(m) for m in _FORWARD_MARKERS) if i >= 0]
+    if not positions:
+        return []
+    match = _FROM_LINE_RE.search(head, min(positions))
+    if not match:
+        return []
+    block = head[match.start():].split("\n\n", 1)[0]
+    found = [m.group(1) for m in re.finditer(
+        r"^\s*(?:[>\s]*)(?:To|Cc):\s*(.+)$", block, re.IGNORECASE | re.MULTILINE)]
+    return _clean_addresses(found)
+
+
 def own_addresses(cfg: dict) -> set[str]:
     """The user's own addresses, from `forwarding.own_addresses` in intake.yaml."""
     fwd = (cfg or {}).get("forwarding") or {}
@@ -209,6 +279,11 @@ def unwrap(env, cfg: dict, auth_results: str = "") -> tuple[object, bool]:
         return env, True
 
     signals = dict(getattr(env, "signals", None) or {})
+    # Display only — never consulted above this line or anywhere that decides anything.
+    recipients = _clean_addresses(list(signals.get("original_recipients") or [])
+                                  + _original_recipients(getattr(env, "body", "") or ""))
+    if recipients:
+        signals["original_recipients"] = recipients
     signals["unwrapped_from"] = sender
     signals["forwarded"] = True
     unwrapped = replace(env, sender_address=address,

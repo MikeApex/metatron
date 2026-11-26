@@ -360,13 +360,20 @@ def read_email(count: int = 10, unread_only: bool = False, folder: str = "INBOX"
             msg = email.message_from_bytes(msg_data[0][1], policy=email.policy.default)
             body = _body_text(msg)
             truncated = len(body) > MAX_BODY_CHARS
-            messages.append({
+            entry = {
                 "from": _decode(msg.get("From")),
                 "to": _decode(msg.get("To")),
                 "subject": _decode(msg.get("Subject")),
                 "date": _decode(msg.get("Date")),
                 "body": body[:MAX_BODY_CHARS] + (" […truncated]" if truncated else ""),
-            })
+            }
+            # An auto-forwarded message's original address. Sender-writable headers: shown
+            # inside the same untrusted wrapper as the rest, never acted on.
+            from tools.intake_forward import header_recipients
+            original = header_recipients(msg)
+            if original:
+                entry["originally_sent_to"] = original
+            messages.append(entry)
     finally:
         try:
             conn.close()
