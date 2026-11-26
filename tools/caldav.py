@@ -1166,7 +1166,15 @@ _PLACEHOLDER_UIDS = frozenset({
     "", "...", "\u2026", "<uid>", "uid", "<event_uid>", "event_uid", "<id>", "id", "none",
     "null", "n/a", "tbd", "unknown", "xxx",
 })
-_INTERNAL_USER_RE = re.compile(r"\buser(?:'s|\u2019s)?\b", re.I)
+# Person-shaped uses only: "user's dentist", "lunch with the user", "<child> and user at <place>".
+# Work titles that merely contain the word ("end-user training", "Power-user workshop",
+# "User group meetup", "Review user-facing copy") pass: never adjacent to a hyphen, never
+# followed by a compound noun.
+_INTERNAL_USER_RE = re.compile(
+    r"(?<![-\w])user(?:'s|\u2019s)(?![-\w])|\(user\)"
+    r"|(?:(?<![-\w])(?:the|and|with|for|to|by|of)|&)\s*(?<![-\w])user(?![-\w'\u2019])"
+    r"(?!\s+(?:group|research|testing|acceptance|experience|interface|story|stories|"
+    r"interview|manual|guide|feedback|journey|needs|account|accounts|base)\b)", re.I)
 
 
 def _placeholder_uid_error(uid: str) -> dict | None:
@@ -1183,9 +1191,8 @@ def _internal_title_error(title: str | None) -> dict | None:
     """An error dict when `title` carries the internal word "user", else None."""
     if title and _INTERNAL_USER_RE.search(title):
         return {"error": (
-            f"The title {title!r} uses the word 'user', which is internal vocabulary and "
-            "must not reach the person's calendar. Use the person's own name, or leave "
-            "them out of the title, and call again. Nothing was written."
+            f"The title {title!r}: 'user' here reads as the person this calendar belongs "
+            "to — use their name, or leave them out. Nothing was written."
         )}
     return None
 
@@ -1342,7 +1349,7 @@ def write_calendar_event(
 
     # Escape per RFC 5545 §3.3.11
     def _esc(s: str) -> str:
-        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
 
     # Decided policy for a failed conflict check: allow the write through
     # rather than blocking on a CalDAV outage, but mark the event unmissably
@@ -1558,7 +1565,7 @@ def update_calendar_event(
     now_utc = datetime.now(timezone.utc).strftime(dt_fmt) + "Z"
 
     def _esc(s: str) -> str:
-        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
 
     title_to_write = f"[VERIFY] {new_title}" if conflict_check_failed else new_title
     if conflict_check_failed:
@@ -1923,7 +1930,7 @@ DELETE_CALENDAR_EVENT_SCHEMA = {
 
 def _escape_ical(s: str) -> str:
     """RFC 5545 text escaping. Module-level twin of the _esc closures above."""
-    return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+    return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
 
 
 def find_event_for_invite(uid: str = "", title: str = "", date: str = "") -> dict:

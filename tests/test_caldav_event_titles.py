@@ -29,7 +29,8 @@ class Refusals(unittest.TestCase):
 
     def test_internal_word_in_title_refused_on_write_and_update(self):
         for t in ["Sam and user at High Street", "User's dentist", "Lunch with the user",
-                  "USER check-in", "Dinner (user)"]:
+                  "Dinner (user)", "Walk with Sam and USER", "Pick up the user’s coat",
+                  "Lunch & user"]:
             r = caldav.write_calendar_event(t, "2026-12-01T10:00:00", "2026-12-01T11:00:00")
             self.assertIn("error", r, t)
             self.assertIn("user", r["error"])
@@ -44,11 +45,21 @@ class Refusals(unittest.TestCase):
 
     def test_ordinary_titles_and_real_uids_pass_the_guards(self):
         for t in ["Sam and Dana at High Street", "Usernames workshop", "Superuser audit",
-                  "Dentist"]:
+                  "Dentist", "end-user training", "Power-user workshop", "Multi-user rollout",
+                  "USER acceptance testing", "Review user-facing copy", "User group meetup",
+                  "Review for user research", "Sync with the user group", "Plan the user-centric roadmap"]:
             self.assertIsNone(caldav._internal_title_error(t), t)
         self.assertIsNone(caldav._internal_title_error(None))
         for u in ["20261201T100000-abc@example.com", "9f1c2e7a-3b4d-4e5f-8a9b-0c1d2e3f4a5b"]:
             self.assertIsNone(caldav._placeholder_uid_error(u), u)
+
+    def test_refusal_message_reads_as_a_person_not_vocabulary(self):
+        err = caldav._internal_title_error("Lunch with the user")["error"]
+        self.assertIn("the person this calendar belongs to", err)
+
+    def test_lone_cr_cannot_start_a_new_ical_line(self):
+        self.assertNotIn("\r", caldav._escape_ical("a\rSTATUS:CANCELLED"))
+        self.assertEqual(caldav._escape_ical("a\rb\r\nc"), "a\\nb\\nc")
 
     def test_update_without_a_title_is_not_blocked_by_the_title_rule(self):
         # title=None means "leave it alone"; only the lookup (stubbed to explode) is reached
