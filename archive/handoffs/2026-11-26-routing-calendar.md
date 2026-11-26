@@ -25,3 +25,5 @@ test_caldav_multi_calendar, test_calendar_invite pass; `scripts/qa_sweep.sh` 12/
    from scheduler sessions (they now never reach the log). DB-1029-10 — code half done; the
    place-in-`location` instruction remains an agent-file item (not done, not mine).
 4. SESSION.md: nothing structural; deploy needed for both (tools/ -> VM).
+
+Addendum (coordinator request): write_calendar_event had no `location` at all. Added optional `location: str = ""` (signature, docstring, schema), written as `LOCATION:` with the same `_esc` as update, and passed to `_compute_conflicts` (was hard-coded ""), so travel-time flags see created events. Default empty = no LOCATION line. Commit c193243. Tests in tests/test_caldav_event_titles.py. Deploy: tools/ -> VM. The SubagentStop QA gate swept a temp partial copy (no core/, .claude/, yaml) and failed there; this worktree own sweep is 12/12.
