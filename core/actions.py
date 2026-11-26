@@ -83,6 +83,10 @@ ACTION_TOOLS: frozenset[str] = frozenset({
     # persisted record of what they said, so an action on the same reading as
     # record_wisdom_response. Nothing downstream should tell the user it was "done".
     "record_signal",
+    # Goal network part B (eb07241, 2026-11-24): the user's words on looking forward to something,
+    # or how it turned out, kept with a 1–5 read (tools/satisfaction.py) — a persisted record of
+    # what they said, so an action on the same reading as record_signal.
+    "note_expectation",
     # Routine pause (2026-10-26): what runs in the user's check-ins changes until resumed.
     "pause_routine", "resume_routine",
     # The in-app interview (2026-10-27): pausing or finishing it changes where her next
