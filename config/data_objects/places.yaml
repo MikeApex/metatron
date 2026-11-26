@@ -1,0 +1,29 @@
+# A template — present for every user from day one, empty (R6). One row per place; each visit
+# or mention is an occurrence on that row (R20). The existing `places` category is this
+# object: a flat row reads as a place with no position, no verdict and no occurrences.
+# archive/plans/data_objects_phase3_build_plan_2026-11-25.md § 3.
+id: places
+name: Places
+aliases: [my places, saved places]
+description: Places the user has been or means to go, with what they think of each and what it is for.
+store: archive
+identity: thing+occurrences
+fields: {name: text, kind: text, verdict: text, occasion: text, notes: text, address: text,
+         source: text, confirmed: text, private: text}
+relevant_agents: [logistics, recreation_hobbies]
+
+# POLICY (config owns it — D3). Read by tools/data_objects.py, which lets it win over an older
+# registry copy of this entry.
+#
+# Only code writes a place (one writer per kind of change — Mike, 2026-11-25, choice 5): the
+# Coordinator names what the user said (PLACES), tools/saved_places.py records it. Every model
+# door — write_archive, write_data_object, amend's entry acts — and the derived writer refuse.
+writer: code
+# Reconciled by provenance at the moment of the write (§ 4): a stated value is never replaced
+# by a derived one; a change is said once.
+guarded: [verdict, occasion]
+
+# What a place is FOR (Mike, 2026-11-26, ruling 8): these are every user's; a user's own kinds
+# are added to their registry entry by code, the first time they use one — never mapped onto
+# the nearest kind here.
+occasion_kinds: [meal, coffee, drinks, shop, errand, activity, any]

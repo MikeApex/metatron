@@ -429,6 +429,13 @@ def catalogue(kinds: tuple[str, ...]) -> str:
         elif kind == "event":
             lines.append(f"kind event — {plain[kind]}. target is \"event\"; proposal is one "
                          f"plain sentence with the date as YYYY-MM-DD and any time as HH:MM.")
+        elif kind == "place":
+            # The name is what tools/saved_places.py counts and matches (phase 3): a place said
+            # three times without being saved gets one question; a saved one gets a mention.
+            lines.append(f"kind place — {plain[kind]}. target is \"place\"; proposal is one "
+                         f"plain sentence; add \"name\": the place's own name exactly as the "
+                         f"user said it (\"Rosa's Kitchen\", \"the chemist on Hill Street\") "
+                         f"when they named one — never a type alone (\"a café\").")
         elif kind in plain:
             lines.append(f"kind {kind} — {plain[kind]}. target is \"{kind}\"; proposal is one "
                          f"plain sentence.")
@@ -464,7 +471,7 @@ def user_logs_text(persona: str) -> str:
                     continue
                 if o.get("store") != "archive" and o["id"] == o.get("store"):
                     continue
-                if DO.read_only(o):         # a computed view takes no entries (D11)
+                if DO.read_only(o) or DO.code_kept(o):   # a view (D11); places (phase 3)
                     continue
                 fields = ", ".join(f for f in DO.fields_of(o)) or "text"
                 desc = f" — {o['description']}" if o.get("description") else ""
@@ -580,8 +587,13 @@ def _validate_candidate(it, kinds: tuple[str, ...]) -> dict | None:
     else:
         target = kind
         proposal = " ".join(str(proposal or say).split())[:200]
-    return {"kind": kind, "target": target, "proposal": proposal, "disposition": disp,
-            "say": say, "quote": quote}
+    out = {"kind": kind, "target": target, "proposal": proposal, "disposition": disp,
+           "say": say, "quote": quote}
+    if kind == "place":
+        name = " ".join(str(it.get("name") or "").split())[:80]
+        if name and not _IDENT_RE.search(name):
+            out["name"] = name
+    return out
 
 
 def _correction_parts(proposal) -> tuple[str, str]:
@@ -1285,6 +1297,19 @@ def _triage(persona: str, agent: str, rid: str, cands: list[dict],
             record_uncategorised(persona, agent, c)
             _outcome(persona, agent, rid, c, "uncategorised", holdout, day)
             continue
+        if c["kind"] == "place" and c.get("name"):
+            # A NAMED place is also counted by the places code (phase 3): a saved one gets a
+            # mention, an unsaved one counts toward the one question. The fact itself still
+            # takes the ordinary path below — "the chemist on Hill Street shuts at 5 on
+            # Saturdays" is household know-how, kept with write_wisdom (review 2026-11-26 #10).
+            from tools import saved_places
+            out = saved_places.on_place_fact(persona, c["name"], c.get("quote") or "")
+            c = {k: v for k, v in c.items() if k != "name"}
+            if out in ("place_just_saved", "place_mentioned"):
+                # A SAVED place is its own home: the note would only send an agent to a
+                # door that refuses (places are code's), or to a second copy in wisdom.
+                _outcome(persona, agent, rid, c, "already_held", holdout, day)
+                continue
         m = match(c, writes)
         if m == "same":
             _outcome(persona, agent, rid, c, "saved_by_agent", holdout, day)

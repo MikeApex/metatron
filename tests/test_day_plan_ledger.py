@@ -184,7 +184,7 @@ def _():
     assert t["stakes_source"] == "inferred" and t["zone"] == "gym"
     assert O.open_task("X", kind="deadline", goal_id="q9").startswith("error: no goal")
     assert O.open_task("Y", kind="habit", every="day", stakes="vital").startswith("error:")
-    assert O.open_task("Z", kind="deadline", zone="moon").startswith("error: no zone")
+    assert O.open_task("Z", kind="deadline", zone="moon").startswith("error: no place named")
     assert O.open_task("W", kind="deadline", priority="urgent").startswith("error:")
 
 

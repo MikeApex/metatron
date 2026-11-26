@@ -33,6 +33,7 @@ resolves the address inside the one request, which is both cheaper and the hones
 from __future__ import annotations
 
 import os
+import re
 from datetime import date, datetime
 
 import requests
@@ -302,6 +303,86 @@ def geocode_place_name(name: str) -> dict:
         _GEOCODE_CACHE.pop(next(iter(_GEOCODE_CACHE)))
     _GEOCODE_CACHE[cache_key] = dict(result)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Candidates by name — saved places (data-objects phase 3, Mike's choice 1)
+# ---------------------------------------------------------------------------
+#
+# The same ruling as geocode_place_name: the body carries the place's NAME and the AREA the user
+# said ("Boots Greenwich") and nothing else — no location bias, no coordinate. Up to three
+# results, so a chain's two branches are seen as two and the caller can save the wrong one as
+# unconfirmed rather than as fact (tools/saved_places.py). The SKU is the same Text Search call;
+# whether 3 results cost more than 1 is read at M3 (plan § 2 ruling 4). Same per-text cache.
+
+_CANDIDATE_CACHE: dict[str, list[dict]] = {}
+
+# A Plus Code ("9C3XGV4C+XV") is an encoded coordinate. Google returns one as the address of a
+# place with no street address; it would reach a reply through "saved — at {address}" (review
+# 2026-11-26, coordinates #4). Removed from every address this lookup returns.
+_PLUS_CODE_RE = re.compile(r"\b[23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{2,3}\b,?\s*",
+                           re.IGNORECASE)
+
+
+def _no_plus_code(address):
+    if not address:
+        return address
+    cleaned = " ".join(_PLUS_CODE_RE.sub("", str(address)).split()).strip(" ,")
+    return cleaned or None
+_NO_KEY_WARNED = False
+
+
+def geocode_candidates(text: str, max_results: int = 3) -> dict:
+    """{"candidates": [{"name", "address", "lat", "lon"}, ...]} for a place name (+ area), or
+    {"error": ...}. A missing key is said once in the log (Unseen cost 1: a lapsed key would
+    otherwise stop lookups with no sign) and returns `{"error", "no_key": True}`."""
+    global _NO_KEY_WARNED
+    text = " ".join(str(text or "").split())
+    if not text:
+        return {"error": "A place name is required."}
+    n = max(1, min(int(max_results or 1), 5))
+    cache_key = f"{n}|{text.casefold()}"
+    hit = _CANDIDATE_CACHE.get(cache_key)
+    if hit is not None:
+        return {"candidates": [dict(c) for c in hit]}
+    key = _places_key()
+    if not key:
+        if not _NO_KEY_WARNED:
+            _NO_KEY_WARNED = True
+            import logging
+            logging.getLogger(__name__).warning(
+                "[places] GOOGLE_PLACES_API_KEY is not set — saved places get no position "
+                "(lookup by name is off until it is)")
+        return {"error": "Place lookup requires GOOGLE_PLACES_API_KEY, which is not configured.",
+                "no_key": True}
+    try:
+        resp = requests.post(
+            _PLACES_BASE,
+            headers={"Content-Type": "application/json", "X-Goog-Api-Key": key,
+                     "X-Goog-FieldMask": _GEOCODE_FIELD_MASK},
+            json={"textQuery": text, "maxResultCount": n},
+            timeout=TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as e:
+        return {"error": f"Place lookup failed: {e}"}
+    except ValueError:
+        return {"error": "Place lookup returned an unparseable response."}
+    out = []
+    for place in (data.get("places") or [])[:n]:
+        loc = place.get("location") or {}
+        if loc.get("latitude") is None or loc.get("longitude") is None:
+            continue
+        out.append({"name": (place.get("displayName") or {}).get("text") or text,
+                    "address": _no_plus_code(place.get("formattedAddress")),
+                    "lat": float(loc["latitude"]), "lon": float(loc["longitude"])})
+    if not out:
+        return {"error": f"No place found for '{text}'."}
+    if len(_CANDIDATE_CACHE) >= _GEOCODE_CACHE_CAP:
+        _CANDIDATE_CACHE.pop(next(iter(_CANDIDATE_CACHE)))
+    _CANDIDATE_CACHE[cache_key] = [dict(c) for c in out]
+    return {"candidates": out}
 
 
 FIND_PLACES_SCHEMA = {

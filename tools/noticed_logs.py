@@ -409,8 +409,10 @@ def _judge(persona: str, offer_id: str) -> None:
                     o = DO.get(verdict["log"])
                     # A store (contacts, tasks …) or a log the user put away is a home, not a
                     # list to add to: no card (plan § 3.2).
+                    # A code-kept log (places, phase 3) takes nothing from this path — its
+                    # own code counts those mentions — so a match there is a home too.
                     if (o and o.get("store") == "archive" and o.get("status") == "active"
-                            and not o.get("merged_into")):
+                            and not o.get("merged_into") and not DO.code_kept(o)):
                         offer.update(status="held", kind="alias", log=o["id"],
                                      about=verdict["about"])
                     else:
@@ -503,6 +505,12 @@ def take_offer(persona: str) -> dict | None:
                 return {"token": still["token"], "question": still.get("question", ""),
                         "kind": still.get("kind"), "still_open": True}
             held = [o for o in st["offers"] if o.get("status") == "held"]
+            from tools.confirm import pending as _pending_cards
+            if held and any(p.get("action") == "save_place" for p in _pending_cards(persona)):
+                # A place card is on screen (tools/saved_places.py): the app shows one card,
+                # so a list question now would be answered by the wrong card (review #13).
+                _save(persona, st)
+                return None
             offer = None
             for o in held:
                 if _raise(persona, o, cfg):
@@ -896,6 +904,10 @@ def derived(persona: str, rid: str, c: dict, writes: list, touched, user_text: s
                     or (o.get("store") != "archive" and o["id"] == o.get("store"))
                     or DO.read_only(o)):          # a computed view takes no entries (D11)
                 return "derived_invalid"
+            if DO.code_kept(o):
+                # Places are kept from what the user says, by one writer (phase 3, choice 5);
+                # the extractor's `place` facts count mentions instead (tools/saved_places.py).
+                return "derived_code_kept"
             prop = c.get("proposal")
             allowed = set(DO.fields_of(o)) | {"text", "notes"}
             if not isinstance(prop, dict) or not prop or any(k not in allowed for k in prop):

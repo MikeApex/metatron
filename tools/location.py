@@ -1,30 +1,54 @@
 """
-tools/location.py — GPS coordinates in, a named zone out. `[DB-0815-12]`, first draft.
+tools/location.py — GPS coordinates in, a named place out. `[DB-0815-12]`; places added in
+data-objects phase 3 (archive/plans/data_objects_phase3_build_plan_2026-11-25.md).
 
-## The tier ruling this file exists to enforce (Mike, 2026-08-28)
+## The tier ruling this file exists to enforce (Mike, 2026-08-28, amended 2026-11-21)
 
 Location is **extra-sensitive — above ordinary sensitive**. Raw coordinates never enter any
-model prompt, cloud or local. A model sees only a code-derived line: *"home since 14:02"*.
+model prompt, cloud or local. A model sees only a code-derived line: *"home since 14:02"*, or
+a code-computed distance: *"Bianco 43 — 400 m"*.
 
 That is not a prompt instruction and must never become one. The standing project rule is that
 sensitive data paths are enforced in Python, never in prompts, because an instruction has
 exactly the standing that the 2026-08-03 `write_agent_config` incident showed it has: being
-told is not being prevented. So the coordinate→zone map is here, in code, and the coordinate
-is discarded inside `record_position()` before anything else in the system can see it.
+told is not being prevented. So the coordinate→place map is here, in code.
 
-Concretely, three properties hold by construction rather than by discipline:
+**The amendment (R24, R33 — Mike, 2026-11-21, custom_logs_and_places_plan_2026-11-21.md § 2).**
+The 08-28 ruling said no coordinate of the user's is ever stored. Two exceptions now hold, and
+only these two:
 
-1. **No function in this module returns the user's coordinate.** `record_position()` takes
-   lat/lon and returns a zone name; the only other coordinates handled here are a PLACE's
-   public geocoded position (`append_zone`, the zone-suggestion flow), which say nothing
-   about where the user is.
+- **R33 — one rounded last position.** `location_last.json` keeps a single row: the latest
+  report's point rounded to ~100 m and its time, **overwritten by every report, never
+  appended**, so there is still no trail. It is what `places_near` measures from when the user
+  is `away`. Read by code only; no model ever sees it.
+- **R24 — recurring unnamed spots** may be held as a rounded point, a visit count and visit
+  times. **Not built here** — that is phase 4, with the background feed.
+
+And R24 restates what does not change: visits to named places are logged (as zone transitions
+always were), and **coordinates still never enter a model prompt.**
+
+Concretely, these properties hold by construction rather than by discipline:
+
+1. **No function here hands the user's coordinate to anything a model reads.**
+   `record_position()` takes lat/lon and returns a place name; `last_position()` returns the
+   rounded row to CODE callers only (tools/saved_places.py `places_near`, which returns
+   distances). The other coordinates handled here are PLACES' public geocoded positions
+   (zones, saved places), which say nothing about where the user is.
 2. **Nothing here is registered as a model-callable tool.** The only route from this module
    into a prompt is `context_block()`, which reads the transitions log — a file that has never
    contained a coordinate — and never the ping.
-3. **No raw trail is stored at all.** The transitions log holds `(zone, entered_at)`. A
-   coordinate exists in memory for the duration of one `record_position()` call and is then
-   gone. Debug-only raw points were left out of this build entirely rather than shipped behind
-   a flag: a flag is a thing that can be left on.
+3. **No raw trail is stored at all.** The transitions log holds `(place, entered_at)`; the last
+   position is one overwritten, rounded row. Debug-only raw points were left out entirely
+   rather than shipped behind a flag: a flag is a thing that can be left on.
+
+## Zones and saved places — one lookup (R27; review finding 9)
+
+Zones (`zones.yaml`) are unchanged: their file, their one confirm-gated write path and their
+tier. Saved places (the `places` data object, tools/saved_places.py) that carry a public
+position are matched beside them, so arriving at a café is a transition like arriving home.
+`known_places()` returns both; every reader that resolves a place's coordinates by name goes
+through it — the day planner's start point and travel origin, and the task `zone` check —
+otherwise a user who arrived somewhere would have the planner fall back silently to `home`.
 
 ## Zones are Mike's to define
 
@@ -47,8 +71,8 @@ on a transition recorded here, never on a loop.
 ## What this costs to run
 
 Nothing standing. No process, no timer, no network call, no cache with a lifetime. Per ping:
-one small YAML read, one tail read of a JSONL file, and — only when the zone actually changed —
-one appended line of roughly 60 bytes. A day of heavy use is a few hundred bytes; the log is
+one small YAML read, one read of the places file, one overwrite of the ~60-byte last-position
+row, and — only when the place actually changed — one appended line of roughly 60 bytes. A day of heavy use is a few hundred bytes; the log is
 bounded by how often the user crosses a boundary, not by how often the phone reports in, which
 is the point of storing transitions rather than a trail.
 
@@ -64,7 +88,7 @@ import json
 import math
 import os
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -147,11 +171,52 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * _EARTH_RADIUS_M * math.asin(min(1.0, math.sqrt(a)))
 
 
-def zone_for(lat: float, lon: float, persona: str | None = None) -> str:
+def known_places(persona: str | None = None) -> list[dict[str, Any]]:
     """
-    The name of the zone containing this coordinate, or `AWAY`.
+    Every place with a public position: the zones, then the saved places that carry one, as
+    `{name, lat, lon, radius_m, source, private}`. Never raises.
 
-    **The smallest matching zone wins.** Zones overlap in practice — "the office" sits inside
+    A saved place whose name is a zone's is left out — the zone is the user's own definition
+    and wins. Hidden places (a name the user declined to save) are never matched. CODE ONLY:
+    these are places' public positions, but nothing here is formatted for a prompt.
+    """
+    out: list[dict[str, Any]] = [{**z, "source": "zone", "private": False}
+                                 for z in load_zones(persona)]
+    seen = {z["name"].casefold() for z in out}
+    try:
+        from tools.saved_places import positioned
+        for p in positioned(persona):
+            if p["name"].casefold() in seen:
+                continue
+            seen.add(p["name"].casefold())
+            out.append(p)
+    except Exception:  # noqa: BLE001 — a broken places file degrades to zones alone
+        pass
+    return out
+
+
+def place_named(name: str, persona: str | None = None) -> dict[str, Any] | None:
+    """The known place (zone or saved place) with this name, case-insensitive, or None."""
+    key = str(name or "").strip().casefold()
+    if not key:
+        return None
+    return next((p for p in known_places(persona) if p["name"].casefold() == key), None)
+
+
+# A saved place is matched only on a fix at least this good. Its circle is 75 m; a fix
+# uncertain by more than that cannot say the user is at the café rather than next door.
+_PLACE_MAX_ACCURACY_M = 100.0
+
+
+def zone_for(lat: float, lon: float, persona: str | None = None,
+             accuracy: float | None = None) -> str:
+    """
+    The name of the zone or saved place containing this coordinate, or `AWAY`.
+
+    **A zone the point is in beats any saved place** (review 2026-11-26 #14): a café saved
+    within GPS drift of home must not turn "home" into the café. Among zones, and among places,
+    **the smallest matching circle wins**. A saved place needs a fix no worse than
+    `_PLACE_MAX_ACCURACY_M`; `accuracy` None (the client did not say) is taken as good. Zones overlap in practice — "the office" sits inside
     "central London" — and the smaller circle is always the more specific statement about where
     someone is. Resolving by file order instead would make the answer depend on how the user
     happened to type the file, which is exactly the kind of invisible dependency that produces a
@@ -161,12 +226,17 @@ def zone_for(lat: float, lon: float, persona: str | None = None) -> str:
     place; excluding its edge would make `radius_m` mean something fractionally other than what
     it says.
     """
-    best_name, best_radius = AWAY, None
-    for zone in load_zones(persona):
+    places_ok = accuracy is None or float(accuracy) <= _PLACE_MAX_ACCURACY_M
+    best: dict[str, tuple[str, float]] = {}
+    for zone in known_places(persona):
+        tier = "zone" if zone.get("source") == "zone" else "place"
+        if tier == "place" and not places_ok:
+            continue
         if _haversine_m(lat, lon, zone["lat"], zone["lon"]) <= zone["radius_m"]:
-            if best_radius is None or zone["radius_m"] < best_radius:
-                best_name, best_radius = zone["name"], zone["radius_m"]
-    return best_name
+            if tier not in best or zone["radius_m"] < best[tier][1]:
+                best[tier] = (zone["name"], zone["radius_m"])
+    hit = best.get("zone") or best.get("place")
+    return hit[0] if hit else AWAY
 
 
 # ---------------------------------------------------------------------------
@@ -265,8 +335,25 @@ def record_position(lat: float, lon: float, accuracy: float | None = None,
     log — plus `"suggestion"` when an away ping matched an expected place and a confirm card
     was raised.
     """
-    zone = zone_for(lat, lon, persona)
+    zone = zone_for(lat, lon, persona, accuracy=accuracy)
+    # R33: the one rounded row, overwritten — never appended. Before the transition, so a
+    # reader that sees the new place also sees the position it was reached from.
+    try:
+        _write_last_position(lat, lon, ts, persona)
+    except Exception:  # noqa: BLE001 — a nicety on top of a working record
+        pass
     result = record_transition(zone, entered_at=ts, persona=persona)
+    if result.get("changed") and zone != AWAY:
+        # Arriving at a saved place is a visit on that place (and confirms an unconfirmed
+        # one — a wrong branch would not be where the user arrived). A zone is not a place's
+        # row: nothing is written for one, even if a saved place shares its name (#6).
+        try:
+            known = place_named(zone, persona)
+            if known and known.get("source") == "place":
+                from tools.saved_places import record_visit
+                record_visit(zone, at=result.get("entered_at"), persona=persona)
+        except Exception:  # noqa: BLE001
+            pass
     if zone == AWAY:
         # Never let the suggestion path break a ping — it is a nicety on top of a
         # working record, and it degrades to nothing on any failure.
@@ -277,6 +364,56 @@ def record_position(lat: float, lon: float, accuracy: float | None = None,
         except Exception:
             pass
     return result
+
+
+# ---------------------------------------------------------------------------
+# The last position (R33) — one rounded row, overwritten, code-only
+# ---------------------------------------------------------------------------
+
+_LAST_FILENAME = "location_last.json"
+# 3 decimal places: ~111 m north–south, ~70 m east–west at London's latitude — "about 100 m".
+_LAST_DECIMALS = 3
+
+
+def _write_last_position(lat: float, lon: float, ts: str | None,
+                         persona: str | None = None) -> None:
+    """Overwrite the one row. Written atomically (tmp + replace) so a reader never sees half a
+    file; mode 600, as every location file is."""
+    now = datetime.now().isoformat(timespec="seconds")
+    at = ts or now
+    try:
+        # A client clock ahead of ours would keep the row "fresh" for as long as it is ahead
+        # (review 2026-11-26 #15e): a future stamp is taken as now. UTC "Z" stamps compare
+        # through the same parse the day planner uses.
+        from tools.day_plan import _local_stamp
+        parsed = _local_stamp(at)
+        if parsed is None or parsed > datetime.now() + timedelta(minutes=5):
+            at = now
+    except Exception:  # noqa: BLE001
+        at = now
+    row = {"lat": round(float(lat), _LAST_DECIMALS), "lon": round(float(lon), _LAST_DECIMALS),
+           "at": at}
+    path = persona_data_dir(persona) / _LAST_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    with _LOCK:
+        tmp.write_text(json.dumps(row))
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        tmp.replace(path)
+
+
+def last_position(persona: str | None = None) -> dict[str, Any] | None:
+    """The rounded last report — `{lat, lon, at}` — or None. CODE ONLY: the one caller is
+    tools/saved_places.py, which turns it into distances. Never formatted for a prompt."""
+    path = persona_data_dir(persona) / _LAST_FILENAME
+    try:
+        row = json.loads(path.read_text())
+        return {"lat": float(row["lat"]), "lon": float(row["lon"]), "at": str(row.get("at") or "")}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +636,11 @@ def context_line(persona: str | None = None) -> str:
     zone = str(latest.get("zone") or "").strip()
     if not zone:
         return ""
+    # A place the user keeps private is out of day-to-day mention (R24): the arrival is
+    # still recorded, the name is not put in front of a model here.
+    known = place_named(zone, persona) if zone != AWAY else None
+    if known and known.get("private"):
+        zone = "a place they keep private"
 
     raw = str(latest.get("entered_at") or "")
     try:

@@ -6578,7 +6578,231 @@ def _data_object_action_rows(turn: dict | None) -> list[str]:
     rows += [f"- a change to the user's \"{r['object']['name']}\" log — NOT YET MADE: it is "
              f"yours to make this turn with your own call, and done only once that call "
              f"succeeds" for r in turn.get("amending", []) if not r["result"].get("error")]
+    # Places (phase 3): saved by code from the Coordinator's PLACES, before this reply.
+    for p in (turn.get("places") or {}).get("saved", []):
+        rows.append(f"- the user's place \"{p['name']}\" — "
+                    + ("saved" if p["status"] == "saved" else "updated") + " this request")
+    for p in (turn.get("places") or {}).get("flags", []):
+        rows.append(f"- the user's place \"{p['name']}\" — {p['flag']} this request")
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Places (data-objects phase 3 — archive/plans/data_objects_phase3_build_plan_2026-11-25.md)
+# ---------------------------------------------------------------------------
+# A8: `_resolve_places()` and `_places_block()` are pipeline concerns and stay in
+# core/orchestrator.py beside `_resolve_data_objects()` / `_data_object_block()`; the logic is
+# tools/saved_places.py.
+
+_PLACES_RE = _re.compile(r'PLACES:\s*```json\s*(.*?)```', _re.DOTALL)
+_PLACES_INLINE_RE = _re.compile(r'PLACES:\s*(\[.*?\])\s*(?:\n|\Z)', _re.DOTALL)
+
+
+def _resolve_places(coord_output: str, persona: str | None = None, user_text: str = "",
+                    user_turn: bool = True, hold_writes: bool = False) -> dict:
+    """
+    The Coordinator's PLACES → saved by code, before the reply (choice 5: one writer). Each item
+    is {"name", "act": "save" | "private" | "public" | "forget" | "confirm", "area"?, "kind"?,
+    "verdict"?, "occasion"?, "notes"?}. The description is written now — a local file, no
+    latency; the lookup by name runs on a thread joined in `_places_block()` within the
+    budget, and lands later if slower.
+
+    Two items naming one place with different verdicts or occasions are a conflict (Mike's
+    question on choice 5): neither is written, and the reply asks once.
+
+    Also, on a real user turn: the user's answer to last turn's raises is read (declined /
+    accepted / none), then the places near them that fit this turn are chosen in code — early,
+    so Logistics sees them at dispatch. Never raises.
+    """
+    import time as _time
+    out: dict = {"saved": [], "flags": [], "conflicts": [], "unknown": [], "lookups": [],
+                 "near": {"lines": [], "attached": []}, "started": _time.monotonic()}
+    persona = resolve_persona(persona)
+    try:
+        from tools import saved_places as SP
+        SP.note_response(persona, user_text, user_turn)
+        items: list = []
+        m = _PLACES_RE.search(coord_output or "") or _PLACES_INLINE_RE.search(coord_output or "")
+        if m:
+            try:
+                items = json.loads(m.group(1).strip())
+            except json.JSONDecodeError as exc:
+                logger.warning(f"[places] PLACES JSON parse error: {exc}")
+        items = [i for i in items if isinstance(i, dict) and str(i.get("name") or "").strip()] \
+            if isinstance(items, list) else []
+        if items and user_turn and not hold_writes:
+            by_name: dict[str, list[dict]] = {}
+            for it in items:
+                by_name.setdefault(SP._key(it["name"]), []).append(it)
+            flag_names = {"private": "kept private", "public": "no longer private",
+                          "forget": "forgotten", "confirm": "confirmed"}
+
+            def _lookup(name: str, area: str, relocate: bool = False) -> None:
+                box: dict = {"name": name}
+
+                def _run(b=box):
+                    try:
+                        b["result"] = SP.locate(name, area, persona=persona, relocate=relocate)
+                    except Exception as exc:  # noqa: BLE001
+                        b["result"] = {"error": str(exc)}
+                th = threading.Thread(target=_run, daemon=True, name="place_lookup")
+                th.start()
+                box["thread"] = th
+                out["lookups"].append(box)
+
+            with persona_scope(persona):
+                for group in by_name.values():
+                    acts = [str(g.get("act") or "save").strip().lower() for g in group]
+                    saves = [g for g, a in zip(group, acts) if a in ("save", "relocate")]
+                    # Two different verdicts or uses for one place in one turn: neither is
+                    # written; the reply asks once (Mike's question on choice 5).
+                    vals = {(SP.normalise_verdict(g.get("verdict")),
+                             json.dumps(g.get("occasion"), sort_keys=True)) for g in saves
+                            if g.get("verdict") or g.get("occasion")}
+                    if len(vals) > 1:
+                        out["conflicts"].append(group[0]["name"])
+                        continue
+                    merged: dict = {}
+                    for g in saves:
+                        merged.update({k: v for k, v in g.items() if v not in (None, "", [], {})})
+                    name = group[0]["name"]
+                    if saves:
+                        res = SP.save(merged, source="said", persona=persona)
+                        if res.get("status") not in ("saved", "updated"):
+                            continue
+                        name = res["name"]
+                        out["saved"].append(res)
+                        area = str(merged.get("area") or "")
+                        if "relocate" in acts:
+                            # "No, the one on Hill Street" — looked up again in that area, never
+                            # the branch it was (review 2026-11-26 #9).
+                            res["needs_lookup"] = True
+                            _lookup(name, area, relocate=True)
+                        elif res.get("needs_lookup"):
+                            _lookup(name, area)
+                    # Every other act for the same place runs too: "save Rossi's, and keep it
+                    # private" is two acts, and the second was dropped (review #8). A `private`
+                    # key on the save item means the same.
+                    extra = [a for a in acts if a in flag_names]
+                    if merged.get("private") is True and "private" not in extra:
+                        extra.append("private")
+                    for a in acts:
+                        if a not in flag_names and a not in ("save", "relocate"):
+                            logger.warning(f"[places] unknown PLACES act ignored: {a!r}")
+                    for act in dict.fromkeys(extra):
+                        if act == "confirm":
+                            r = SP.confirm(name, persona=persona)
+                        elif act == "forget":
+                            r = SP.set_flag(name, "removed", persona=persona)
+                        else:
+                            r = SP.set_flag(name, "private", act == "private", persona=persona)
+                        if r == "unknown":
+                            out["unknown"].append(name)
+                        else:
+                            row = SP.find(name, include_hidden=True)
+                            out["flags"].append({"name": row["name"] if row else name,
+                                                 "flag": flag_names[act]})
+        out["near"] = SP.turn_places(persona, user_text, user_turn)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[places] PLACES not resolved: {exc}")
+    return out
+
+
+def _places_block(places_turn: dict | None, persona: str | None, user_turn: bool) -> str:
+    """The Synthesizer's facts about the user's places this turn — what code saved, whether
+    its position was found (and whether it is the only one by that name), any conflict to ask
+    about, the places near the user that fit, and the "keeps coming up" card. Names, streets
+    and metres only: no coordinate can be in this string (test 5). Never raises."""
+    import time as _time
+    if places_turn is None:
+        return ""
+    parts: list[str] = []
+    try:
+        from tools import saved_places as SP
+        budget = float(SP._limits()["lookup_budget_seconds"])
+        deadline = places_turn.get("started", _time.monotonic()) + budget
+        for box in places_turn.get("lookups", []):
+            th = box.get("thread")
+            if th is not None:
+                th.join(timeout=max(0.0, deadline - _time.monotonic()))
+        lookups = {b["name"]: b.get("result") for b in places_turn.get("lookups", [])}
+        for p in places_turn.get("saved", []):
+            verb = "Saved" if p["status"] == "saved" else "Updated"
+            line = f"- {verb} \"{p['name']}\" just now"
+            res = lookups.get(p["name"], "none") if p.get("needs_lookup") else "none"
+            if res is None:
+                line += " — where it is is still being looked up; don't say where it is"
+            elif isinstance(res, dict) and res.get("error"):
+                line += " — its location could not be found; don't say where it is"
+            elif isinstance(res, dict) and res.get("ambiguous"):
+                line += (f" — more than one place has that name; saved as the one at "
+                         f"{res.get('address')}. Say that address once and ask if it's the "
+                         f"right one")
+            elif isinstance(res, dict) and res.get("address"):
+                line += f" — at {res['address']}"
+            if p.get("held"):
+                line += (" — the verdict they gave earlier stands; nothing they said overrode "
+                         "it")
+            parts.append(line + ".")
+        if user_turn:
+            told = {p["name"] for p in places_turn.get("saved", [])}
+            for a in SP.unsaid_ambiguities(persona):
+                # A lookup that found more than one by that name, after its turn's reply had
+                # gone (review 2026-11-26 #15c) — or on this turn, already said above.
+                if a["name"] in told:
+                    continue
+                parts.append(f"- \"{a['name']}\" — more than one place has that name; it was "
+                             f"saved as the one at {a['address']}. Say that address once and "
+                             f"ask if it's the right one.")
+        for f in places_turn.get("flags", []):
+            parts.append(f"- \"{f['name']}\" — {f['flag']} just now.")
+        for n in places_turn.get("conflicts", []):
+            parts.append(f"- \"{n}\": two different verdicts or uses were given for it this "
+                         f"turn — nothing was saved; ask once which they mean.")
+        for n in places_turn.get("unknown", []):
+            parts.append(f"- No saved place is called \"{n}\".")
+        near = places_turn.get("near") or {}
+        if near.get("lines"):
+            parts.append("Saved places that fit this turn (from code):\n"
+                         + "\n".join(near["lines"]))
+        offer = SP.take_offer(persona, user_turn)
+        if offer and offer.get("still_open"):
+            parts.append(f"- Still waiting on its card in the app, asked earlier: "
+                         f"\"{offer['question']}\" Do not ask it again.")
+        elif offer:
+            parts.append(f"- Offered this turn, by a card now in the app: "
+                         f"\"{offer['question']}\" — the user answers with the card. Nothing "
+                         f"is saved yet.")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[places] block not built: {exc}")
+    if not parts:
+        return ""
+    return "THE USER'S PLACES THIS TURN:\n" + "\n".join(parts)
+
+
+def _note_place_raises(places_turn: dict | None, persona: str | None, reply: str) -> None:
+    """After the reply: the attached places the reply named were raised (place_mentions)."""
+    try:
+        attached = ((places_turn or {}).get("near") or {}).get("attached") or []
+        if attached:
+            from tools import saved_places as SP
+            SP.note_reply(persona, reply, attached)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[places] raises not noted: {exc}")
+
+
+def _change_notes(persona: str | None, user_turn: bool) -> list[str]:
+    """Guarded-field changes and questions queued by tools/data_objects.py — said once, on a
+    real user turn. Never raises."""
+    if not user_turn:
+        return []
+    try:
+        from tools.data_objects import take_change_notes
+        with persona_scope(resolve_persona(persona)):
+            return take_change_notes()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[data_objects] change notes not read: {exc}")
+        return []
 
 
 def _action_block(data_turn: dict | None = None) -> str:
@@ -6822,6 +7046,13 @@ def _resolve_data_objects(coord_output: str, persona: str | None = None,
                     turn["unknown"].append({"name": name,
                                             "near": near["name"] if near else ""})
                     continue
+                if act in ("add", "amend") and DO.code_kept(obj):
+                    # Places (review 2026-11-26 #2): kept from the Coordinator's PLACES by code.
+                    # Marking an entry on its way would send the Diarist to a refused write and
+                    # reach the user as "did not save".
+                    if not any(o["id"] == obj["id"] for o in turn.setdefault("code_kept", [])):
+                        turn["code_kept"].append(DO.public(obj))
+                    continue
                 if act in ("add", "amend") and DO.read_only(obj):
                     # A computed view (Medication taken today) takes no entry and no change:
                     # marking one on its way would send the Diarist to a write that is refused,
@@ -6919,7 +7150,7 @@ def _render_entries(result: dict) -> str:
 
 
 def _data_object_block(turn: dict | None, unsaved: list[str],
-                       offer: dict | None = None) -> str:
+                       offer: dict | None = None, changes: list[str] | None = None) -> str:
     """The Synthesizer's facts about the user's logs this turn: what was started, what is on
     its way (NOT saved yet — the write lands after the reply), what a read found, what no
     log is called, and any earlier entry that did not save. Facts only; what to say about
@@ -6973,6 +7204,10 @@ def _data_object_block(turn: dict | None, unsaved: list[str],
                      f"the user took is recorded on its medication habit; adding, removing or "
                      f"changing a medication they take is a change to their medication "
                      f"profile, which goes to Physical Health.")
+    for o in turn.get("code_kept", []):
+        parts.append(f"- \"{o['name']}\" is kept by code from what the user says about each "
+                     f"place — nothing is added to it or changed in it here; a place they named "
+                     f"this turn is in THE USER'S PLACES block.")
     for u in turn.get("unknown", []):
         n, near = (u["name"], u["near"]) if isinstance(u, dict) else (u, "")
         hint = (f" The closest kept is \"{near}\" — ask whether that is the one; do not "
@@ -6980,6 +7215,10 @@ def _data_object_block(turn: dict | None, unsaved: list[str],
         parts.append(f"- No log is called \"{n}\".{hint}")
     for n in unsaved:
         parts.append(f"- An entry the user asked to keep in \"{n}\" earlier did NOT save.")
+    # Guarded fields reconciled by code (phase 3, plan § 4): a change said once; a question
+    # when a weaker source keeps contradicting what the user said.
+    for c in changes or []:
+        parts.append(f"- {c}")
     if offer and offer.get("still_open"):
         parts.append(f"- Still waiting on its card in the app, asked earlier: "
                      f"\"{offer['question']}\" Do not ask it again. Nothing is started yet.")
@@ -7037,6 +7276,12 @@ def _data_object_directive(turn: dict | None, agent: str) -> str:
              f"the change with that store's own tool, and say in your output what you changed."
              for r in turn.get("delegated", []) if r["agent"] == agent and r.get("amend")]
     out = []
+    near = ((turn.get("places") or {}).get("near") or {}).get("lines") or []
+    if agent == "logistics" and near:
+        # Venue questions are Logistics' (coordinator.md): it sees the user's own places that
+        # fit, so it does not suggest new ones while passing over a go-to or an avoid.
+        out.append("THE USER'S SAVED PLACES THAT FIT THIS TURN (from code — distances only):\n"
+                   + "\n".join(near))
     if blocks:
         out.append("THE USER'S LOG ENTRIES (already recorded):\n" + "\n".join(blocks))
     if asks:
@@ -9220,6 +9465,14 @@ def run_pipeline_session(user_input: str,
             coord_output, persona=persona,
             user_turn=has_real_user_turn(user_input, is_proactive, attachments),
             hold_writes=bool(clarify) and _CLARIFY_HOLD_LIVE)
+        # The user's places (phase 3) — saved by code, and the ones that fit this turn chosen
+        # in code, before dispatch so Logistics sees them. Mirrors the streaming twin.
+        places_turn = None if nudge else _resolve_places(
+            coord_output, persona=persona, user_text="" if is_proactive else user_input,
+            user_turn=has_real_user_turn(user_input, is_proactive, attachments),
+            hold_writes=bool(clarify) and _CLARIFY_HOLD_LIVE)
+        if data_turn is not None and places_turn is not None:
+            data_turn["places"] = places_turn
         if not nudge:
             _clarify_shadow_record(coord_output, data_turn,
                                    has_real_user_turn(user_input, is_proactive, attachments))
@@ -9293,7 +9546,12 @@ def run_pipeline_session(user_input: str,
             persona, has_real_user_turn(user_input, is_proactive, attachments))
         objects_text = _data_object_block(
             data_turn, [] if nudge else _unsaved_log_notes(
-                persona, has_real_user_turn(user_input, is_proactive, attachments)), log_offer)
+                persona, has_real_user_turn(user_input, is_proactive, attachments)), log_offer,
+            changes=[] if nudge else _change_notes(
+                persona, has_real_user_turn(user_input, is_proactive, attachments)))
+        # After the noticed log's card, so a place card never stacks on it. Mirrors the twin.
+        places_text = "" if nudge else _places_block(
+            places_turn, persona, has_real_user_turn(user_input, is_proactive, attachments))
         # [DB-0822-09] Built HERE, after the sign-off veto above: a finding must not be
         # charged an offer on a turn where the Synthesizer never runs.
         # Mirrors the streaming twin: after the specialists, so this turn's writes are in it.
@@ -9311,6 +9569,7 @@ def run_pipeline_session(user_input: str,
             + f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
             + (f"\n\n{know_text}" if know_text else "")
             + (f"\n\n{objects_text}" if objects_text else "")
+            + (f"\n\n{places_text}" if places_text else "")
             + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
             + (f"\n\n{horizon_text}" if horizon_text else "")
             + (f"\n\n{plan_text}" if plan_text else "")
@@ -9350,6 +9609,7 @@ def run_pipeline_session(user_input: str,
         # [DB-0815-11] Detection only, before anything else touches the text and while the
         # trace is still open — nothing here changes what the user sees.
         check_false_action_claims(visible)
+        _note_place_raises(places_turn, persona, visible)   # phase 3. Mirrors the twin.
         _check_filler(visible)      # Stage 5 M19 — detection only. Mirrors the streaming twin.
         _capture.after_synthesizer(capture_turn, _capture_trace)
         # Only a real user turn keeps a thread alive. On a proactive session
@@ -9575,6 +9835,13 @@ def _run_pipeline_session_stream_inner(
         coord_output, persona=persona,
         user_turn=has_real_user_turn(user_input, is_proactive, attachments),
         hold_writes=bool(clarify) and _CLARIFY_HOLD_LIVE)
+    # The user's places — mirrors the non-streaming twin exactly.
+    places_turn = None if nudge else _resolve_places(
+        coord_output, persona=persona, user_text="" if is_proactive else user_input,
+        user_turn=has_real_user_turn(user_input, is_proactive, attachments),
+        hold_writes=bool(clarify) and _CLARIFY_HOLD_LIVE)
+    if data_turn is not None and places_turn is not None:
+        data_turn["places"] = places_turn
     if not nudge:
         _clarify_shadow_record(coord_output, data_turn,
                                has_real_user_turn(user_input, is_proactive, attachments))
@@ -9634,7 +9901,12 @@ def _run_pipeline_session_stream_inner(
         persona, has_real_user_turn(user_input, is_proactive, attachments))
     objects_text = _data_object_block(
         data_turn, [] if nudge else _unsaved_log_notes(
-            persona, has_real_user_turn(user_input, is_proactive, attachments)), log_offer)
+            persona, has_real_user_turn(user_input, is_proactive, attachments)), log_offer,
+        changes=[] if nudge else _change_notes(
+            persona, has_real_user_turn(user_input, is_proactive, attachments)))
+    # The user's places — mirrors the non-streaming twin.
+    places_text = "" if nudge else _places_block(
+        places_turn, persona, has_real_user_turn(user_input, is_proactive, attachments))
     # The day plan — after the specialists, so this turn's calendar writes are repaired in the
     # same reply (Q10). Kept identical to the non-streaming twin.
     plan_text = _day_plan_block(persona, kind, is_proactive, nudge=nudge)
@@ -9652,6 +9924,7 @@ def _run_pipeline_session_stream_inner(
         + f"COORDINATOR ROUTING PACKAGE:\n{coord_output}"
         + (f"\n\n{know_text}" if know_text else "")
         + (f"\n\n{objects_text}" if objects_text else "")
+        + (f"\n\n{places_text}" if places_text else "")
         + (f"\n\nSPECIALIST OUTPUTS:\n{spec_text}" if spec_text else "")
         + (f"\n\n{horizon_text}" if horizon_text else "")
         + (f"\n\n{plan_text}" if plan_text else "")
@@ -9860,6 +10133,7 @@ def _run_pipeline_session_stream_inner(
     # [DB-0815-11] Same detection as the non-streaming twin. The text has already reached
     # the user by this point on this path, which is exactly why it only logs.
     check_false_action_claims(visible)
+    _note_place_raises(places_turn, persona, visible)   # phase 3. Mirrors the twin.
     _check_filler(visible)          # Stage 5 M19 — mirrors the non-streaming twin.
     _capture.after_synthesizer(capture_turn, _capture_trace)
     # See the note at the non-streaming call site: a scheduler prompt is not

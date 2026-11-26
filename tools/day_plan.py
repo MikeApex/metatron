@@ -421,14 +421,30 @@ def _boxed_fetch(persona: str) -> bool:
 # --- location and travel ---------------------------------------------------------------------
 
 def _zone_coords(name: str, persona: str | None) -> str | None:
+    """A known place's public position as "lat,lon" — a zone or a saved place (data-objects
+    phase 3: through `known_places()`, so arriving at a saved place moves the start point
+    instead of falling back to home). Code-only: it feeds the routing call, never a prompt."""
     try:
-        from tools.location import load_zones
-        for z in load_zones(persona):
-            if str(z.get("name") or "").strip().lower() == name.lower():
-                return f"{float(z['lat'])},{float(z['lon'])}"
+        from tools.location import place_named
+        p = place_named(name, persona)
+        if p:
+            return f"{float(p['lat'])},{float(p['lon'])}"
     except Exception:  # noqa: BLE001
         pass
     return None
+
+
+def _place_label(zone: str, persona: str | None) -> str:
+    """"the gym" for a zone; a saved place by its own name ("Bianco 43", never "the bianco
+    43" — review 2026-11-26 #15a)."""
+    try:
+        from tools.location import place_named
+        p = place_named(zone, persona)
+        if p and p.get("source") == "place":
+            return p["name"]
+    except Exception:  # noqa: BLE001
+        pass
+    return f"the {zone}"
 
 
 def _local_stamp(value) -> datetime | None:
@@ -2326,7 +2342,8 @@ def _location_evidence(plan: dict, cands: list[dict], persona: str, file: bool) 
         key = f"{zone}@{plan['day']}"
         try:
             if O.has_proposal(ref, key, persona) or (file and O.add_proposal(
-                    ref, basis=f"You were at the {zone} at {hit:%H:%M}.", persona=persona,
+                    ref, basis=f"You were at {_place_label(zone, persona)} at {hit:%H:%M}.",
+                    persona=persona,
                     source="location", key=key, on_date=hit.date().isoformat())):
                 out.add(ref)
         except Exception:  # noqa: BLE001

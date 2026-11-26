@@ -90,7 +90,10 @@ _LOCK = threading.Lock()
 # § 3.3). They live longer than an approval (the caller passes `ttl_seconds`), and because the
 # app shows ONE card at a time — the first `pending()` returns — they always sort behind every
 # other card: a send, a merge or a config write raised later must still take the footer.
-OFFER_ACTIONS = frozenset({"create_data_object", "alias_data_object"})
+OFFER_ACTIONS = frozenset({"create_data_object", "alias_data_object",
+                           # A place mentioned three times without being saved (data-objects
+                           # phase 3, tools/saved_places.py) — the same kind of code-raised offer.
+                           "save_place"})
 
 # What /decline writes into the conversation. The default promises never to ask again, which
 # every gated action keeps; a noticed log may be offered again if it keeps coming up a lot more
@@ -99,6 +102,7 @@ _DECLINE_DEFAULT = "Nothing was done, and I won't ask about it again."
 _DECLINE_LINES = {
     "create_data_object": "No list started. I'll only ask again if it keeps coming up a lot.",
     "alias_data_object": "Nothing was added. I'll only ask again if it keeps coming up a lot.",
+    "save_place": "Not saved. I'll only ask again if it keeps coming up a lot.",
 }
 
 
@@ -540,6 +544,9 @@ _EXECUTORS: dict[str, tuple[str, str]] = {
     # facts in a list the user already has. Registered WITH the feature (see the note above).
     "create_data_object":    ("tools.noticed_logs",  "create_noticed_log"),
     "alias_data_object":     ("tools.noticed_logs",  "alias_noticed_log"),
+    # Phase 3 (places): a name the user keeps mentioning, saved on their Yes — by code, with
+    # its mentions carried over (tools/saved_places.py). Registered WITH the feature.
+    "save_place":            ("tools.saved_places",  "save_offered_place"),
 }
 
 

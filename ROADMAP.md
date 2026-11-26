@@ -457,6 +457,12 @@ Phase 5 was built iteratively across many sessions, each solving a local problem
 > `_data_object_action_rows()` and `_unsaved_log_notes()` are pipeline concerns and **stay in `core/orchestrator.py`** beside
 > `_resolve_knowledge()`. The manifest is prepended to the per-turn input, never the cached
 > prefix — keep it there across the move. Gate: `python tests/test_data_objects.py`.
+>
+> **⚠ Four more 2026-11-26 (data objects phase 3, places):** `_resolve_places()`,
+> `_places_block()`, `_note_place_raises()` and `_change_notes()` are pipeline concerns and
+> **stay in `core/orchestrator.py`** beside `_resolve_data_objects()` / `_data_object_block()`;
+> their logic is `tools/saved_places.py`. All four are wired into both pipeline twins. Gate:
+> `python tests/test_places_phase3.py`.
 
 **Server split — `core/server.py` → 2 files:**
 

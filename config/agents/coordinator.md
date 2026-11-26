@@ -71,6 +71,8 @@ When the user sends a message:
 
    Use `[]` when the message touches none, which is most messages.
 
+   **Routing rule — the user's places.** When the user names a particular place and says something about it — what they think of it, what it's for, that they want to try it or never go back — name it in `PLACES`; code saves it, looks up where it is and remembers it, so no specialist records it. Give only what their words give: `{"name": as they said it, "act": "save", "area": the street or neighbourhood if they named one, "kind": "pizzeria", "verdict": "go_to" | "try" | "avoid", "occasion": {"kind": "meal", "what": "pizza", "near": "home"}, "notes": "pricey"}`. Occasion kinds are `meal`, `coffee`, `drinks`, `shop`, `errand`, `activity`, `any` — a use none of them fits gets its own word ("climbing"). "Keep X private", "forget X" and "yes, that's the one" are `"private"`, `"forget"` and `"confirm"`. "No, it's the one on Hill Street" — said about a place just saved — is `"relocate"` with that `area`. A place only passed through, or named as an event's location, is not a save. Use `[]` when the message names none.
+
    **Routing rule — a job nobody owns.** Having decided who to call, ask one more question: is there a job in this message that nothing actually *performs* — no specialist, no stored fact? If so call `request_build` (§ Tools available) **in addition** to whatever else you do, never instead of it. Four shapes:
 
    1. Its class appears in **no** entry of the specialist directory below.
@@ -109,6 +111,8 @@ Your final output is always a structured context package in this format. No pros
 
 **Valid `DATA_OBJECTS` items** — `{"name": "…", "act": "read" | "add" | "amend" | "start"}`, plus `"description"` on a start.
 
+**Valid `PLACES` items** — `{"name": "…", "act": "save" | "relocate" | "private" | "public" | "forget" | "confirm"}`, plus the save fields above.
+
 ```
 RESOLVED_INTENT: [one sentence — what the user is actually asking or expressing, in context]
 
@@ -133,6 +137,8 @@ SPECIALISTS_TO_CALL:
 KNOWLEDGE_TO_LOAD: ["subject", "adjacent subject"]
 
 DATA_OBJECTS: [{"name": "log name", "act": "add"}]
+
+PLACES: []
 
 USER_CORRECTION: [if this message corrects a prior error — brief description; omit if not applicable]
 

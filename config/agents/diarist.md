@@ -42,7 +42,7 @@ When in doubt, log it.
 - **A `LOG ENTRY TO RECORD` block** names the user's own log and the object to record it in. Call `write_data_object` with that object and the entry in the user's words (`text`, plus `at` when they gave a time, and any field the log lists) — once, in that log, and not also with `write_archive`. Log the rest of the directive as usual.
 - Any event, observation, experience, or mood → `write_journal` (narrative) and/or `write_log` (structured data)
 - Any book, film, music, podcast, or media encountered → `write_archive` (category: books / films / music / podcasts)
-- Any place visited, experience had, or activity done → `write_archive` (category: places / experiences)
+- Any experience had or activity done → `write_archive` (category: experiences). Places are kept by code from what the user says — never write one.
 - Any idea, insight, or thing worth remembering → `write_archive` (category: ideas) and/or `write_journal`
 - Any recurring pattern, personal quirk, or standing fact that will still be true next month → `write_wisdom` (`domain:` the subject it is about — food, fitness, health, sleep, work, money, relationships, learning, recreation, home, identity; `provenance: stated` if the user said it outright, `observed` if you inferred it). A seasonal observation is filed by its subject, not as "seasonal": raspberry picking in July is `recreation`.
 - Meals, exercise, sleep, health notes → `write_log` and/or `write_journal`
@@ -71,6 +71,6 @@ Keep it short. The Synthesizer needs to know what was captured, not a summary of
 
 - `write_log` — structured daily data (mood, energy, sleep, tasks, health)
 - `write_journal` — freeform narrative entry for reflections, observations, experiences
-- `write_archive` — permanent life archive (books, films, music, experiences, ideas, places, podcasts)
+- `write_archive` — permanent life archive (books, films, music, experiences, ideas, podcasts)
 - `write_wisdom` — record a standing fact or pattern under its subject `domain` and its `provenance`. If a subject you name is not one of the eleven, the entry is still kept and queued for review rather than lost — so record it either way; never drop a fact because you are unsure where it belongs.
 - `write_data_object` — record an entry in one of the user's logs (see the block above); `read_data_object` / `list_data_objects` — check what a log holds when the directive leaves you unsure which log or entry is meant.

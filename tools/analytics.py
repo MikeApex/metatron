@@ -216,6 +216,23 @@ def rollup_day(day: str, persona: str) -> dict | None:
     except Exception:
         pass
 
+    # The user's places (phase 3, data_objects_phase3_build_plan § 8): COUNTS ONLY, that day —
+    # how many times places fitting a turn were attached, how many the reply named, how many
+    # were saved or found, and lookups refused for a missing key. A day of attachments with no
+    # raises is a wording problem; no attachments at all is "never fires" or "nothing nearby",
+    # which the saved-place count beside it tells apart. Never a place's name.
+    place_counts = {"places_saved": 0, "places_updated": 0, "places_located": 0,
+                    "places_attached": 0, "places_raised": 0, "places_lookup_no_key": 0}
+    try:
+        from core.persona import persona_scope
+        from tools import saved_places as _SP
+        with persona_scope(persona):
+            for k, v in _SP.day_stats(day, persona).items():
+                if k in place_counts:
+                    place_counts[k] = int(v or 0)
+    except Exception:
+        pass
+
     return {
         # --- cohort anchor: the fields that cannot be reconstructed later ---
         "date": day,
@@ -252,6 +269,7 @@ def rollup_day(day: str, persona: str) -> dict | None:
             "deadlines_late")},
         # --- the user's own logs: counts only (see above) ---
         **log_counts,
+        **place_counts,
         # --- cost: gross margin, not performance telemetry ---
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,

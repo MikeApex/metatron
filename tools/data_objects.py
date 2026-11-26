@@ -285,9 +285,36 @@ def _complete(o: dict) -> dict:
     return o
 
 
+# Keys that are POLICY, not the user's description of their log: who may write it and which
+# fields are reconciled by provenance. Config owns policy (D3), so a template's value wins over
+# a registry copy made before the key existed — `mike`'s `places` entry was registered from the
+# existing category on 11-22, before places had a writer rule (phase 3).
+_POLICY_KEYS = ("writer", "guarded")
+
+
 def _stored() -> list[dict]:
     data = _read_json(_registry_path(), {"objects": []})
-    return [_complete(o) for o in (data.get("objects") or []) if isinstance(o, dict)]
+    objs = [_complete(o) for o in (data.get("objects") or []) if isinstance(o, dict)]
+    templates = {t["id"]: t for t in _templates()}
+    for o in objs:
+        t = templates.get(o["id"])
+        if t:
+            for k in _POLICY_KEYS:
+                if k in t:
+                    o[k] = t[k]
+    return objs
+
+
+def code_kept(o: dict | None) -> bool:
+    """A log whose entries only code writes (`writer: code` in its template) — places, since
+    phase 3: one writer per kind of change, so a verdict cannot be set by three agents at
+    once (Mike, 2026-11-25, choice 5). Every model door refuses it; code passes `by_code`."""
+    return bool(o) and o.get("writer") == "code"
+
+
+def code_kept_refusal(o: dict) -> str:
+    return (f"Not recorded: {o['name']} is kept by code from what the user says in "
+            f"conversation — nothing needs writing here.")
 
 
 def _save(objs: list[dict]) -> None:
@@ -621,12 +648,108 @@ def _identity_key(d: dict) -> str:
     return ""
 
 
-def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
+_SOURCE_RANK = {"derived": 1, "stated": 2}
+
+
+def _source_of(item: dict, field: str) -> str:
+    s = str(item.get(f"{field}_source") or "").strip().lower()
+    if s in _SOURCE_RANK:
+        return s
+    return "derived" if item.get("derived") else "stated"
+
+
+def _reconcile_guarded(o: dict, row: dict, item: dict, now: str) -> dict:
+    """Provenance reconciliation for a template's `guarded` fields, at the moment of the write
+    (Mike's question on choice 5, 2026-11-26 — data_objects_phase3_build_plan § 4). Returns the
+    item with every guarded value it may NOT apply taken out.
+
+      same or higher source  → the newer value wins; the old one goes to `previous`, and the
+                               change is queued to be said once, by code, on the next reply;
+      lower over higher      → never overwrites: held as `pending_{field}`; the second time
+                               the same lower value arrives, one question is queued instead.
+
+    A row written before a field was guarded has no `{field}_source`: it reads as stated —
+    the safe direction, since a derived guess then cannot replace it."""
+    out = dict(item)
+    for field in o.get("guarded") or ():
+        if field not in item or item[field] in (None, "", [], {}):
+            continue
+        new, old = item[field], row.get(field)
+        new_src = _source_of(item, field)
+        out[f"{field}_source"] = new_src
+        if old in (None, "", [], {}) or new == old:
+            if new == old and new_src == "stated":
+                row.pop(f"pending_{field}", None)      # the user re-said it: settled
+            continue
+        old_src = str(row.get(f"{field}_source") or "stated")
+        if _SOURCE_RANK[new_src] >= _SOURCE_RANK.get(old_src, 2):
+            row.setdefault("previous", []).append(
+                {"value": {field: old, f"{field}_source": old_src}, "changed_at": now})
+            row.pop(f"pending_{field}", None)
+            _queue_note(o, row, "changed", field, old, new)
+            continue
+        out.pop(field, None)
+        out.pop(f"{field}_source", None)
+        held = row.get(f"pending_{field}") or {}
+        count = int(held.get("count") or 0) + 1 if held.get("value") == new else 1
+        row[f"pending_{field}"] = {"value": new, "source": new_src, "at": now, "count": count}
+        if count == 2:
+            _queue_note(o, row, "ask", field, old, new)
+    return out
+
+
+def _render_value(v: Any) -> str:
+    if isinstance(v, dict):
+        return ", ".join(f"{v[k]}" for k in ("kind", "what", "near") if v.get(k)) or "-"
+    return str(v).replace("_", " ")
+
+
+def _queue_note(o: dict, row: dict, kind: str, field: str, old: Any, new: Any) -> None:
+    """A note for the next reply — said once, by code (take_change_notes). Never a
+    coordinate: guarded fields are descriptions, and the row's name is a place's name."""
+    label = str(row.get("name") or row.get("title") or row.get("text") or "an entry")[:80]
+    if kind == "changed":
+        text = (f"{label} ({o['name']}): {field} changed from \"{_render_value(old)}\" to "
+                f"\"{_render_value(new)}\" — say so once, in passing.")
+    else:
+        text = (f"{label} ({o['name']}): the user said {field} \"{_render_value(old)}\"; "
+                f"something said since suggests \"{_render_value(new)}\". Ask once which "
+                f"holds — nothing was changed.")
+    try:
+        with _locked():
+            d = _pending()
+            d.setdefault("notes", []).append({"text": text, "noted": False,
+                                              "at": datetime.now().isoformat(timespec="seconds")})
+            _write_json(_pending_path(), d)
+    except Exception as exc:  # noqa: BLE001 — the write itself stands
+        logger.warning(f"[data_objects] change note not queued: {exc}")
+
+
+def take_change_notes() -> list[str]:
+    """Guarded-field changes and questions not yet said on a reply — each returned once."""
+    with _locked():
+        d = _pending()
+        notes = [n["text"] for n in d.get("notes", []) if not n.get("noted")]
+        if not notes:
+            return []
+        for n in d.get("notes", []):
+            n["noted"] = True
+        d["notes"] = d["notes"][-50:]
+        _write_json(_pending_path(), d)
+    return list(dict.fromkeys(notes))
+
+
+def archive_write(o: dict, item: dict, occurrence: dict | None = None,
+                  by_code: bool = False) -> str:
     """Write one entry into an archive-store object under its identity rule, and clear one
     pending marker for it. Shared by write_data_object and write_archive (registered
-    categories), so the two doors cannot disagree."""
+    categories), so the two doors cannot disagree. A code-kept log (places) is written only
+    with `by_code` — its own module's writes; every model door, and the derived writer,
+    are refused."""
     if read_only(o):
         return read_only_refusal(o)
+    if code_kept(o) and not by_code:
+        return code_kept_refusal(o)
     item = dict(item or {})
     today = date.today().isoformat()
     if o["id"] == "meals" and "time_from" not in item \
@@ -662,6 +785,8 @@ def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
                 rows.append(row)
             occ = {"at": str(occurrence.get("at") or today),
                    "notes": str(occurrence.get("notes") or "")}
+            if occurrence.get("kind"):
+                occ["kind"] = str(occurrence["kind"])[:20]     # places: visit | mention
             row.setdefault("occurrences", []).append(occ)
             row["date_updated"] = today
             msg = f"Recorded another occurrence in {o['name']}."
@@ -680,6 +805,9 @@ def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
             row = next((r for r in rows if isinstance(r, dict) and key and not r.get("removed")
                         and _key(r) == key), None)
             if row is not None:
+                if o.get("guarded"):
+                    item = _reconcile_guarded(o, row, item,
+                                              datetime.now().isoformat(timespec="seconds"))
                 if has_for and item.get("for") and not item.get("for_contact"):
                     row.pop("for_contact", None)    # a name that no longer links: no stale link
                 for k, v in item.items():
@@ -701,13 +829,16 @@ def archive_write(o: dict, item: dict, occurrence: dict | None = None) -> str:
                 msg = (f"Updated the existing {key.split(':', 1)[0]}-matched entry in "
                        f"{o['name']} — fields merged, no duplicate added.")
             else:
+                for field in o.get("guarded") or ():
+                    if item.get(field) not in (None, "", [], {}):
+                        item[f"{field}_source"] = _source_of(item, field)
                 item["date_added"] = item.get("date_added") or today
                 rows.append(item)
                 msg = f"Added an entry to {o['name']} (entry {len(rows)})."
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(rows, f, indent=2)
-        os.chmod(path, 0o600)
+        # Atomic (tmp + replace): places.json is now read without the lock on every location
+        # ping and turn, and a torn read would be "no places" — a false departure (review
+        # 2026-11-26 #15h).
+        _write_json(path, rows)
         if not o.get("created") and str(o.get("origin", "")).startswith("template:"):
             objs, _ = _materialise(o["id"], _stored())
             _save(objs)
@@ -846,11 +977,17 @@ def _dates_of(row: dict) -> list[str]:
 
 
 def read_entries(o: dict, since: str = "", until: str = "", contains: str = "",
-                 count_only: bool = False, limit: int = 0) -> dict:
+                 count_only: bool = False, limit: int = 0, viewer: str = "") -> dict:
     rows = _rows(o["id"])
     # A removed entry keeps its number (so `change_entry` numbers stay true) and is never shown.
     numbered = [{"n": i + 1, **r} if isinstance(r, dict) else {"n": i + 1, "value": r}
                 for i, r in enumerate(rows) if not (isinstance(r, dict) and r.get("removed"))]
+    if code_kept(o):
+        # Places (review 2026-11-26 #7): a name the user declined to save is hidden from every
+        # reader; a private place is out of day-to-day mention (R24) — the Synthesizer, which
+        # reads a list only when the user asks for it, and Pattern Miner still see it.
+        numbered = [r for r in numbered if not r.get("hidden")
+                    and (not r.get("private") or viewer in ("synthesizer", "pattern_miner"))]
     if since or until:
         # Compared at the entry's own precision: an `at` of "2024" (a year, as the relative-
         # reference rule records "two years ago") falls inside 2024-01-01..2024-12-31.
@@ -859,7 +996,11 @@ def read_entries(o: dict, since: str = "", until: str = "", contains: str = "",
             for d in _dates_of(r))]
     if contains:
         needle = contains.casefold()
-        numbered = [r for r in numbered if needle in json.dumps(r, ensure_ascii=False).casefold()]
+        # Matched on what the reader may SEE: on the full row, `contains="51.502"` confirmed a
+        # place's position digit by digit (review 2026-11-26, coordinates #1).
+        view = _strip_coordinates if _is_location(o) else (lambda r: r)
+        numbered = [r for r in numbered
+                    if needle in json.dumps(view(r), ensure_ascii=False).casefold()]
     out: dict = {"object": public(o), "status": o.get("status")}
     if count_only:
         if o.get("identity") == "occurrence":
@@ -871,10 +1012,22 @@ def read_entries(o: dict, since: str = "", until: str = "", contains: str = "",
     cap = int(limit or limits()["read_max_entries"])
     out["total"] = len(numbered)
     out["truncated"] = len(numbered) > cap
-    out["entries"] = numbered[-cap:]
+    out["entries"] = [_reader_view(r, o) for r in numbered[-cap:]]
     if _is_location(o):
         out = _strip_coordinates(out)
     return out
+
+
+def _reader_view(r: dict, o: dict) -> dict:
+    """An entry as an agent reads it: the provenance bookkeeping of the object's GUARDED fields
+    (`{field}_source`, a held `pending_{field}`) stays in the file for Pattern Miner and the
+    reconciler, and out of the prompt — a model told "derived" starts saying it. Only those
+    keys: a user's own `protein_source` field is theirs (review 2026-11-26 #12)."""
+    guarded = o.get("guarded") or ()
+    if not isinstance(r, dict) or not guarded:
+        return r
+    drop = {f"{g}_source" for g in guarded} | {f"pending_{g}" for g in guarded}
+    return {k: v for k, v in r.items() if k not in drop}
 
 
 # ---------------------------------------------------------------------------
@@ -1200,7 +1353,7 @@ def fetch(agent: str, name: str, since: str = "", until: str = "", contains: str
             return {"object": public(o), "entries": [],
                     "note": f"the {o['store']} store has no reader yet"}
         return read_entries(o, since=since, until=until, contains=contains,
-                            count_only=count_only, limit=limit)
+                            count_only=count_only, limit=limit, viewer=agent)
     result = _NATIVE_READERS[o["store"]](o, agent, {"since": since, "until": until,
                                                     "days": days})
     if _is_location(o):
@@ -1273,6 +1426,8 @@ def write_data_object(object: str, entry: dict | None = None, action: str = "add
         return f"Not recorded: no log called '{object}'."
     if read_only(o):
         return read_only_refusal(o)
+    if code_kept(o):
+        return code_kept_refusal(o)
     if o.get("status") == "archived":
         return f"Not recorded: {o['name']} is archived. Unarchive it first."
     if action == "add_field":
@@ -1361,6 +1516,12 @@ def amend_data_object(object: str, action: str, entry: int = 0,
     if not ok:
         return f"Not changed: {why}."
     now = datetime.now().isoformat(timespec="seconds")
+    if code_kept(o) and action not in ("add_alias", "rename"):
+        # Entry acts AND whole-log acts: "keep Rossi's private" said about one place would
+        # otherwise make the user's whole Places list private through this door. One place's
+        # privacy, forgetting or confirmation is the Coordinator's PLACES act, done by code.
+        return (f"Not changed: {o['name']} is kept by code from what the user says — a "
+                f"change they state this turn is recorded without a call here.")
     if action == "change_entry":
         if o.get("store") != "archive":
             return f"Not changed: {o['name']} is changed through its own tool."
@@ -1443,6 +1604,10 @@ def amend_data_object(object: str, action: str, entry: int = 0,
                 return f"Not merged: no other log called '{into}'."
             if s.get("store") != "archive" or target.get("store") != "archive":
                 return "Not merged: only logs kept in the archive can be merged for now."
+            if code_kept(target):
+                # Review 2026-11-26 #1: a merge INTO places carried a model-written position
+                # into the store zone_for reads. Only code writes a place.
+                return code_kept_refusal(target).replace("Not recorded", "Not merged")
             moved = [{**r, "merged_from": s["id"]} for r in _rows(s["id"])
                      if isinstance(r, dict)]
             trows = _rows(target["id"]) + moved

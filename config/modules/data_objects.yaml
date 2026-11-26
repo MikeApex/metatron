@@ -37,3 +37,30 @@ log_read_max_days: 92
 # Lists whose new entries also reach the development backlog (DEV_BACKLOG.md Inbox) as a feature
 # request (Mike, 2026-11-23). A list's id, as the registry holds it.
 dev_backlog_logs: [app_development_backlog]
+
+# --- Places (phase 3 — archive/plans/data_objects_phase3_build_plan_2026-11-25.md) -----------
+# Read by tools/saved_places.py `_limits()`. All code; no model call depends on any of these.
+places:
+  # A saved place's circle. A venue, not a neighbourhood — a zone's 150 m would swallow the shop
+  # next door; GPS inside a building drifts ~30–50 m.
+  default_radius_m: 75
+  # Lookup results this far apart are different places with one name (a chain) — ambiguous,
+  # saved unconfirmed until a visit or the user's yes (Mike, choice 1).
+  ambiguity_m: 300
+  # How far a saved place may be from where the user is (or will be) to be mentioned.
+  near_max_m: 1500
+  # An errand is raised when its task's place is this close.
+  errand_near_m: 1000
+  # The last reported position counts as "where" for this long; older, it says nothing.
+  last_position_fresh_hours: 3
+  # A raise the user neither took up nor declined is not repeated for the same kind of
+  # occasion within this window. Memory, not a cap (R11): a decline waits for a verdict or
+  # occasion change instead.
+  raise_cooldown_hours: 12
+  # The lookup's share of the reply path: started when the Coordinator names a place, joined
+  # before the Synthesizer for at most this long. A late one still lands.
+  lookup_budget_seconds: 1.5
+  # "Keeps coming up" (Mike, choice 3 — phase 2's shape): mentions of an unsaved name within
+  # the window that raise the question; a declined name waits until its count doubles.
+  mention_threshold: 3
+  mention_window_days: 30

@@ -2545,14 +2545,23 @@ def _plan_fields(kind: str, goal_id=None, priority=None, priority_source=None, s
     if zone is not None:
         z = str(zone).strip().lower()
         if z:
+            # Zones and saved places alike (data-objects phase 3, choice 6): a task done at a
+            # saved place ("pick up the prescription" at the chemist's) carries that place
+            # here, so arriving there is evidence and being near it is an errand to raise.
             try:
-                from tools.location import load_zones
-                names = {str(zz.get("name") or "").strip().lower() for zz in load_zones()}
+                from tools.location import known_places
+                kp = known_places()
+                names = {str(zz.get("name") or "").strip().lower() for zz in kp}
+                # A private place is accepted, never listed back to the model (R24, review
+                # 2026-11-26 #7).
+                shown = {str(zz.get("name") or "").strip().lower() for zz in kp
+                         if not zz.get("private")}
             except Exception:  # noqa: BLE001
-                names = set()
+                names = shown = set()
             if z not in names:
-                known = ", ".join(sorted(n for n in names if n)) or "none named yet"
-                return {}, (f"error: no zone named {z!r} (zones: {known}). Nothing was written.")
+                known = ", ".join(sorted(n for n in shown if n)) or "none named yet"
+                return {}, (f"error: no place named {z!r} (known places: {known}). Nothing "
+                            f"was written.")
             out["zone"] = z
         else:
             out["zone"] = None
@@ -5608,8 +5617,9 @@ _PLAN_FIELD_PROPS = {
                    "description": "With stakes: what missing it would cost, in a few words "
                                   "(\"£100 penalty\", \"lets Sam down\", \"nothing much\")."},
     "zone": {"type": "string",
-             "description": "A named place where this gets done (\"gym\"), from the zones on "
-                            "file — lets arriving there count as a sign it happened. Empty "
+             "description": "A named place where this gets done (\"gym\", \"the chemist's\"), "
+                            "from the user's zones or saved places — lets arriving there count "
+                            "as a sign it happened, and being near it raise the errand. Empty "
                             "string clears it."},
     "activity": {"type": "string",
                  "description": "What kind of thing it is — focus, creative, admin, busy, errands, "
