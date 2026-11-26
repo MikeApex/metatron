@@ -41,6 +41,14 @@ sys.path.insert(0, str(ROOT))
 
 from core.persona import persona_scope, resolve_persona  # noqa: E402
 
+# The Places key is in the VM's .env, which the server's unit loads and a hand-run script does
+# not — the first M3 run (2026-11-26) wrote every correction and found no key for one lookup.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+except ImportError:
+    pass
+
 
 def _ask(prompt: str) -> bool:
     try:
@@ -126,7 +134,10 @@ def plan(rows: list[dict], adds: list[dict]) -> tuple[list[dict], list[dict]]:
     on file, in file order; entries that correct no row — new places)."""
     by_key = {}
     for a in adds:
-        by_key.setdefault(_key(a.get("was") or a.get("name")), a)
+        # By its new name too, so a re-run — after the rename landed — still corrects the row.
+        for k in (a.get("was"), a.get("name")):
+            if k:
+                by_key.setdefault(_key(k), a)
     used = set()
     steps = []
     for r in rows:
@@ -176,10 +187,15 @@ def apply_step(st: dict, persona: str, SP, DO) -> None:
     if r is not None and f.get("name") and _key(f["name"]) != _key(name):
         _rename(SP, DO, name, f["name"], keep_alias=bool(f.get("keep_old_name")))
         name = f["name"]
+    if r is None and f.get("was"):
+        r = SP.find(f["name"], include_hidden=True)   # renamed on an earlier run
     entry = {"name": name, **{k: f[k] for k in ("kind", "verdict", "occasion") if f.get(k)}}
     if f.get("notes"):
         old = str((r or {}).get("notes") or "").strip()
-        entry["notes"] = f"{old}; {f['notes']}" if old else f["notes"]
+        if f["notes"].casefold() in old.casefold():
+            pass                                  # a re-run: the note is already there
+        else:
+            entry["notes"] = f"{old}; {f['notes']}" if old else f["notes"]
     out = SP.save(entry, source="said", persona=persona)
     name = out.get("name") or name
     if f.get("private"):

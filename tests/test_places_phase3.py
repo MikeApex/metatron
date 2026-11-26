@@ -839,6 +839,16 @@ def _():
         e = next(x for x in DO.read_data_object("places")["entries"]
                  if x["name"] == "New Curry House")
         assert "hours" not in e and "last_said_at" not in e, e
+        # A re-run (the first live run found no key) corrects the same rows again and adds
+        # nothing twice: the renamed row is still matched, the note is not appended again.
+        rows = [r for r in SP._rows() if SP._live(r, include_hidden=True)]
+        steps, unmatched = seed.plan(rows, adds)
+        assert not unmatched, unmatched
+        for stp in steps:
+            seed.apply_step(stp, PERSONA, SP, DO)
+        curry = SP.find("New Curry House")
+        assert curry["notes"] == "from before; a favourite", curry["notes"]
+        assert len(curry["occurrences"]) == 1, curry["occurrences"]
         closed_at = datetime.now().replace(hour=8, minute=0)
         assert SP.places_near({"lat": HOME[0], "lon": HOME[1]}, "meal", at=closed_at,
                               planned=True, persona=PERSONA) == []
