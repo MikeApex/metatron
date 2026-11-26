@@ -1200,6 +1200,7 @@ def write_calendar_event(
     all_day: bool = False,
     attendees: list[str] | None = None,
     override_duplicate: bool = False,
+    location: str = "",
 ) -> dict:
     """
     Create a new calendar event on the CalDAV server.
@@ -1227,6 +1228,9 @@ def write_calendar_event(
         attendees:    Optional list of attendee names, cross-referenced against
                       CRM contacts for conflict/duplicate matching. **A label,
                       not an invitation** — no notification is sent to anyone.
+        location:     Optional place, venue or address the user named. Put the place
+                      here, not in the title. Also given to the conflict check, so
+                      travel-time flags see it.
         override_duplicate: Set True to create the event anyway when an
                       identical event (same title, same exact time) already
                       exists. Default refuses — see the duplicate_event error.
@@ -1309,7 +1313,8 @@ def write_calendar_event(
     # import (tools.scheduling imports tools.caldav._query_events).
     from tools.scheduling import _compute_conflicts
 
-    conflict_result = _compute_conflicts(start, end, title=title, attendees=attendees, location="")
+    conflict_result = _compute_conflicts(start, end, title=title, attendees=attendees,
+                                         location=location or "")
     conflict_check_failed = "check_error" in conflict_result
 
     if not conflict_check_failed and conflict_result.get("exact_duplicate") and not override_duplicate:
@@ -1379,6 +1384,9 @@ def write_calendar_event(
         f"DESCRIPTION:{_esc(description)}",
         f"X-CONFLICT-CHECK-STATUS:{'FAILED' if conflict_check_failed else 'OK'}",
     ]
+
+    if location:
+        lines.append(f"LOCATION:{_esc(location)}")
 
     if attendees:
         lines.append(f"X-ATTENDEE-NAMES:{_esc(', '.join(attendees))}")
@@ -1823,6 +1831,13 @@ WRITE_CALENDAR_EVENT_SCHEMA = {
                     "THIS DOES NOT INVITE ANYONE: it records a name on the event "
                     "for matching, sends no notification, and puts nothing in "
                     "anyone else's calendar. Never report an attendee as invited."
+                ),
+            },
+            "location": {
+                "type": "string",
+                "description": (
+                    "Where it happens — a place, venue or address the user named. "
+                    "Put the place here, not in the title."
                 ),
             },
             "override_duplicate": {

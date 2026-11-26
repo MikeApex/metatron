@@ -56,5 +56,39 @@ class Refusals(unittest.TestCase):
             caldav.update_calendar_event("real-uid-123", location="Canary Wharf")
 
 
+CFG = {"enabled": True, "calendar_url": "https://cal.example/events", "timezone": "Europe/London",
+       "auth": {"username": "u", "password": "p"}}
+CLEAN = {"overlaps": [], "exact_duplicate": None, "near_duplicate_candidates": [],
+         "recurring_series_match": [], "location_transition_flags": [], "day_digest": [],
+         "unverified_events": [], "attendees_resolved": []}
+
+
+class CreateLocation(unittest.TestCase):
+    def _create(self, **kw):
+        put = mock.Mock()
+        put.return_value.raise_for_status = lambda: None
+        with mock.patch.object(caldav, "_load_config", return_value=CFG), \
+                mock.patch.object(caldav.requests, "put", put), \
+                mock.patch.object(caldav, "_note_plan_write", lambda: None), \
+                mock.patch("tools.scheduling._compute_conflicts", return_value=CLEAN) as cc:
+            r = caldav.write_calendar_event("Lunch with Dana", "2026-12-01T12:00:00",
+                                            "2026-12-01T13:00:00", **kw)
+        return r, put.call_args.kwargs["data"].decode(), cc
+
+    def test_location_written_escaped_and_passed_to_conflict_check(self):
+        r, ics, cc = self._create(location="Canary Wharf, London; E14")
+        self.assertNotIn("error", r)
+        self.assertIn("LOCATION:Canary Wharf\\, London\\; E14", ics)
+        self.assertEqual(cc.call_args.kwargs["location"], "Canary Wharf, London; E14")
+
+    def test_no_location_writes_no_line_and_empty_check(self):
+        r, ics, cc = self._create()
+        self.assertNotIn("LOCATION", ics)
+        self.assertEqual(cc.call_args.kwargs["location"], "")
+
+    def test_schema_advertises_location(self):
+        self.assertIn("location", caldav.WRITE_CALENDAR_EVENT_SCHEMA["input_schema"]["properties"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
