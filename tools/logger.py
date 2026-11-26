@@ -156,6 +156,38 @@ def asserts_routing_success(detail: str) -> bool:
     return not _FAILURE_CLAIM_RE.search(_SUCCESS_CLAIM_RE.sub(" ", text))
 
 
+# [DB-0902-01] — the second half of the routing-miss noise. A scheduler-opened session has no
+# words from the user, and the Coordinator keeps filing that fact as a ROUTING_MISS ("scheduled
+# quiet check-in, no user message", "the anticipatory pass was treated as a user message") —
+# ~25 of 56 events 10-29 -> 11-26, burying the real ones. coordinator.md:46-50 already forbids
+# it and is ignored, so the control is here. Applied ONLY on a no-user-words turn (see
+# _no_user_words) and tuned for precision like asserts_routing_success: a detail is refused
+# only when it describes the session's own nature AND names no specialist and no output fault.
+# A real miss on a scheduled turn names who was missed ("never reached physical_health").
+_SESSION_NATURE_RE = re.compile(
+    r"\b(scheduled\s+(?:session|prompt|run|check-?in|quiet|anticipatory|morning|evening|"
+    r"day-?close|pass|trigger|job|directive|message|brief|opening|background|greeting|"
+    r"silent|proactive)|scheduler|automated|programmatic|system[- ](?:prompt|directive|"
+    r"instruction)|session prompt|quiet check-?in|anticipatory (?:logistics )?pass|"
+    r"no user (?:message|input|utterance|speech|words)|without (?:a )?user (?:message|input)|"
+    r"user did not send|day-?close session)\b", re.I)
+
+_NAMED_SPECIALIST_RE = re.compile(
+    r"\b(physical[_ ]health|mental[_ ]wellbeing|diarist|goals?[_ ](?:specialist|agent)|"
+    r"finance|relationships|work[_ ]vocation|research[_ ]agent|synthesizer|"
+    r"(?:no|any|without|missing|omitted|skipped)\s+(?:the\s+)?specialists?|"
+    r"specialists?\s+(?:call|dispatch|consult)\w*|"
+    r"structured format|parse\w*|malformed|truncat\w*|incomplete|unhandled)\b", re.I)
+
+
+def describes_scheduled_session(detail: str) -> bool:
+    """True when a ROUTING_MISS detail is only the Coordinator remarking that the session was
+    scheduler-opened, with no named specialist and no output fault. Call it on no-user-words
+    turns only; on a user turn the same words can be a real report."""
+    text = re.sub(r"anticipatory logistics pass", "anticipatory pass", detail or "", flags=re.I)
+    return bool(_SESSION_NATURE_RE.search(text)) and not _NAMED_SPECIALIST_RE.search(text)
+
+
 _WRITE_LOG_LOCK = threading.Lock()
 _WRITE_QUALITY_EVENT_LOCK = threading.Lock()
 
@@ -938,6 +970,14 @@ def write_quality_event(
     # Stage 2 #1 — see _NEEDS_USER_WORDS.
     scheduled = False
     if (event_type in _NEEDS_USER_WORDS or event_type == "ROUTING_MISS") and _no_user_words():
+        if event_type == "ROUTING_MISS" and describes_scheduled_session(detail):
+            raise ValueError(
+                f"write_quality_event(ROUTING_MISS): detail {detail!r} only remarks that this "
+                "session was opened by the scheduler. That is how a scheduled session works, "
+                "not a routing miss — do not log it. Log a ROUTING_MISS here only for a "
+                "specialist that should have been called and was not, naming it. See "
+                "describes_scheduled_session()."
+            )
         if event_type in _NEEDS_USER_WORDS:
             raise ValueError(
                 f"write_quality_event({event_type!r}): this turn carries no words from the "

@@ -1156,6 +1156,40 @@ def _render_read(raw: dict, start_date: str, end_date: str) -> dict:
     return result
 
 
+# [DB-1029-10] — two refusals at the write door. Live 2026-10-27: an event titled "<child> and
+# user at <place>" reached the real calendar ("user" is the model's internal word for the
+# person), and Logistics called update_calendar_event with uid "..." — a placeholder, which the
+# lookup could only fail on. Both are narrow on purpose: the title rule refuses only the
+# standalone word "user"; it would also refuse a genuine "User group meetup" / "User research
+# interview" title, which the caller can reword (the error says how).
+_PLACEHOLDER_UIDS = frozenset({
+    "", "...", "\u2026", "<uid>", "uid", "<event_uid>", "event_uid", "<id>", "id", "none",
+    "null", "n/a", "tbd", "unknown", "xxx",
+})
+_INTERNAL_USER_RE = re.compile(r"\buser(?:'s|\u2019s)?\b", re.I)
+
+
+def _placeholder_uid_error(uid: str) -> dict | None:
+    """An error dict when `uid` is an obvious non-id, else None."""
+    if (uid or "").strip().strip("'\"").lower() in _PLACEHOLDER_UIDS:
+        return {"error": (
+            f"'{uid}' is a placeholder, not an event uid, so nothing was changed. Read the "
+            "calendar first (read_calendar) and pass the uid of the event it returns."
+        )}
+    return None
+
+
+def _internal_title_error(title: str | None) -> dict | None:
+    """An error dict when `title` carries the internal word "user", else None."""
+    if title and _INTERNAL_USER_RE.search(title):
+        return {"error": (
+            f"The title {title!r} uses the word 'user', which is internal vocabulary and "
+            "must not reach the person's calendar. Use the person's own name, or leave "
+            "them out of the title, and call again. Nothing was written."
+        )}
+    return None
+
+
 def write_calendar_event(
     title: str,
     start: str,
@@ -1166,6 +1200,7 @@ def write_calendar_event(
     all_day: bool = False,
     attendees: list[str] | None = None,
     override_duplicate: bool = False,
+    location: str = "",
 ) -> dict:
     """
     Create a new calendar event on the CalDAV server.
@@ -1193,6 +1228,9 @@ def write_calendar_event(
         attendees:    Optional list of attendee names, cross-referenced against
                       CRM contacts for conflict/duplicate matching. **A label,
                       not an invitation** — no notification is sent to anyone.
+        location:     Optional place, venue or address the user named. Put the place
+                      here, not in the title. Also given to the conflict check, so
+                      travel-time flags see it.
         override_duplicate: Set True to create the event anyway when an
                       identical event (same title, same exact time) already
                       exists. Default refuses — see the duplicate_event error.
@@ -1212,6 +1250,8 @@ def write_calendar_event(
         Dict with success status, event uid, and conflict_check evidence if any
         was found — or an error (including duplicate_event).
     """
+    if (bad := _internal_title_error(title)):
+        return bad
     cfg = _load_config()
     if not cfg.get("enabled"):
         return {
@@ -1273,7 +1313,8 @@ def write_calendar_event(
     # import (tools.scheduling imports tools.caldav._query_events).
     from tools.scheduling import _compute_conflicts
 
-    conflict_result = _compute_conflicts(start, end, title=title, attendees=attendees, location="")
+    conflict_result = _compute_conflicts(start, end, title=title, attendees=attendees,
+                                         location=location or "")
     conflict_check_failed = "check_error" in conflict_result
 
     if not conflict_check_failed and conflict_result.get("exact_duplicate") and not override_duplicate:
@@ -1343,6 +1384,9 @@ def write_calendar_event(
         f"DESCRIPTION:{_esc(description)}",
         f"X-CONFLICT-CHECK-STATUS:{'FAILED' if conflict_check_failed else 'OK'}",
     ]
+
+    if location:
+        lines.append(f"LOCATION:{_esc(location)}")
 
     if attendees:
         lines.append(f"X-ATTENDEE-NAMES:{_esc(', '.join(attendees))}")
@@ -1459,6 +1503,8 @@ def update_calendar_event(
         Dict with success status and conflict_check evidence (same shape as
         write_calendar_event), or an error.
     """
+    if (bad := _placeholder_uid_error(uid) or _internal_title_error(title)):
+        return bad
     existing = _get_event_by_uid(uid)
     if "error" in existing:
         return existing
@@ -1648,6 +1694,8 @@ def delete_calendar_event(uid: str) -> dict:
     Returns:
         Dict with success status, or an error (including "not found").
     """
+    if (bad := _placeholder_uid_error(uid)):
+        return bad
     existing = _get_event_by_uid(uid)
     if "error" in existing:
         return existing
@@ -1783,6 +1831,13 @@ WRITE_CALENDAR_EVENT_SCHEMA = {
                     "THIS DOES NOT INVITE ANYONE: it records a name on the event "
                     "for matching, sends no notification, and puts nothing in "
                     "anyone else's calendar. Never report an attendee as invited."
+                ),
+            },
+            "location": {
+                "type": "string",
+                "description": (
+                    "Where it happens — a place, venue or address the user named. "
+                    "Put the place here, not in the title."
                 ),
             },
             "override_duplicate": {
