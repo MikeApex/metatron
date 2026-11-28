@@ -259,8 +259,8 @@ the condition has not arrived, push the date rather than closing the item.
     line), which agrees with Synth, so it is harmless and Mike's to delete.
   - ❌ defer, ❌ contact note, ⚠️ contact email → `[DB-1128-02]`; ❌ ambiguous name → `[DB-0818-05]`;
     ❌ quiet-hours card → `[DB-1029-18]`.
-  - Step 4 Drop: test plan "tidy the garage" (floor → shelves) created 11-28 for Mike to drop in
-    the browser.
+  - ✅ Step 4 Drop: on the test plan "tidy the garage" (floor → shelves), Mike saw "Drop anyway"
+    and passed it (11-28). The test plan is closed.
   3. **In the app, one message each:** "add milk to the shopping list, over and out" (Synth runs
      and acts; a bare "over and out" still gets the ack — the `e5b895c` check, 10-26) · "don't show
      me <task> until Monday" (`[DB-1029-15]`) · at 22:30, "remind me at 23:00 to …" (an approval
