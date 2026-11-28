@@ -684,7 +684,10 @@ with a date.** Nothing new joins this group open-ended.*
   **Live 2026-11-28: no approval card.** At 06:15, inside 22:00–07:00 quiet hours, "remind me at
   6:45 to …" was written straight to `schedules.yaml` as a one-off (`check_manny_swim_calendar`,
   push, user-facing); `pending_confirmations.json` stayed `{}`, and the reply said only "I have set a
-  reminder". At 06:47 it had not fired and the journal had no line for it. Whether it fires at 07:00 is read in the same session.
+  reminder". It was held, not dropped: it fired at 07:00:23 as quiet hours ended ("one-off … due — firing
+  and removing"). **So the hold half passes, and the card half fails.** A user who asks inside quiet hours is never
+  offered the choice to be interrupted. They are silently held to 07:00, and the reply gives the asked
+  time as if it will be kept. Open on the card alone.
   **Read 2026-11-26:** neither path seen since deploy (the journal holds only routine quiet-hours
   skips). Step in `[DB-1126-04]`.
 
