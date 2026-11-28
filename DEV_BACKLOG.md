@@ -73,7 +73,7 @@ back-tagging the rest is `[DB-0815-10]`.
 > counts, and all three were single events; every one of them was also **older than the code that
 > fixed it**. They were removed on 2026-08-18. Confirm the count *and* compare the evidence date
 > against `git log` before promoting anything from here.
-*(empty — last triaged 2026-11-26; evidence in `archive/backlog_closed_2026-11.md`)*
+*(empty — last triaged 2026-11-28; evidence in `archive/backlog_closed_2026-11.md`)*
 
 ## Now
 
@@ -88,24 +88,7 @@ the forwarding trail and four Inbox bugs were built the same day and wait in `##
 their live close. Sign-out stays at 6: the recommendation moved it to Later only to keep under the
 cap, and the builds freed the room. Reasoning: `archive/log/` § 2026-11-26.*
 
-- **1. [DB-1126-01] Most phone notifications arrive as a textless "You have a message" — 181 of
-  228 since 10-29.** Read 2026-11-26 on the VM (`scripts/check_day_plan_step2.py --since
-  2026-10-29T10:50`): 228 pings, 47 fetched, **181 fell back** to the generic notice, every day
-  from 10-29 to 11-25, and the phone's reason on each is `UnknownHostException` (25 shown, latest
-  11-25 15:16). So the FCM ping wakes the phone but the app cannot resolve the server's name to
-  fetch the text. **Likely cause, not confirmed:** the app fetches by the Tailscale MagicDNS name
-  (`static/index.html` `SERVER`), which resolves only while the phone's Tailscale VPN is up —
-  Android drops or pauses it in the background. That ties this to the VPN-install item
-  `[DB-0905-02]`. **First step:** read the phone's fetch path and whether the ping could carry the
-  text itself (FCM data payload limit ~4 KB; sensitive-tier text would then transit Google's FCM
-  — a § Section 0 question before it is a fix). Needs an APK rebuild, so Mike verifies on the
-  phone. Every proactive message — morning brief, nudges, check-ins — is affected. Was
-  `[DB-1029-01]`'s fail branch ("fallbacks persisting with a reason = a delivery item of its
-  own"); that item closed 11-26 with its behaviour checks passed.
-  @kind: bug
-  *raised through Mike's own day-plan check (filed by Mike 10-29) · ranked 1 by Mike 2026-11-26*
-
-- **2. [DB-1126-02] The WhatsApp link screen looks frozen while it works.** "Choose chats" sits at
+- **1. [DB-1126-02] The WhatsApp link screen looks frozen while it works.** "Choose chats" sits at
   "Reading your chats…" with no sign of progress through the first on-demand read: a fixed 5 s
   completeness wait, the decrypt and the fold of every nightly copy took well over 15 s on Mike's
   phone. "Dry run now" shows a 2 s toast, then nothing. The "Last run" panel is drawn only when the
@@ -117,7 +100,7 @@ cap, and the builds freed the room. Reasoning: `archive/log/` § 2026-11-26.*
   @kind: bug
   *filed at Mike's request 2026-11-25 (WhatsApp Phase 2 walkthrough; Mike: "As rec") · ranked 2 by Mike 2026-11-26*
 
-- **3. [DB-1126-03] The day plan schedules more into the gaps around childcare and household
+- **2. [DB-1126-03] The day plan schedules more into the gaps around childcare and household
   duties than fits, so planned things keep being missed.** Mike, 2026-11-25 10:04: *"the blocks
   that have available for random things outside of childcare and household duties aren't as large
   as you have them set and so I'm constantly missing things that you have set so we need to talk
@@ -131,7 +114,74 @@ cap, and the builds freed the room. Reasoning: `archive/log/` § 2026-11-26.*
   @session: how big are his real free blocks, and which windows can take a high-effort session?
   *raised by Mike 2026-11-25 (Inbox) · ranked 3 by Mike 2026-11-26*
 
-- **4. [DB-0902-03] Suggestions arrive when they cannot be acted on — a closed venue, a shop at
+- **3. [DB-1128-01] Telling Metatron a schedule or habit has changed doesn't change it — the
+  calendar, the day plan and the agents' stored copies keep the old version, and nudges fire on
+  it.** Example, read on the VM 2026-11-28: his son's Friday swim class moved to 4:45 pm, but the
+  11-27 plan still carried the 10:45–12:00 slot and a 10:22 "leave now, 13 min by transit" nudge
+  (`conversations/2026-11-27.jsonl` seq 004; nudge `nudge:travel:bd4174bd…@1022`). Its source is a
+  weekly series on the Metatron CalDAV calendar (uid `bd4174bd-fa57-42f8-a137-5b86c8b2c731@ai-life-manager`,
+  `RRULE:FREQ=WEEKLY;BYDAY=FR`, created 09-04), and the 12-04 expansion still lists it. The day
+  plan copied the calendar correctly. **The defect is upstream:**
+  1. **The correction stopped at a note.** At 12:04 Mike said the morning class no longer
+     exists. The Coordinator ran only `write_wisdom` (`mannys_swim_class`, trace 12:04:21), with
+     no Logistics dispatch and no `update_calendar_event`, and replied the change was "on my
+     side, outside our conversation". So it was neither made nor filed.
+  2. **Stored copies are never refreshed.** Logistics' own `data/personas/mike/config/logistics.json`
+     `intention_goals` still said "Friday morning at 10am". It is a snapshot Logistics wrote via
+     `write_agent_config` (`tools/agent_config.py`), and no code keeps it in step with
+     `goals.yaml`, which had been corrected. Mike fixed it by hand on the VM 2026-11-28.
+  3. **Wisdom and calendar disagreed for five days unnoticed.** Wisdom `mannys_swim_logistics`
+     (11-22) said 4:45, so the 11-27 morning greeting quoted 4:45 while the plan used 10:45.
+
+  **Wanted, in code where possible (Mike, 2026-11-28):**
+  - **Identify in code any user turn that changes a schedule or habit** (a time, a day, "no
+    longer", "moved to", "every … now"), the way the clause hints already detect a habit
+    completion (`ff765d3`).
+  - **Route that turn to Logistics** with the matching calendar event or habit attached, so it
+    updates the series or the habit rather than only writing a note.
+  - **Make stored copies of goals and routines read from their source** (`goals.yaml`, the
+    calendar, `tasks.yaml`) instead of being written once and left to go stale. The alternative
+    is at least to refresh them on a change.
+  - **A plan-time check** that flags a calendar event contradicting a stored wisdom/routine
+    fact, so a disagreement like 3 is raised once rather than lived with.
+
+  The same "needs a change on my side" answer, with nothing done, is in `[DB-1126-03]`'s evidence.
+  Coordinator routing lives at `config/agents/coordinator.md` ~242 and `logistics.md:269`. Agent
+  files are Amber and never delegated.
+  **Series moved 2026-11-28 06:14** (sent as Mike: "change the weekly calendar event from 10:45 to
+  4:45 to 6pm"). Same uid, now 16:45–18:00 from 12-04. Logistics updated it when *asked to change
+  the event*. So the miss is specific to a correction stated as a fact ("no longer on Friday
+  morning"), which is the case the code detection has to catch.
+  @kind: bug
+  *raised by Mike 2026-11-27 (Inbox) · investigated and ranked 4 by Mike 2026-11-28*
+
+- **4. [DB-1128-02] Metatron says it did what was asked when it did something else, or nothing —
+  three cases in one 11-28 test pass, sent as Mike on the VM.**
+  1. **The wrong task was deferred, and the reply named the right one.** "don't show me the
+     spare-room cables task until Monday" matched no open task (the test task was dismissed),
+     so `update_task defer` hit a real one (`ob_261122_cf759e`, the job-posting step) with
+     `eligible_from: 2026-11-30`. The reply said "Deferred the spare-room cables task". Mike undid
+     it by hand on the VM. A request naming no matching task should be refused or asked about,
+     never applied to a nearest match.
+  2. **A note cannot be cleared, and the reply said it was, twice.** `write_contact` skips any
+     empty string field (`tools/crm.py:1296`, `if value:`), so `notes: ""` is a no-op. Marcus
+     Delgado's test note "Likes hiking." survived two "cleared" replies (06:16, 06:20) and needs
+     Mike's manual edit. A false fact the user asks to remove stays in the store.
+  3. **A contact update succeeded, and the reply said it failed.** The first `write_contact` for
+     Iva's work email errored (missing `name`), the retry succeeded, and the reply said the
+     update was "attempted and failed".
+
+  **Wanted, in code:**
+  - the reply's action claims checked against the turn's tool results: a write that did not
+    happen, or happened to a different record, cannot be reported as done;
+  - a final success after a retry reported as success;
+  - `write_contact` able to clear a field.
+
+  The goal-hold claim check (`26042b1`, Metatron's own claims, state-checked) is the precedent.
+  @kind: bug
+  *found in Mike's 11-28 walkthrough (`[DB-1126-04]` step 3) · filed and ranked 4 by Mike 2026-11-28 ("file as appropriate")*
+
+- **5. [DB-0902-03] Suggestions arrive when they cannot be acted on — a closed venue, a shop at
   9:30 PM, a question already deferred.** Three reports from Mike: 08-28 20:28 (a shop errand
   suggested at 9:30 PM with no check of opening hours), 08-29 06:01 (re-asking tasks he had said
   "later" to), and **09-08 15:27, merged here 2026-10-29:** *"Arôme cafe is closed. Should be
@@ -153,7 +203,7 @@ cap, and the builds freed the room. Reasoning: `archive/log/` § 2026-11-26.*
   *filed 2026-09-02 from the 08-28/29 Inbox pair · 09-08 venue entry merged and promoted to Now
   rank 5 by Mike 2026-10-29*
 
-- **5. [DB-1029-09] Mike's replies take about a minute; the trial accounts answer in 3–25 s —
+- **6. [DB-1029-09] Mike's replies take about a minute; the trial accounts answer in 3–25 s —
   one build chat ties all the latency work together.** Mike's own messages: median 54 s, p90 142 s
   (96 turns, 10-04 → 10-28); the second user's trial accounts got ordinary replies in 20–25 s
   and Goals Interviewer turns in 3–15 s. Merged here 2026-10-29 at Mike's instruction:
@@ -170,7 +220,7 @@ cap, and the builds freed the room. Reasoning: `archive/log/` § 2026-11-26.*
   @kind: feature
   *raised by Mike 2026-09-12 and 2026-10-28 · merged and promoted to Now by Mike 2026-10-29*
 
-- **6. [DB-1029-11] The app has no way to sign out.** Tapping the name in the top-right only opens the sign-in screen, the previous user's sign-in stays stored, and a failed sign-in as someone else leaves the first person signed in after a refresh (`static/index.html:1328`, `:4519`; the HttpOnly cookie needs a server route to clear it). Mike, 2026-10-28, Stage 5: build it after Stage 5, before or with Stage C's follow-ups. Doesn't affect Iva on her own phone; affects any shared device. Needs an APK rebuild.
+- **7. [DB-1029-11] The app has no way to sign out.** Tapping the name in the top-right only opens the sign-in screen, the previous user's sign-in stays stored, and a failed sign-in as someone else leaves the first person signed in after a refresh (`static/index.html:1328`, `:4519`; the HttpOnly cookie needs a server route to clear it). Mike, 2026-10-28, Stage 5: build it after Stage 5, before or with Stage C's follow-ups. Doesn't affect Iva on her own phone; affects any shared device. Needs an APK rebuild.
   **Re-checked 2026-10-29:** still none — `core/server.py` has `/push/fcm/unregister` (stops a
   phone's pings) but no route that clears the sign-in cookie. Stage 5 closed 2026-10-29, which was
   Mike's condition for building it.
@@ -200,12 +250,17 @@ the condition has not arrived, push the date rather than closing the item.
   Everything here is built and deployed and waits only on an ordinary use nobody has made, or on a
   Denied-tier VM edit only Mike may make. **Proposed: one guided session, steps below, Mike in the
   app and Claude Code reading the VM.** Model: Sonnet 5.5 (mechanical reads).
-  1. **VM, Mike's edit (Denied tier):** restore `config/personas/mike/profile.yaml` from
-     `profile.yaml.bak-2026-11-13` (only the expired cardiac line differs) — closes `[DB-1113-01]`.
-  2. **VM, Mike's call (Denied tier, recommended: delete):** the six-hourly `check_inbox_6h`
-     Logistics job in `data/personas/mike/schedules.yaml` still fires (~67 runs/mo × ~96k tokens on
-     the bulk tier ≈ $2/mo) though the intake sweep owns triage (`logistics.md`); its redundancy
-     check could not be answered (`created_by: None` on every task). Was the 10-24 Inbox check.
+  1. ✅ **Done 2026-11-28 (Mike, VM):** cardiac line removed, `[DB-1113-01]` closed.
+  2. ✅ **Done 2026-11-28 (Mike, VM):** `check_inbox_6h` set `enabled: false` (not deleted —
+     it was the only entry; `schedules.yaml.bak` kept), scheduler restarted 05:59:19 clean.
+  **11-28 run (sent as Mike):**
+  - ✅ shopping + "over and out"; ✅ meal habit created (`ob_261128_b2d6a9`; closes on a later day);
+    ✅ no brief asked about the blue-box plan; ✅ overlap script: only `mike.md:18` (task-length
+    line), which agrees with Synth, so it is harmless and Mike's to delete.
+  - ❌ defer, ❌ contact note, ⚠️ contact email → `[DB-1128-02]`; ❌ ambiguous name → `[DB-0818-05]`;
+    ❌ quiet-hours card → `[DB-1029-18]`.
+  - Step 4 Drop: test plan "tidy the garage" (floor → shelves) created 11-28 for Mike to drop in
+    the browser.
   3. **In the app, one message each:** "add milk to the shopping list, over and out" (Synth runs
      and acts; a bare "over and out" still gets the ack — the `e5b895c` check, 10-26) · "don't show
      me <task> until Monday" (`[DB-1029-15]`) · at 22:30, "remind me at 23:00 to …" (an approval
@@ -238,6 +293,15 @@ the condition has not arrived, push the date rather than closing the item.
      passion tie (plan § 11b). Mike: five real new tasks, one on a public fact, one thing he loves.
   5. Passion double count — after 4's passion step, re-count open `costs_source: inferred` tasks
      serving a stated passion; zero closes it (§ 11b Fable #12). `@waiting:` on 4.
+  **11-28 (Mike):** check 1 decided: `ranking_v2` ON ("begin using the new order"), committed, not
+  deployed. Check 3 passes: protected time keeps admin out unless the cost of delay beats the
+  intrusion, which is R4 and Mike's "it can breach on a cliff deadline". Check 2 fails (behind on
+  every day, no quick win fits), so `behind_v2` stays off.
+  **Mike's ruling on check 6 (11-28), which changes the back-burner design:** low-stakes items are
+  not actively dropped; they fall off the list because more important tasks outrank them (low
+  stakes, no deadline). The TfL refund is that case for `mike`, though it may not be for another
+  user. So `back_burner` parking (closing as moot) should not go live as designed. Re-scope check
+  6 to confirm the v2 order sinks such items on its own.
   6. Back-burner dry run — `--back-burner` (and `--day` for two earlier days), ~10 min, a week
      after deploy; then `back_burner: true` for one weekly review, then `back_burner_dry_run:
      false`; `…-ranking-phase-3-back-burner-dry-run-walkthrough.md` (Sonnet).
@@ -267,33 +331,16 @@ the condition has not arrived, push the date rather than closing the item.
      (from code)` line; MW-3 the configured crisis number. Unlocks quick mode (#9 / 4f, D6) and the
      closing-round deletions (Stage 3 X1–X4, Stage 4 C20–C22).
   4. **Mike's persona-file overlap:** step 5 of `[DB-1126-04]`.
+  **11-28 read of §1 (VM):**
+  - ✅ The 11-25/26/27 briefs dispatched both health specialists, with no `USER_CORRECTION`.
+  - ✅ Proactive `ROUTING_MISS` rows carry `scheduled: true` (11-27 20:00).
+  - ✅ `[PREFETCHED` blocks are present, and turn-1 `cached_tokens` runs 8.9k–22.6k.
+  - ✅ No `read_goals` by work_vocation or finance.
+  - ✅ A full-name lookup was refused (06:06).
+  - **Open:** the Pattern Miner report due 11-29. `insights/` holds only the misnamed `2025-07-25.json`.
+  - §4: only `mike.md:18`, which agrees with Synth.
   `due: 2026-11-30` · @kind: chore
   *four Inbox entries filed at Mike's request 2026-11-24, merged 2026-11-26*
-
-- **[DB-1113-01] Mike's week-long cardiac log keeps skipping Physical Health after the week ends
-  unless the temporary line is removed.** `due: 2026-12-03` · `@kind: chore`
-  Mike asked 2026-11-13 (seq 011) that his irregular-heartbeat log entries go to the Diarist only,
-  without being routed to Physical Health, for one week. Implemented as a single dated entry in the
-  VM's `config/personas/mike/profile.yaml` `other:` list (the only persona file the Coordinator
-  loads; `mike.md` is head-layer only). The line says "ignore after 2026-11-20", but that is
-  model-read, not enforced. **On or after 11-21:** on the VM, restore `other: []`, or restore
-  `profile.yaml.bak-2026-11-13` if nothing else has changed in the file since, and delete the
-  backup. The no-symptom-questions line in the VM's `mike.md` is a separate, standing preference;
-  leave it unless Mike says otherwise.
-  **Added 2026-11-16, before the 11-21 removal:**
-  - **18th: re-run the rebuild** (the command in the 11-16 transcript / log § 2026-11-16) for the
-    19th follow-up. It regenerates `data/personas/mike/health/cardiac_events_2026-11.md` and
-    `archive/cardiac_events.json` (Physical Health reads the archive copy) from the conversation
-    records, so later entries are included. Keep both files after the week.
-  - **First live check of `23f1e59`:** the next cardiac entry should appear in that day's log
-    `health_notes` list with a `spoken` time (if the app stamped one), the earlier notes intact.
-  - The temporary profile line gained a pointer sentence on 11-16 (cardiac_events archive).
-    Restoring `other: []` removes both; the backup predates both.
-  **Read 2026-11-26: the line is still live, five days past its end.** The VM's `profile.yaml`
-  differs from `profile.yaml.bak-2026-11-13` only by that `other:` entry, so restoring the backup is
-  the clean revert. Denied tier — Mike's to make (step 1 of `[DB-1126-04]`). **Merged 2026-11-26:**
-  the 11-13 Inbox entry (routine cardiac logging shouldn't ask for symptoms or go to Physical
-  Health) — this item is its implementation; the no-symptom line in `mike.md` stays.
 
 - **[DB-0901-01] The fleet can sit on a deprecated model for weeks without anyone noticing, so
   check weekly whether Google has shipped something newer we can actually call.**
@@ -555,6 +602,9 @@ with a date.** Nothing new joins this group open-ended.*
   @kind: bug
   *raised by Mike 2026-09-07 (Inbox) · triaged to Now rank 1 by Mike 2026-10-29*
   *moved out of Now 2026-10-29 (Mike): built, owes only its live confirmation*
+  **Live 2026-11-28: partial.** Both of Iva's addresses kept (`other_emails`), nothing lost; but
+  `social.work_email` was left in place (the address now in two fields), and the reply said the
+  update failed when the retry succeeded (`[DB-1128-02]` item 3). Close once `social.work_email` is migrated.
   **Read 2026-11-26:** deployed, never exercised — no contact on the VM holds `other_emails`, and
   one still carries `social.work_email`. Step in `[DB-1126-04]`.
 
@@ -628,8 +678,13 @@ with a date.** Nothing new joins this group open-ended.*
 
 - **[DB-1029-15] Built 2026-10-29: "don't show me this until Monday" now hides a task until that day** (Mike, 2026-10-24; separate `defer` action ruled 2026-10-29). `66b637c` (`update_task` action `defer`, `tools/obligations.py`; `tests/test_task_defer.py` 9/9) + `8231a86` (one line each in `synthesizer.md` and `logistics.md`). Due date unchanged; refused for habits and past a deadline's own date. **Closes on:** one live turn — "don't show me X until <day>" — after which X is gone from the Today panel and returns on that day. `due: 2026-12-03`. Open question put to Mike: should `reopen` bring a deferred task back early (no undo today).
   **Read 2026-11-26:** deployed, never used — no deferred task on file. Step in `[DB-1126-04]`.
+  **Live 2026-11-28: FAIL.** It deferred the wrong task, and the reply named the requested one → `[DB-1128-02]` item 1. The stamp mechanics work (`eligible_from` set, `deferred` history).
 
 - **[DB-1029-18] Built 2026-10-29: a follow-up due in quiet hours is kept and fires when they end; a reminder the user asks for inside them raises an approval card** (Mike's ruling 2026-10-29: fires in quiet hours only if the user approves; the reply notes they are interrupting their own quiet hours). `97f9f09` + `02b1e5b` (Fable review: the card no longer makes the reply say nothing was set; no one-tick loss at the quiet-hours boundary). `core/scheduler.py`, `tools/schedule.py`, `tools/confirm.py`, `core/orchestrator.py`; `tests/test_scheduler_quiet_hours.py`. **Closes on:** either one agent follow-up held overnight and firing after quiet hours end (scheduler journal: no `skipping … quiet hours` for a one-off), or one quiet-hours card approved and the reminder firing at its time. `due: 2026-12-03`.
+  **Live 2026-11-28: no approval card.** At 06:15, inside 22:00–07:00 quiet hours, "remind me at
+  6:45 to …" was written straight to `schedules.yaml` as a one-off (`check_manny_swim_calendar`,
+  push, user-facing); `pending_confirmations.json` stayed `{}`, and the reply said only "I have set a
+  reminder". At 06:47 it had not fired and the journal had no line for it. Whether it fires at 07:00 is read in the same session.
   **Read 2026-11-26:** neither path seen since deploy (the journal holds only routine quiet-hours
   skips). Step in `[DB-1126-04]`.
 
@@ -685,6 +740,30 @@ with a date.** Nothing new joins this group open-ended.*
   31 derived proposals recorded.
 
 ### Unbuilt — real capability that does not exist
+
+- **[DB-1126-01] Most phone notifications arrive as a textless "You have a message" — 181 of
+  228 since 10-29.** Read 2026-11-26 on the VM (`scripts/check_day_plan_step2.py --since
+  2026-10-29T10:50`): 228 pings, 47 fetched, **181 fell back** to the generic notice, every day
+  from 10-29 to 11-25, and the phone's reason on each is `UnknownHostException` (25 shown, latest
+  11-25 15:16). So the FCM ping wakes the phone but the app cannot resolve the server's name to
+  fetch the text. **Likely cause, not confirmed:** the app fetches by the Tailscale MagicDNS name
+  (`static/index.html` `SERVER`), which resolves only while the phone's Tailscale VPN is up —
+  Android drops or pauses it in the background. That ties this to the VPN-install item
+  `[DB-0905-02]`. **First step:** read the phone's fetch path and whether the ping could carry the
+  text itself (FCM data payload limit ~4 KB; sensitive-tier text would then transit Google's FCM
+  — a § Section 0 question before it is a fix). Needs an APK rebuild, so Mike verifies on the
+  phone. Every proactive message — morning brief, nudges, check-ins — is affected. Was
+  `[DB-1029-01]`'s fail branch ("fallbacks persisting with a reason = a delivery item of its
+  own"); that item closed 11-26 with its behaviour checks passed.
+  @kind: bug
+  *raised through Mike's own day-plan check (filed by Mike 10-29) · ranked 1 by Mike 2026-11-26*
+  **2026-11-28 diagnosis (read-only, Opus):** confirmed the server name resolves only through
+  Tailscale; the phone gives up after ~6 s and never retries, though the server keeps the text
+  24 h; it records only its last failure. Only 3 of 46 morning pings had text. Mike set
+  Always-on VPN and Unrestricted battery, and Tailscale still drops. Next, if picked up: encrypted
+  text in the FCM payload (key over Tailscale at registration; needs a Section 0 ruling) plus a
+  phone-side retry, and record every failure with VPN state. Plain text in the payload is ruled out.
+  *Moved out of Now 2026-11-28 (Mike: "isn't a high priority fix … I'd prefer to leave it").*
 
 - **[DB-1126-09] Agents can still use tools they were never granted: permissions run in warn mode,
   so a denial is recorded and the call goes ahead anyway.** `TOOL_PERMISSION_MODE` defaults to
@@ -1212,6 +1291,10 @@ half (b) is now part of the Pro-routing decision. Evidence and trail:
   again later; pass is no second question (diagnosable on fail: empty
   `data/personas/mike/crm/name_resolutions.json`)
   *raised by Mike 2026-08-18 · built 2026-08-27 by the CRM attack worker*
+  **Live 2026-11-28: FAIL, both halves.** "remind me to call Marcus this weekend" (two Marcuses on file)
+  created "Call Marcus" without asking which one. A later "what do I know about Marcus?" did ask;
+  Mike's answer (Delgado) was used two turns on, but `crm/name_resolutions.json` was still not
+  created. So the resolution is held in conversation only, never stored.
   **Read 2026-11-26:** `crm/name_resolutions.json` has never been created on the VM, so the path
   has never run in three months. Step in `[DB-1126-04]`.
 
@@ -1468,6 +1551,36 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7862 + reply 326, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
+  `2026-11-27T20:01:46.902809Z`
+
+- **[a specialist missed a signal it should have caught]** user sent 'Where I am right now.' with no place name or context, but the message was logged with away location metadata or context indicating an unspoken check-in or location update attempt, but coordinator routed it as general conversation without resolving the location.  
+  `2026-11-27T17:37:57.697240Z`
+
+- **[user corrected a prior turn]** User corrected task completion date for 'Pick up turkey' from today to yesterday  
+  `2026-11-27T16:06:48.227218Z`
+
+- **[user corrected a prior turn]** User corrected 'Richard Belmer' / 'Richard Major' / 'Richard Milma' to Richard Major (or Rich Shapiro context), and corrected 'Punch Bowl' to 'Bunch of Grapes'.  
+  `2026-11-27T16:05:39.581445Z`
+
+- **[a specialist missed a signal it should have caught]** User asked for a rundown of restaurants liked and disliked in London; routing to Relationships/Logistics to check saved places/logs.  
+  `2026-11-27T12:13:02.544228Z`
+
+- **[user corrected a prior turn]** User corrected Manny's swim class schedule: no longer Friday morning, now Friday afternoon. Updated in context/horizon.  
+  `2026-11-27T12:04:11.978422Z`
+
+- **[user corrected a prior turn]** User pointed out a scheduling contradiction: Eve is not at the office today, so picking up the turkey and groceries while seeing Eve on the way is impossible. The previous assistant turn had miscoordinated by assuming Eve was involved or available.  
+  `2026-11-26T12:50:52.851531Z`
+
+- **[already applied by the tool]** User established a standing rule that Thanksgiving Day is strictly reserved for cooking and family time, with zero time budgeted for admin, work sessions, or anything non-critical. Stored as standing knowledge under work.  
+  `2026-11-26T11:19:06.937056Z`
+
+- **[already applied by the tool]** User requested more frequent check-ins on mood and feelings, specifically asking to quantify them. Added preference to Interaction Preferences to capture quantified mood during regular check-ins.  
+  `2026-11-26T11:05:42.301297Z`
+
+- **[user corrected a prior turn]** User pointed out a meta-feedback that the system does not ask about mood or feelings often enough; recognized as a direct feedback/correction on interaction style.  
+  `2026-11-26T11:04:22.988134Z`
 
 - **[user corrected a prior turn]** User corrected the verdict for Clipstone restaurant from try to avoid.  
   `2026-11-26T09:59:57.376738Z`

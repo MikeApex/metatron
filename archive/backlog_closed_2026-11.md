@@ -166,3 +166,13 @@ The dead `_ORG_TYPES` skip is gone. Tests: `tests/test_ranking_review_aliases.py
 - **`[DB-1029-12]` barge-in never tried on the device, and `[DB-1029-13]` the "I'm here" cue
   voice** → `[DB-0919-01]`, now one headset-mode item. None of the three has a code change since
   09-24 (`git log -S` on `stopSpeaking`, `cue`, `mediaSession`).
+
+### ✅ `[DB-1113-01]` Mike's week-long cardiac log kept skipping Physical Health past its end — closed 2026-11-28
+Mike, on the VM: `diff` showed only the dated `other:` entry; `profile.yaml` restored from
+`profile.yaml.bak-2026-11-13` and the backup deleted (mtime 05:56:57). Read back: `other: []`.
+The no-symptom-questions line in `mike.md` is a separate standing preference and stays.
+
+### ✅ Inbox, 11-27: the Friday swim class kept planning in the morning → `[DB-1128-01]` (Now 4)
+Read on the VM 11-28: a stale weekly CalDAV series, and a correction that stopped at
+`write_wisdom`. Triaged into the schedule-change routing item; Mike fixed the stale
+`logistics.json` `intention_goals` line by hand the same morning.

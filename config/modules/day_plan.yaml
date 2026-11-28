@@ -67,7 +67,8 @@ flags:
   # computes the v2 order beside Part A's and writes it to the plan's trace only (shadow); compare
   # with scripts/ranking_report.py --compare. On only after Mike's three-morning comparison (v2
   # preferred on ≥ 2 of 3, no real obligation below the cut). Off restores Part A exactly.
-  ranking_v2: false
+  # ON 2026-11-28 (Mike: "begin using the new order", after the 11-26/27/28 comparison).
+  ranking_v2: true
   # RANKING, PART B, PHASE 2 (2026-11-23; same plan, §§ 4.5, 4.10, 11 rows 10–13, 11b). Each acts
   # only with `ranking_v2` also on — it needs v2's cost of delay — and is otherwise SHADOW: every
   # build writes what it would have done to the plan's trace and ranking_state.json's `trace`
