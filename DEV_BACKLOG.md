@@ -246,37 +246,6 @@ the condition has not arrived, push the date rather than closing the item.
 
 ### Chores — upkeep on a clock
 
-- **[DB-1126-04] A ~15-minute walkthrough with Mike closes eight items — prepared, not yet run.**
-  Everything here is built and deployed and waits only on an ordinary use nobody has made, or on a
-  Denied-tier VM edit only Mike may make. **Proposed: one guided session, steps below, Mike in the
-  app and Claude Code reading the VM.** Model: Sonnet 5.5 (mechanical reads).
-  1. ✅ **Done 2026-11-28 (Mike, VM):** cardiac line removed, `[DB-1113-01]` closed.
-  2. ✅ **Done 2026-11-28 (Mike, VM):** `check_inbox_6h` set `enabled: false` (not deleted —
-     it was the only entry; `schedules.yaml.bak` kept), scheduler restarted 05:59:19 clean.
-  **11-28 run (sent as Mike):**
-  - ✅ shopping + "over and out"; ✅ meal habit created (`ob_261128_b2d6a9`; closes on a later day);
-    ✅ no brief asked about the blue-box plan; ✅ overlap script: only `mike.md:18` (task-length
-    line), which agrees with Synth, so it is harmless and Mike's to delete.
-  - ❌ defer, ❌ contact note, ⚠️ contact email → `[DB-1128-02]`; ❌ ambiguous name → `[DB-0818-05]`;
-    ❌ quiet-hours card → `[DB-1029-18]`.
-  - ✅ Step 4 Drop: on the test plan "tidy the garage" (floor → shelves), Mike saw "Drop anyway"
-    and passed it (11-28). The test plan is closed.
-  3. **In the app, one message each:** "add milk to the shopping list, over and out" (Synth runs
-     and acts; a bare "over and out" still gets the ack — the `e5b895c` check, 10-26) · "don't show
-     me <task> until Monday" (`[DB-1029-15]`) · at 22:30, "remind me at 23:00 to …" (an approval
-     card — `[DB-1029-18]`) · "Iva's work email is <address> — keep her personal one too"
-     (`[DB-1029-02]`) · "make a habit: log meals and snacks, 3 times a day" (`[DB-1029-03]`) · name
-     an ambiguous contact, answer which, name them again later (`[DB-0818-05]`).
-  4. **In the browser app:** Drop on a plan step others wait on shows "This also stops …" and
-     "Drop anyway", and no "on purpose?" question follows (`d1aaa01`, 11-22); then remove the three
-     test tasks (`Redo check …`, `Sort the spare-room cables …`, `Label the blue box …`). Whether a
-     morning brief asked about the blue-box plan (`ob_261122_64e5e8`) once: read from the VM.
-  5. **Mike runs on the VM:** `scripts/check_rule_overlap.py --persona mike` — his persona files
-     may still hold a "How are you feeling this morning?" opening and a task-length ask line that
-     `synthesizer.md` now owns (instructions-to-code close-out, 11-24); his edit if found.
-  `due: 2026-12-03` · @kind: chore
-  *assembled 2026-11-26 by /backlog deep, Mike: "as rec"*
-
 - **[DB-1126-06] The ranking work's seven checks before its flips — one walkthrough around 12-01.**
   All read from the VM (14 days kept, so every reading must happen by ~2026-12-07; the first
   mornings fall off from then). Each was filed at Mike's request 11-23; walkthrough prompts exist:
@@ -1554,6 +1523,69 @@ claim user-facing (its log-write sibling is `[DB-0829-01]`); the two Iva/Eva cor
 evidence that closed `[DB-0815-05]`. Note the ROUTING_MISS entry's own wording — "causing an
 unintended email to be sent" — is wrong: nothing was sent, the card was declined. A machine
 entry is a symptom, never a diagnosis.)*
+
+- **[user corrected a prior turn]** user noted we stopped instead of continuing to the next contact in the contact review.  
+  `2026-11-28T07:06:59.351430Z`
+
+- **[user corrected a prior turn]** User corrected Yana's surname from Litova to Litovsky during the contact review queue.  
+  `2026-11-28T07:06:00.431054Z`
+
+- **[a specialist missed a signal it should have caught]** User requested going through 40 odd contact items one by one, but the request was routed incorrectly, missing Relationships specialist.  
+  `2026-11-28T07:00:45.209477Z`
+
+- **[user corrected a prior turn]** User clarified that the garage tidying task was mistakenly marked as done instead of being abandoned, and requested the entire plan and tasks to be reinstated.  
+  `2026-11-28T06:58:33.949191Z`
+
+- **[user corrected a prior turn]** User corrected a previous turn by stating 'undo the tidying the garage item. that was a mistake.'  
+  `2026-11-28T06:57:04.070644Z`
+
+- **[user corrected a prior turn]** User corrected Friday focus block shift request to remove it from Fridays only  
+  `2026-11-28T06:55:28.845052Z`
+
+- **[user corrected a prior turn]** User corrected prior assumption about pub crawl stops: Stop 2 was the Cutty Sark, then Trafalgar, before heading home for dinner.  
+  `2026-11-28T06:50:39.648568Z`
+
+- **[a reply ran out of tool rounds before it finished]** reply reached the 4-round tool limit; last round called: update_task  ×2  
+  `2026-11-28T06:57:33.787113Z`
+
+- **[a specialist missed a signal it should have caught]** User gave a test instruction to make a plan to tidy the garage (clear floor, then sort shelves), which has no existing specialist or execution domain in the system.  
+  `2026-11-28T06:46:15.363152Z`
+
+- **[user corrected a prior turn]** User repeated instruction to clear 'Likes hiking' from Marcus Delgado's contact note because write_contact failed in the previous turn despite being reported as done. In this turn, write_contact failed once then succeeded on retry.  
+  `2026-11-28T06:17:58.641578Z`
+
+- **[user corrected a prior turn]** User corrected a test case: asked to drop the Call Marcus task, remove Marcus's hiking note, and take milk off the shopping list.  
+  `2026-11-28T06:16:09.261446Z`
+
+- **[a specialist missed a signal it should have caught]** User asked to be reminded at 6:45 to check Friday's plan shows the swim class in the afternoon, but reminder scheduling for a specific time on the same day is not supported by logistics/reminders in this pipeline format.  
+  `2026-11-28T06:15:33.295416Z`
+
+- **[a specialist missed a signal it should have caught]** User stated Manny's swim class moved to 4:45pm-6:00pm starting December 4th; coordinator routed correctly to Logistics and Diarist, but missed checking if a capability gap existed (recurring event update with specific time range).  
+  `2026-11-28T06:14:11.740275Z`
+
+- **[user corrected a prior turn]** The user corrected a prior turn where a weather query was mistakenly logged as a ROUTING_MISS, but no quality event should have been logged for correct routing.  
+  `2026-11-28T06:03:13.349153Z`
+
+- **[a specialist missed a signal it should have caught]** User asked about the weekend weather, but Coordinator previously misrouted weather/forecast lookups or needs Research Agent for live conditions.  
+  `2026-11-28T06:02:33.445955Z`
+
+- **[user corrected a prior turn]** User clarified 'Marcus Delgado' in response to ambiguity between Marcus Whitfeld and Marcus Delgado.  
+  `2026-11-28T06:01:48.491507Z`
+
+- **[a specialist missed a signal it should have caught]** User asked 'what do I know about Marcus?' but the coordinator failed to route to the Relationships specialist to look up Marcus in the contact store.  
+  `2026-11-28T06:00:57.548884Z`
+
+- **[user corrected a prior turn]** User clarified contact details for Iva Diamond during relationship review.  
+  `2026-11-28T05:57:04.410343Z`
+
+- **[a specialist missed a signal it should have caught]** User provided additional contact info for Iva Diamond (work email), which belongs to Relationships specialist domain.  
+  `2026-11-28T05:57:03.193720Z`
+
+- **[user corrected a prior turn]** User corrected routing miss from previous turn where 'over and out' was logged as a routing miss.  
+  `2026-11-28T05:55:21.034350Z`
+
+- **[a specialist missed a signal it should have caught]** User said 'over and out' to close the conversation; no routing or specialist needed.  
+  `2026-11-28T05:54:33.354724Z`
 
 - **[THINKING_CAP_HIT]** reply cut at the 8192-token output ceiling (thinking 7862 + reply 326, turn 1). Thinking overshoots its 4096 budget on this model; check whether the reply arrived whole.  
   `2026-11-27T20:01:46.902809Z`

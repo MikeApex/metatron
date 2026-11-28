@@ -176,3 +176,19 @@ The no-symptom-questions line in `mike.md` is a separate standing preference and
 Read on the VM 11-28: a stale weekly CalDAV series, and a correction that stopped at
 `write_wisdom`. Triaged into the schedule-change routing item; Mike fixed the stale
 `logistics.json` `intention_goals` line by hand the same morning.
+
+### ✅ `[DB-1126-04]` The ~15-minute walkthrough that closes eight owed checks — run 2026-11-28
+Run mostly by Claude Code sending as Mike (authorised), plus Mike's VM edits; log § 2026-11-28.
+- **Passed:**
+  - cardiac line removed (`[DB-1113-01]` closed);
+  - `check_inbox_6h` disabled;
+  - shopping + "over and out";
+  - meal habit created (its close stays on `[DB-1029-03]`);
+  - Drop anyway;
+  - no repeated blue-box question;
+  - overlap script (only `mike.md:18`, which agrees with Synth).
+- **Failed, each carried by its own item:**
+  - defer, contact note and the false failure reply → `[DB-1128-02]`;
+  - contact `social.work_email` left in place → `[DB-1029-02]`;
+  - ambiguous name → `[DB-0818-05]`;
+  - quiet-hours card → `[DB-1029-18]`.
