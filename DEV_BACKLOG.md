@@ -165,8 +165,8 @@ cap, and the builds freed the room. Reasoning: `archive/log/` § 2026-11-26.*
      never applied to a nearest match.
   2. **A note cannot be cleared, and the reply said it was, twice.** `write_contact` skips any
      empty string field (`tools/crm.py:1296`, `if value:`), so `notes: ""` is a no-op. Marcus
-     Delgado's test note "Likes hiking." survived two "cleared" replies (06:16, 06:20) and needs
-     Mike's manual edit. A false fact the user asks to remove stays in the store.
+     Delgado's test note "Likes hiking." survived two "cleared" replies (06:16, 06:20). Mike cleared it by hand
+     on the VM, 11-28. A false fact the user asks to remove stays in the store.
   3. **A contact update succeeded, and the reply said it failed.** The first `write_contact` for
      Iva's work email errored (missing `name`), the retry succeeded, and the reply said the
      update was "attempted and failed".
